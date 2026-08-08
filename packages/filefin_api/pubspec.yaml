@@ -1,0 +1,27 @@
+name: filefin_api
+description: >-
+  The FileFin HTTP client: typed endpoints, the cookie jar, F3's transparent
+  401 re-auth-and-retry, and F15's certificate pinning. Pure Dart — no Flutter
+  — so `dart test` runs it and credential persistence arrives as an injected
+  port rather than a plugin.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.0
+
+# Resolved against the workspace root's single lockfile, so `codegen-check` and
+# `mutants` see the same package versions on every machine.
+resolution: workspace
+
+dependencies:
+  # SPEC.md §6's HTTP client. Its interceptor chain is where F3 lives and its
+  # IOHttpClientAdapter is where F15 hooks into TLS. Pinned exactly: a patch
+  # release that changes interceptor ordering, or what `Dio.fetch` does with
+  # the chain, silently changes F3 — and `just mutants` needs the same
+  # resolution on every machine to give the same answer twice.
+  dio: 5.11.0
+
+dev_dependencies:
+  # The test runner `just test` and `just coverage` invoke.
+  test: ^1.25.0

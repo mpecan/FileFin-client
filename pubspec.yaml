@@ -16,6 +16,7 @@ environment:
 # yet fails `dart pub get` outright, so a member and its directory land together.
 workspace:
   - packages/filefin_core
+  - packages/filefin_api
 
 dev_dependencies:
   # Drives codegen from the workspace root, so `just codegen` is one command
