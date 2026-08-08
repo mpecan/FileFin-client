@@ -15,7 +15,7 @@ void main() {
   });
 
   test('loadFixtureList decodes a captured array payload', () {
-    expect(loadFixtureList('categories'), hasLength(2));
+    expect(loadFixtureList('categories'), hasLength(3));
     expect(loadFixtureList('search_empty'), isEmpty);
   });
 

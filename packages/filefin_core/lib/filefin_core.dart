@@ -9,6 +9,7 @@
 /// the library and is dead by §5.
 library;
 
+export 'src/category_tree.dart';
 export 'src/ids.dart';
 export 'src/json_converters.dart';
 export 'src/models/auth_result.dart';

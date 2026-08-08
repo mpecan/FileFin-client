@@ -49,7 +49,7 @@ void main() {
 
       final result = await client.categories();
 
-      expect(result, hasLength(2));
+      expect(result, hasLength(3));
       expect(result.first.name, 'Films');
       expect(protectedHits, 2);
       expect(logins.count, 2);
@@ -114,7 +114,7 @@ void main() {
 
       expect(results, hasLength(8));
       for (final r in results) {
-        expect(r, hasLength(2));
+        expect(r, hasLength(3));
       }
       expect(logins.count, 2, reason: 'the initial login plus ONE renewal');
     });

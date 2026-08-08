@@ -235,6 +235,27 @@ unavailable the listing still returns with both at **0** rather than failing
 (`library.go:73-81`). A client cannot distinguish "empty category" from "cache
 down" by these counts alone.
 
+**Nesting is captured, not only documented (M3.2).** Until M3.2 the seeded
+library was entirely flat, so every row in `categories.json` had `parentId: 0`
+and the `name`/`leaf` distinction above — the thing a tree row is rendered from
+— was asserted by nothing. Measured against the real binary at v0.20.3: a
+directory *inside* a category directory, carrying its own `config.json` with a
+`parentId`, becomes a real category with that parent.
+`tool/testserver/seed.sh` now writes `Films/Documentaries/config.json`, and the
+captured payload shows what a nested row looks like:
+
+```json
+{"id":3,"name":"Films/Documentaries","leaf":"Documentaries","alias":"Documentaries",
+ "parentId":1,"position":0,"empty":true,"media":0,"files":0,"kind":"both"}
+```
+
+So `name` really is the full path and `leaf` really is what a tree row must
+show — a UI rendering `name` prints `Films/Documentaries` on a row already
+sitting under `Films`. `tool/check-fixtures.sh` asserts a non-zero `parentId`, a
+`name` that differs from its `leaf`, and an `empty`/zero-count row are all still
+present, so a re-capture that loses the nesting fails rather than quietly
+narrowing what the fixture proves.
+
 Status `200`, or `500` when the categories cannot be read from disk.
 
 Fixture: `categories.json`.

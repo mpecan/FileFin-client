@@ -57,6 +57,29 @@ mkdir -p "$FILMS" "$SHOWS"
 echo '{"id":1,"alias":"Films","position":0}' > "$DATA/Films/config.json"
 echo '{"id":2,"alias":"Shows","position":1}' > "$DATA/Shows/config.json"
 
+# A NESTED category, and the reason it is here is that nothing else proves
+# nesting exists. `GET /api/categories` returns a flat list and SPEC.md §3.2
+# says the client assembles the tree; before M3.2 the seeded library had no
+# non-zero `parentId` anywhere, so `buildCategoryTree`'s whole subject was
+# tested against fabricated rows only.
+#
+# Measured against the real binary at v0.20.3: a directory inside a category
+# directory, carrying its own config.json with `parentId`, becomes a real
+# category with that parentId. Two facts came out of it that the UI depends on:
+#
+#   name  is the FULL PATH  — "Films/Documentaries"
+#   leaf  is the DISPLAY NAME — "Documentaries"
+#
+# A tree that rendered `name` would print the whole path on every nested row.
+#
+# It holds no media deliberately: `media: 0` and `empty: true` then appear in a
+# captured payload, and both were previously unexercised — a category listing
+# whose counts are 0 is exactly the case the UI must not read as "empty
+# library" (`library.go:73-81` returns 0 for both when the cache is down too).
+mkdir -p "$DATA/Films/Documentaries"
+echo '{"id":3,"alias":"Documentaries","position":0,"parentId":1}' \
+  > "$DATA/Films/Documentaries/config.json"
+
 echo "seeding media..."
 ffmpeg -nostdin -loglevel error -y \
   -f lavfi -i testsrc=duration=3:size=320x240:rate=15 \

@@ -241,7 +241,12 @@ void main() {
     expect(categories.map((c) => c.id), [
       const CategoryId(1),
       const CategoryId(2),
+      const CategoryId(3),
     ]);
+    // The third row is the nested category M3.2's seed added. `parentId` is an
+    // int64 that defaults to 0 meaning TOP LEVEL, so a decoder that dropped
+    // the key entirely would still look right on the first two rows.
+    expect(categories.last.parentId, const CategoryId(1));
 
     final results = loadFixtureList(
       'search_results',

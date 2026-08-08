@@ -34,8 +34,15 @@ void main() {
       expect(result.map((c) => c.id), [
         const CategoryId(1),
         const CategoryId(2),
+        const CategoryId(3),
       ]);
       expect(result.first.parentId, const CategoryId(0));
+      // The captured payload carries a real nested row from M3.2's seed. A
+      // flat-only assertion here would pass just as well over a payload that
+      // had lost it, which is what §8's captured-fixture rule exists against.
+      expect(result.last.parentId, const CategoryId(1));
+      expect(result.last.name, 'Films/Documentaries');
+      expect(result.last.leaf, 'Documentaries');
     });
 
     test('categoryMedia', () async {
@@ -184,7 +191,7 @@ void main() {
       expect(signedIn.alias, '');
       expect(signedIn.mdlUsername, '');
       expect(signedIn.malUsername, '');
-      expect(await wired.categories(), hasLength(2));
+      expect(await wired.categories(), hasLength(3));
       expect(await secrets.read(serverId, SecretKind.password), creds.password);
 
       await wired.logout();

@@ -31,15 +31,66 @@ void main() {
     final categories = await client.categories();
 
     expect(categories.map((c) => c.leaf), containsAll(['Films', 'Shows']));
-    for (final category in categories) {
+    for (final category in categories.where((c) => c.leaf != 'Documentaries')) {
       expect(
         category.parentId,
         const CategoryId(0),
-        reason: 'both seeded categories are top level, and 0 says so',
+        reason: 'the two seeded root categories are top level, and 0 says so',
       );
       expect(category.id, isNot(const CategoryId(0)));
     }
   });
+
+  test(
+    'a nested category reports its parent, and the tree assembles',
+    () async {
+      // The seeded library was entirely flat until M3.2, so `buildCategoryTree`
+      // — the whole of SPEC.md §3.2's client-side assembly — was proven against
+      // fabricated rows and against nothing real. `tool/testserver/seed.sh` now
+      // writes `Films/Documentaries/config.json` with a parentId, and this is
+      // the assertion that a stock server actually honours it.
+      final categories = await client.categories();
+      final films = categories.firstWhere((c) => c.leaf == 'Films');
+      final nested = categories.firstWhere((c) => c.leaf == 'Documentaries');
+
+      expect(nested.parentId, films.id);
+
+      final tree = buildCategoryTree(categories);
+
+      expect(tree.map((n) => n.category.leaf), ['Films', 'Shows']);
+      expect(tree.first.children.single.category.id, nested.id);
+      expect(tree.first.children.single.depth, 1);
+    },
+  );
+
+  test('name is the full path; leaf is what a tree row shows', () async {
+    // Measured at M3.2, and it is the difference between a tree that reads
+    // "Documentaries" under "Films" and one that reads "Films/Documentaries".
+    final nested = (await client.categories()).firstWhere(
+      (c) => c.leaf == 'Documentaries',
+    );
+
+    expect(nested.name, 'Films/Documentaries');
+    expect(nested.leaf, 'Documentaries');
+  });
+
+  test(
+    'an empty category reports zero counts, which is not "cache down"',
+    () async {
+      // `library.go:73-81` returns media/files as 0 when the cache is
+      // unavailable too, so a UI cannot tell the two apart from these numbers.
+      // The seeded nested category is genuinely empty, which is what makes the
+      // ambiguity a captured fact rather than a note in a doc.
+      final nested = (await client.categories()).firstWhere(
+        (c) => c.leaf == 'Documentaries',
+      );
+
+      expect(nested.media, 0);
+      expect(nested.files, 0);
+      expect(nested.empty, isTrue);
+      expect(await client.categoryMedia(nested.id), isEmpty);
+    },
+  );
 
   test('a category listing decodes into MediaSummary', () async {
     final categories = await client.categories();

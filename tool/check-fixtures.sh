@@ -152,6 +152,20 @@ need home_populated.json '(.continue | length) > 0' "the continue row is empty"
 need home_populated.json 'has("favorites") and has("completed")' "a home row key is missing"
 need categories.json 'length >= 2 and (.[0].id | type) == "number"' \
     "categories must be a list with a numeric id (CategoryId is an int64, CLAUDE.md §7)"
+# The nesting assertions. `GET /api/categories` is flat and the client builds
+# the tree (SPEC.md §3.2), so a capture with no non-zero parentId would leave
+# `buildCategoryTree`'s entire subject proven against fabricated rows only —
+# which is what CLAUDE.md §8 says a hand-written literal is worth.
+need categories.json 'any(.[]; .parentId != 0)' \
+    "no category has a non-zero parentId, so nesting is captured nowhere. Re-seed:
+       tool/testserver/seed.sh writes Films/Documentaries/config.json for this"
+need categories.json 'any(.[]; .name != .leaf)' \
+    "no category has a name that differs from its leaf. \`name\` is the FULL PATH and
+       \`leaf\` is the display name; a tree rendering the wrong one prints
+       \"Films/Documentaries\" on every nested row, and only a nested capture shows it"
+need categories.json 'any(.[]; .media == 0 and .empty == true)' \
+    "no empty category. A listing whose counts are 0 is what the UI must not read as
+       \"empty library\" — library.go:73-81 returns 0 for both when the cache is down"
 need media_detail_directplay.json '(.id | type) == "string"' \
     "media id must be a string (MediaId is a 12-char hex string, CLAUDE.md §7)"
 need search_empty.json 'length == 0' "the empty-search fixture is not empty"
