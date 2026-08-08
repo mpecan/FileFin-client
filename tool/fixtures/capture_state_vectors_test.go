@@ -54,15 +54,19 @@ func TestCaptureStateVectors(t *testing.T) {
 		t.Skip("FILEFIN_VECTORS_OUT not set")
 	}
 
-	// Two ref shapes, because Refs distinguishes them: a single-file folder's
-	// ref is "", a numbered episode's is "SxE".
+	// All THREE ref shapes, because Refs has three branches: a single-file
+	// folder's ref is "", a numbered episode's is "SxE", and anything else is
+	// "#N" 1-based. The "#N" branch previously had neither a vector nor an HTTP
+	// fixture, so a client that never implemented it would have passed.
 	refSets := map[string][]string{
 		"single": Refs([]FileKey{{}}),
+		"pair":   Refs([]FileKey{{}, {}}),
 		"three":  Refs([]FileKey{{Season: 1, Episode: 1}, {Season: 1, Episode: 2}, {Season: 1, Episode: 3}}),
 	}
 
 	// Starting states: absent pointer (curIdx == -1, so the first report on
-	// file 0 always installs one), and pointers at each index and offset.
+	// file 0 always installs one), pointers at each index and offset, and a
+	// pointer whose ref is not in refs at all.
 	type start struct {
 		name    string
 		pointer *Pointer
@@ -86,7 +90,7 @@ func TestCaptureStateVectors(t *testing.T) {
 	}
 
 	var vectors []vector
-	for _, setName := range []string{"single", "three"} {
+	for _, setName := range []string{"single", "pair", "three"} {
 		refs := refSets[setName]
 
 		starts := []start{{name: "none", pointer: nil, watched: false}}
@@ -98,6 +102,24 @@ func TestCaptureStateVectors(t *testing.T) {
 			}
 		}
 		starts = append(starts, start{name: "watched", pointer: nil, watched: true})
+
+		// Stale refs — a pointer naming a file that is no longer in refs, which
+		// is what renaming or renumbering a folder between sessions leaves
+		// behind. indexOf returns -1, so View reports ContinueIndex AND
+		// ContinueSeconds as 0 even though Progress is non-nil: a stale pointer
+		// reads identically to no pointer.
+		//
+		// This is the case the grid was missing, and its absence was not
+		// harmless. Paired with an out-of-range report (Apply is identity, so
+		// the stale pointer survives into the output) it produces a vector where
+		// out.pointer.seconds is 45 and out.view.continueSeconds is 0. A Dart
+		// View written as `continueSeconds = pointer?.seconds ?? 0` is wrong and
+		// passed every one of the previous 333 vectors.
+		for _, staleRef := range []string{"9x9", "#7"} {
+			p := Pointer{File: staleRef, Seconds: 45}
+			starts = append(starts,
+				start{name: "stale" + staleRef + "@45", pointer: &p, watched: false})
+		}
 
 		for _, s := range starts {
 			for _, r := range reports {

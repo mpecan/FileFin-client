@@ -15,7 +15,7 @@ position of `1.5`; Go rounds with `int(x + 0.5)`, not toward zero.)
 | Captured | 2026-08-08 |
 | Captured by | `tool/testserver/seed.sh` then `tool/testserver/capture_fixtures.sh` |
 | Server | a real `filefin` binary built from that commit, over a freshly seeded temp data dir on `127.0.0.1:8099` |
-| User | `testuser` (non-admin fields are as the server returned them) |
+| User | `testuser`, which **is** an admin account — `login.json` and `me.json` both carry `"admin":true`. Nothing here exercises a non-admin user; only admin-gated *routes* are out of scope (SPEC.md N1), not the flag. |
 
 Re-capture with `just fixtures-seed && just fixtures-capture`, then
 `bash tool/check-fixtures.sh accept` to refresh `SHA256SUMS`. A full re-seed
@@ -68,6 +68,22 @@ except the two marked unauthenticated. `{d}` = `e4285edb34d5`, the film;
 | `subtitle.vtt` | `GET /api/media/{d}/file/0/sub/0` — SRT converted to WebVTT per request |
 | `error_shapes.txt` | see below |
 | `SHA256SUMS` | `bash tool/check-fixtures.sh accept` |
+| `KEYS.txt` | `bash tool/check-fixtures.sh accept` — every JSON path ever captured, a ratchet the gate refuses to let shrink |
+
+`resume_vectors.json` is the one file here that did **not** come from HTTP, and
+the opening claim above needs that qualification: it is still a captured real
+payload, but captured from the engine rather than from the wire.
+
+| | |
+|---|---|
+| Produced by | `just fixtures-vectors` → `tool/capture-resume-vectors.sh` |
+| How | `tool/fixtures/capture_state_vectors_test.go` is copied into a clone of upstream pinned to `9399feb` and run as `internal/state/capture_state_vectors_test.go`, calling the real `state.Apply` / `state.View` from inside the package |
+| Contents | 601 input→output vectors over three ref shapes (`""`, `#N`, `SxE`), including 116 with a pointer whose ref is absent from `refs` |
+| Why not HTTP | driving `Apply` over `POST /api/media/{id}/progress` folds in the handler's own validation (an out-of-range file index is a `400` at `media.go:531`, while the engine returns the state unchanged) and costs one request and one `meta.json` read-modify-write per vector |
+
+The expectations are not written by hand: whatever the engine returned is what
+was recorded. That is the entire value — a hand-written expectation can only
+encode what we already believe about the function under test.
 
 `error_shapes.txt` is a transcript, not a payload, because the interesting part
 is the status line and the headers rather than a body:
@@ -80,6 +96,12 @@ is the status line and the headers rather than a body:
 | 415 | `GET /api/media/{d}/file/0/hls/index.m3u8` — the symmetric refusal |
 | 206 | `GET /api/media/{d}/file/0` with `Range: bytes=0-49` — headers only |
 | 429 | eight consecutive `POST /api/login` with a wrong password |
+
+The 429 carries `Retry-After: 900`, verified live against this seeded server —
+six wrong passwords give `401 401 401 401 401 429`, and the sixth carries the
+header. It is `int(retry.Seconds()) + 1` over the remaining account lock
+(`auth.go:149`), and username case variants share the bucket
+(`config.NormalizeUsername`, `auth.go:145`).
 
 ## Known gaps
 
@@ -96,7 +118,5 @@ M1 model, so §8 is intact; they land on the `just it` harness at M2/M5.
 - **Header-level 307 behaviour as a client sees it.** `error_shapes.txt`
   records the status and `Location` from curl. Whether a *player* preserves the
   `Cookie` across it is R1's question, and R1 answered it empirically.
-- **`Retry-After` value on the 429.** The transcript records the status codes
-  only; the header's exact seconds value is not captured.
 - **Multiple users.** Everything here is `testuser`. Per-user state isolation
   is untested.

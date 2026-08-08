@@ -112,6 +112,13 @@ fixtures-seed:
 fixtures-capture:
     @bash tool/testserver/capture_fixtures.sh
 
+# The resume oracle. NOT part of `fixtures-capture`: these vectors do not come
+# from HTTP at all — tool/fixtures/capture_state_vectors_test.go is copied into
+# a clone of upstream at v0.20.3 and runs internal/state.Apply/.View directly.
+# Needs Go and (unless FILEFIN_UPSTREAM_CLONE points at one) network.
+fixtures-vectors:
+    @bash tool/capture-resume-vectors.sh
+
 fixtures-verify:
     @bash tool/check-fixtures.sh
 
