@@ -7,8 +7,9 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
 | **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()`, then remediated against three adversarial reviews |
 | **Done** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, F15's certificate pinning, and `just it` against a real `filefin` |
-| **Next** | **M3** — app shell and browsing UI |
-| **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary |
+| **Done** | **M3** — `apps/mobile`: the app shell, F1's add-server flow, F2's sign-in, and F4's category tree, virtualised poster grid and detail view; every gate's Flutter branch |
+| **Next** | **M4** — playback, direct path |
+| **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
 spelled out rather than asserted.** At M1 it was wrong: three
@@ -25,6 +26,326 @@ in full below: `mutation_test` left rewritten sources on disk twice, in
 **untracked** files where `git status` shows `??` and no diff can reveal
 anything. `git add -N` on every new file is the practice adopted in response.
 
+**M3 found the sharp edge on that practice, and it is worth knowing before it
+costs someone an hour.** `git checkout -- <path>` on an intent-to-add path
+**truncates the file to zero bytes** rather than refusing: there is no committed
+blob to restore, so it restores the empty index entry. A probe loop that used
+`git checkout --` to undo a deliberate edit destroyed `async_controller.dart`
+outright, and the first sign of it was `dart format` reporting the file
+"changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
+that has never been committed.
+
+
+---
+
+## M3 — what was built
+
+| Step | Deliverable |
+|---|---|
+| M3.0 | A measurement session, no commit. Six questions answered by running things; two of the plan's premises turned out false |
+| M3.1 | `apps/mobile`, its Android/iOS platform config, and **every gate's Flutter branch**, each proven in both directions |
+| M3.2 | `filefin_core`: `buildCategoryTree` — and a real nested category in the seed, which the plan listed as an experiment that might fail |
+| M3.3 | `filefin_api`: `posterBytes` — and a seeded poster, which closes CLAUDE.md's DoD item 5 against `docs/server-api.md`'s "No fixture" |
+| M3.4 | `UiState`, `AsyncController`, `AsyncView`, `ErrorPanel`, `describeApiError`, `LibraryApi` (D-Q1), plus a `dead_types` fix |
+| M3.5 | `settings.json` persistence, F1's add-server flow, F2's sign-in, the scope |
+| M3.6/7/8 | The category tree, the virtualised poster grid (the exit criterion) and the detail view, wired to each other |
+| M3.9 | `apps/mobile/test_live/` against the real binary, and `just it` over two suites |
+| M3.10 | This section, `docs/verification-backlog.md`, and the SPEC/architecture updates |
+
+**Numbers as measured, not as hoped.** `just check` exits 0 on a clean tree with
+**zero gate warnings**. `just it` exits 0: **33 integration tests across two
+suites** — 26 in `packages/filefin_api/integration_test` and 7 in
+`apps/mobile/test_live`, with separate committed floors. Coverage **100%
+(1446/1446 lines)**, **0 uncovered against a ratchet of 0**. **1111 unit tests**:
+181 in `apps/mobile`, 133 in `filefin_api`, 797 in `filefin_core`. The
+constitution baseline is **0 across seven checks** — `app_no_raw_http` is new at
+M3.
+
+The whole-M3 mutation run (`FILEFIN_MUTANTS_BASE=0529f65`, the last M2 commit)
+produced **263 mutations over 23 changed lib sources, 0 undetected, 0
+timeouts**. **The app's share is 225 of them**, over 19 sources, and it is worth
+stating separately: before M3.1 the mutation gate could not run on a Flutter
+package at all. The largest single files are `media_detail_page.dart` (47),
+`add_server_page.dart` (33), `category_tree.dart` (22) and `settings.dart` (22).
+`ui_state.dart` and `library_api.dart` produce **0** each — declarations and
+delegation, the same shape `filefin_core`'s wire models have, and the same
+standing caveat: a healthy count elsewhere is not assurance about them.
+
+### M3.0 — six questions, and two of the plan's premises were wrong
+
+Answered by running things, before a line of M3.1 was written.
+
+1. **`dart pub get` with a Flutter member SUCCEEDS.** The plan's premise — "a
+   workspace with a Flutter member cannot be resolved by `dart pub get`" — is
+   **false**: the `dart` on PATH is the Flutter SDK's own and resolves
+   `sdk: flutter` (`+ sky_engine 0.0.0 from sdk flutter`), rc 0. What it does
+   **not** write is `apps/mobile/.flutter-plugins-dependencies`, which is what
+   registers a plugin with the Android and iOS builds; `flutter pub get` does.
+   Measured both ways with `path_provider` declared. CI moved to `flutter pub
+   get` for the real reason rather than the assumed one.
+2. **Root `dart analyze --fatal-infos --fatal-warnings .` handles Flutter
+   fully** — it resolves `package:flutter/material.dart` and reports genuine
+   Flutter type errors (`const Text(42)` → `argument_type_not_assignable`,
+   rc 3). **No `flutter analyze` branch was needed.**
+3. **`flutter test --coverage` emits `SF:lib/src/…`** — package-relative, as
+   predicted, and a lib source no test imports is absent entirely.
+4. **It honours `// coverage:ignore-file`** — the file disappears from the lcov
+   completely. So `run-coverage.sh`'s existing refusal of that comment in
+   hand-written lib source protects the app unchanged.
+5. **A global `<commands>` in `mutation_rules.xml` runs IN ADDITION to a
+   per-document one** — measured, not reasoned. With `flutter test` in the
+   targets XML and `dart test` still in the rules, `dart test` ran inside
+   `apps/mobile` and killed the run.
+   **But the predicted failure mode is wrong, and this is the correction that
+   matters most.** The plan called this the milestone's single most dangerous
+   item: "every mutant reads as detected, 100% over nothing". That does **not**
+   happen. `mutation_test` runs the command set against unmodified code first
+   and **aborts**: `Error: Running the test commands failed with unmodified
+   code! Aborting.`, rc 1, with no `Found N mutations` line at all.
+   `check-mutants.sh` refuses that twice over — rc != 0, and `found == 0` is its
+   own hard failure. The old wiring was **fail-closed**. The fix is still
+   mandatory, because the gate could not run on a Flutter package at all, but
+   the risk was misclassified.
+6. **A real request does NOT complete outside `tester.runAsync`.** Untouched,
+   `HttpOverrides.current` is `_MockHttpOverrides` and a request completes with
+   **400** — so a forgotten `= null` gives 400s, not a hang. With
+   `HttpOverrides.global = null`, outside `runAsync`: `done=false, err=null`
+   after two `pump(5s)`. Inside: a real **200**.
+
+**A seventh answer nobody asked for, and it turned out to matter twice.**
+`flutter test --reporter expanded <dir>` where `<dir>` holds **no
+`*_test.dart`** silently runs the package's **default `test/` directory** and
+prints "All tests passed!", exit 0. A *nonexistent* directory exits 1. That is a
+vacuity mode CLAUDE.md's list did not have, and M3.9 demonstrated it end to end:
+with `run-integration.sh`'s guards removed, `just it` reported **"181 tests,
+floor 1"** over the unit suite and exited 0.
+
+### The gates, and what had to change
+
+Every branch below landed at M3.1, before a screen existed, and every one was
+proven in both directions on the real script.
+
+- **`run-tests.sh` picks the runner by LOCATION and fails on a disagreement
+  with the pubspec.** `packages/*` is `dart test`, `apps/*` is `flutter test`.
+  Guessing from the pubspec would exempt a package the moment the pubspec is
+  what changed — the same defect `core_purity` had at M2. It also captures the
+  output and refuses `~N` and `+0`, which `just it` already did.
+- **`run-coverage.sh` gained a Flutter branch that ASSERTS the `SF:lib/` shape**
+  before rewriting it repo-relative. A blind rewrite of a different shape
+  produces a record naming no file — which reads as "every app source is
+  missing" in the good case and as a false match in the bad one.
+- **`check-mutants.sh` writes the test command into the targets document** it
+  generates, and refuses a `<commands>` block in the rules file. The refusal
+  strips XML comments first, and it has to: the first version failed on a
+  **correct** file, because the comment explaining the rule contained the
+  element name. That is "an assertion satisfiable in prose" with the sign
+  flipped — a rule a comment can break is as broken as one a comment can
+  satisfy.
+- **`check-toolchain.sh` checks `flutter`**, guarded on an `apps/*` package
+  existing, with a 3.44 floor.
+- **`check-constitution.sh` gained a seventh check, `app_no_raw_http`**, scoped
+  to `apps/*/lib` only. The app may not open its own socket, because
+  `filefin_api` is the only place a 401 is interpreted, a certificate is pinned,
+  or a cookie jar exists — and a widget that bypasses it bypasses all three
+  silently, with a request that simply succeeds. The concrete temptation is
+  `Image.network` on the poster route. Baseline 0.
+- **`check-deps.sh` scans `test_live/`** — M2.7's finding in a new location.
+- **`check-codegen.sh` unchanged**, confirmed: the app declares no
+  `build_runner` and the loop already keys on that.
+- **`run-integration.sh` carries a two-suite table** with per-suite floors,
+  because a suite that lost tests must not be covered by one that gained some.
+
+### Two gate blind spots M3's own code walked into
+
+**`dead_types` was blind to generic sealed hierarchies**, and M3 introduces the
+tree's first one (`UiState<T>`). The declaration pattern required
+`class Name extends Base` with a space before `extends`, so
+`final class EmptyBox<T> extends Box<T>` matched **nothing at all**. Measured on
+a probe before the fix: the generic form exited 0, the byte-identical
+non-generic form exited 1. Type parameters are now optional in the declaration
+pattern and in the construction search — `EmptyBox<int>(…)` is a construction
+and `\bEmptyBox[[:space:]]*\(` does not match it — and all four directions were
+re-proven.
+
+**A `mutation_rules.xml` exclusion that covers only part of the mutated range
+excludes NOTHING, and does so silently.** Found while excluding two genuinely
+unkillable mutants: `Object\.hash\(server, media, size\)` — which contains the
+arguments the rule rewrites — changed nothing, and neither did the broader
+`Object\.hash\([^)]*\)`. Both runs looked identical to one with no exclusion.
+Only a pattern covering the whole statement worked (53 mutants with it, 56
+without). Anyone adding an exclusion should check the count moved rather than
+trusting that a plausible pattern did something.
+
+### Three experiments the plan said might fail, and did not
+
+**Nested categories are real, and the seed has one now.** Measured against the
+binary at v0.20.3: a directory inside a category directory, carrying its own
+`config.json` with a `parentId`, becomes a category with that parent. Two facts
+the UI depends on came out of the capture, and only one of them was in the doc:
+`name` is the **full path** (`Films/Documentaries`) and `leaf` is the **display
+name**. A tree rendering `name` prints the whole path on a row already sitting
+under its parent. The nested category is deliberately empty, so `media: 0` and
+`empty: true` enter a captured payload for the first time — the case the UI must
+not read as "empty library", since `library.go:73-81` returns 0 for both when
+the cache is down.
+
+**The poster gap is closed, and CLAUDE.md's DoD item 5 no longer conflicts with
+`docs/server-api.md`.** That section said "No fixture" on two grounds. The first
+— "the seeded items have no poster" — stopped being true: the importer picks up
+a file named exactly `poster.jpg` in a media folder and writes it to the cache's
+`media.poster` column, which is what `hasPoster` is derived from. `seed.sh` now
+copies one into the **film** and deliberately not into the **show**, so both
+branches have the real binary behind them. The second — "a blob no model
+decodes" — is true and beside the point: what the fixture asserts is that
+`http.ServeFile` returns the seeded bytes **unchanged**, and it is
+byte-reproducible because the seed input is a **committed** file rather than a
+fresh encode (an `ffmpeg` run produces different bytes on a different libjpeg
+and would rewrite the manifest on every machine). Verified byte-identical.
+
+**The mutation gate can fail on app code**, proven on real code rather than a
+spike: deleting the `find.text` assertions from `app_test.dart` gave 1 of 5
+undetected, rc 1; restoring gave 5 of 5, rc 0.
+
+### NF2 is met by proxy, and here is the number and what it is not
+
+**60fps cannot be measured headlessly, structurally.** `flutter test` runs
+`flutter_tester` under `AutomatedTestWidgetsFlutterBinding`: fake clock, frames
+pumped on demand, no vsync, no rasterizer, fabricated `FrameTiming`. The real
+instrument needs a connected device.
+
+Gated instead, over **5000 items decoded once by the real `FileFinClient` over a
+real `dart:io` `HttpServer`**: a live `PosterTile` count under 80 at the top,
+the middle and the end; poster requests far below 5000 and never above the tiles
+ever built; the listing fetched exactly once across twenty scrolls; a
+scrolled-away tile cancelling its request; tile size and both tap-target
+guidelines.
+
+Reported and **deliberately not gated**: **1460 µs/frame** over 60 scrolled
+pumps of the 5000-item grid. That is **not frame time and is not evidence of
+60fps** — build and layout only, debug JIT, `flutter_tester`, no rasterization,
+and the fake clock advancing between frames. It is a number for a human to
+notice moving. A flaky timing gate in `just check` would be worse than none.
+`docs/verification-backlog.md` row 1 carries the real experiment.
+
+**Why the 5000 items are decoded in `setUpAll` and the widgets driven over those
+objects.** A request *initiated* inside a `testWidgets` body registers its
+timers in that body's `FakeAsync` zone and never completes — `runAsync` makes
+real time pass, it does not move a pending socket into the real zone. The first
+draft of `grid_test.dart` pumped the page and waited two real seconds for tiles
+that could never arrive. `setUpAll` runs outside `FakeAsync`, which is why the
+real half lives there. The same constraint shapes `test_live/`, and the gap it
+leaves is backlog row 14.
+
+### Deviations from the plan, with the reason
+
+- **`scope.dart` landed at M3.5, not M3.4.** `AppDependencies` holds a
+  `SettingsStore` and a `SavedServer`-keyed factory, neither of which existed at
+  M3.4. Building it a step early would have meant fields nothing read (§1, §5).
+- **`run-integration.sh`'s two-suite table landed at M3.9, not M3.1.** The plan
+  listed it among M3.1's gate edits and also under M3.9; doing it at M3.1 would
+  have pointed the gate at a directory that did not exist yet, and the gate
+  correctly fails on that.
+- **The deferred mutation proof was executed at M3.1, not M3.4**, on real app
+  code. At M3.4 the same experiment on `AsyncController` produced **no**
+  survivor, and the honest reason is that `mutation_test` generates no mutant
+  for `!identical(a, b)` or `?.cancel()` — neither is an operator or a literal.
+  What is proven for `AsyncController` instead is that each guard is
+  individually pinned: deleting the generation check, `_token?.cancel()` in
+  either place, or the `RequestCancelled` arm each turns a **named** test red.
+- **The live suite's widget layer does not issue its own calls** (above). The
+  plan's "every await inside `tester.runAsync`" is necessary and not sufficient.
+- **`PosterImageProvider` fetches; `PosterTile` owns the token.** The plan
+  described them separately; cancellation only works if the token reaches the
+  fetch, so the provider takes one.
+
+### Gate proof log — M3
+
+Every row executed against the real script, both exit codes observed.
+
+| Gate | Fail input | Exit | Clean | Exit |
+|---|---|---|---|---|
+| `toolchain-check` | PATH with `dart` but no `flutter`, app present | **1**, names flutter | normal PATH | 0 |
+| same | `PATH=/usr/bin:/bin` | **1**, names dart first | normal | 0 |
+| same | a stub `flutter` reporting 3.19.0 | **1**, "below the 3.44 floor" | real 3.44.9 | 0 |
+| `test` — zero tests | every `*_test.dart` moved out of `apps/mobile/test/` | **1** | moved back | 0 |
+| `test` — `@Skip` | `@Skip('probe')` + `library;` on `app_test.dart` | **1**, `+9 ~1` refused | reverted | 0 |
+| `test` — `skip:` | `skip: true` on one app test | **1**, `+11 ~1` refused | reverted | 0 |
+| `test` — runner cross-check | `sdk: flutter` into `packages/filefin_api/pubspec.yaml` | **1** (and `constitution`/`core_purity` **1**) | reverted | 0 / 0 |
+| same | the `sdk: flutter` deps deleted from `apps/mobile/pubspec.yaml` | **1** | restored | 0 |
+| `coverage-check` | an untested 8-line function in an app lib source | **1**, `99% (767/771)`, 4 uncovered vs ratchet 0 | removed | 0, `100% (767/767)` |
+| `run-coverage` — missing record | `apps/mobile/lib/src/orphan.dart`, nothing imports it | **1**, names the file | deleted | 0 |
+| `run-coverage` — ignore comment | `// coverage:ignore-file` in an app lib source | **1**, names the file | removed | 0 |
+| `run-coverage` — `SF:` shape | a PATH-shadowed `flutter` writing an **absolute-path** lcov | **1**, prints the offending `SF:` | real flutter | 0 |
+| `mutants` — rules `<commands>` | a real `<commands>` element in `mutation_rules.xml` | **1** | element removed, comment naming it left | 0 |
+| `mutants` — on app code | the `find.text` assertions deleted from `app_test.dart` | **1**, 1 of 5 undetected | restored | 0, 5 of 5 |
+| `mutants` — on core code | the sibling-order tie-break assertions weakened | **1**, 2 of 23 undetected | restored | 0, 23 of 23 |
+| `constitution` / `app_no_raw_http` | `final c = HttpClient();` in an app lib source | **1** | reverted | 0 |
+| same | `import 'package:dio/dio.dart';` there | **1** | reverted | 0 |
+| same | `HttpOverrides.global = null` there | **1** | reverted | 0 |
+| same — scope, must NOT fire | all three in `apps/mobile/test/` | **0** | — | 0 |
+| same — scope, must NOT fire | `filefin_api`'s real dio and `HttpClient` use | **0** | — | 0 |
+| `constitution` / `dead_types` — generics | `final class EmptyBox<T> extends Box<T>`, never constructed | **1** (was **0** — invisible) | constructed as `EmptyBox<int>()` in a test | 0 |
+| same — control | the byte-identical **non-generic** probe | **1** before and after | constructed | 0 before and after |
+| `fixtures-verify` — nesting | the pre-M3.2 flat `categories.json` | **1**, names the seed line that fixes it | re-captured payload | 0 |
+| `fixtures-verify` — poster | every `hasPoster` flipped to false | **1**, names `tool/testserver/poster.jpg` | restored | 0 |
+| `deps` — `test_live` scope | undeclared `package:kiri_check/` in `test_live/` | **1** (was **0** without the directory in the source list) | import removed | 0 |
+| `it` — zero test files | every `*_test.dart` moved out of `test_live/` | **1** | moved back | 0 |
+| `it` — `@Skip` on the app suite | `@Skip('probe')` library annotation | **1** | reverted | 0 |
+| `it` — `flutter_test.yaml` | an empty one in `apps/mobile` | **1** | deleted | 0 |
+| `it` — the app floor | one live test deleted | **1**, "only 6 ran; the floor is 7" | restored | 0 |
+| `it` — the unit-suite leak | the app suite pointed at an empty directory, **both guards removed** | **rc 0**, "181 tests, floor 1" — the entire unit suite standing in | guards restored | **1**, names the directory |
+
+### Builds — what a device cannot be asked but a toolchain can
+
+| Build | Result | What it proves |
+|---|---|---|
+| `flutter build apk --debug` | **rc 0**, `app-debug.apk` | the merged manifest carries `android:minSdkVersion="26"`, `android:networkSecurityConfig="@xml/network_security_config"`, `android:usesCleartextTraffic="true"` and `android.permission.INTERNET` — read out of `build/app/intermediates/merged_manifest/` |
+| `flutter build ios --no-codesign` | **rc 0**, `Runner.app` 16.7 MB | the **built binary** plist carries `NSAppTransportSecurity` → `NSAllowsLocalNetworking: true`, the `NSLocalNetworkUsageDescription` string, and `MinimumOSVersion 15.0` — read with `plutil` |
+
+Neither proves a socket opens. Backlog rows 3–6.
+
+### Debt this milestone knowingly accepts
+
+- **NF2's exit criterion is met by proxy.** The invariants are gated; the
+  1460 µs/frame number is labelled and ungated; real frame timing is backlog
+  row 1.
+- **There is no platform `SecretStore`**, so the password is re-typed on every
+  cold start. Unchanged from M2, now visible to a user. Backlog row 12.
+- **No poster disk cache.** SPEC §7's `cache/posters/` is deferred; memory is
+  bounded by Flutter's `ImageCache`, which is backlog row 7 because nothing here
+  approaches its limit.
+- **No golden tests, against SPEC §9.** Nothing verifies pixels. A committed
+  golden is stable for one platform and one engine revision, and this repo
+  develops on macOS while CI runs `ubuntu-latest`. Layout and accessibility
+  assertions stand in — and did catch a `RenderFlex overflowed`. Backlog row 9.
+- **The Android network security config and the iOS ATS keys are asserted by
+  content and compiled, never exercised on a device.** Backlog rows 3–5.
+- **iOS will not reach a plain-http server outside the local network**, because
+  `NSAllowsArbitraryLoads` is deliberately not set. F1's warning says so in
+  words; backlog row 5 checks whether the words are true.
+- **The live suite's widgets do not issue their own calls** — backlog row 14.
+- **A seventh constitution check**, `app_no_raw_http`, baseline 0.
+- **One mutation exclusion added**, for two mutants that are genuinely
+  unkillable: every permutation of `Object.hash`'s arguments satisfies
+  `hashCode`'s only contract. Verified by hand, including the swapped-pair test
+  that passes either way. It costs a third mutant that was being killed, and the
+  pattern has to cover the whole statement — recorded above.
+- **`FILEFIN_MUTANTS_ALLOW_ZERO` was not used at M3.** No commit needed it.
+- **`MAX_UNCOVERED` was not raised.** It came close twice and both times the
+  answer was code rather than the number: `const FileFinApp()` was uncoverable
+  because a canonicalised const invocation executes nothing (one test builds it
+  with a runtime key), and `_depthOf`'s "gave up" return value was a line no
+  input could reach, so it was deleted (§1).
+- **`just it` is still local-only**, now over two suites, so the app's live path
+  is unprotected in CI as well.
+- **`flutter_lints` and `cupertino_icons` were deleted** from `flutter create`'s
+  output in the commit that produced it, along with `web/`, `macos/`, `linux/`,
+  `windows/`, the scaffolded `widget_test.dart` and the app-level `.gitignore`
+  the root already covers.
+- **CLAUDE.md §4 vs `docs/architecture.md` on pinning is RESOLVED**, not
+  outstanding. The user approved amending the constitution to state exact
+  pinning throughout; both edits are in the tree and `docs/architecture.md`'s
+  pinning section now opens "Reconciled at M3".
 
 ---
 

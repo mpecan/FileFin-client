@@ -4,14 +4,18 @@ A mobile client for [FileFin](https://github.com/xuedi/FileFin), a
 filesystem-first self-hosted media server (Go backend, Svelte web UI, EUPL
 v1.2).
 
-**Status:** M0, M1 and M2 complete, M3 next. The workspace, every quality gate, the
+**Status:** M0, M1, M2 and M3 complete, M4 next. The workspace, every quality gate, the
 git hooks and CI exist; `docs/server-api.md` records the contract and
 `test/fixtures/` holds captured real payloads. `packages/filefin_core` holds
 the wire models, the extension-type IDs, URL construction, the resume engine and
 `decide()` — pure Dart, no I/O. `packages/filefin_api` holds the HTTP client:
 typed endpoints, the cookie jar, F3's transparent 401 retry and F15's
 certificate pinning, with `just it` running it against a real `filefin` binary.
-`STATE.md` is the milestone-by-milestone record.
+`apps/mobile` holds the Flutter app: the shell, F1's add-server flow, F2's
+sign-in, and F4's category tree, virtualised poster grid and detail view.
+`STATE.md` is the milestone-by-milestone record, and
+`docs/verification-backlog.md` records every claim no test in this repository
+can check, each with the experiment that would settle it.
 
 **Verified against:** FileFin `master` @ v0.20.3, source read 2026-08-08.
 Every claim in §3 cites the upstream file that proves it.
@@ -412,7 +416,7 @@ written until it has them.
 | Settings | plain JSON in app support dir, no secrets | inspectable |
 | Network type | `connectivity_plus` | F13's metered check |
 | OS floor | Android 8 (API 26), iOS 15 | C5 |
-| State | Decided at M3, recorded in `docs/architecture.md` | Not chosen speculatively (§1) |
+| State | Hand-written `ChangeNotifier` + one `AsyncController<T>` + one `InheritedWidget`; **no state package** | Decided at M3 against real screens, not in the abstract. D9, and `docs/architecture.md`'s D-Q1 carries the reasoning and the retirement condition |
 | Testing | `test`, `mutation_test`, real-server harness | Mocks hide exactly the failures that matter |
 
 ---
@@ -503,7 +507,18 @@ Each gets a spike before the milestone that depends on it. Tracked in
   temp data dir: login; **session-loss recovery** (restart the server
   mid-test, assert F3 recovers silently); byte-range seek; the 307→HLS path
   including R1; the 415 path and F12's message.
-- **Widget/golden** — player controls and the poster grid.
+- **Widget/golden** — player controls and the poster grid. **There are no
+  golden tests, and that is a decision taken at M3 rather than an omission.** A
+  committed golden PNG is stable only for one platform and one engine revision;
+  this repository develops on macOS/arm64 and CI runs `ubuntu-latest`, so a
+  golden goes red on whichever machine did not generate it — and CLAUDE.md
+  forbids skipping a test to hide that. M3 asserts **layout** instead
+  (`tester.getSize`, `getTopLeft`, exact indentation arithmetic, widget counts)
+  plus `androidTapTargetGuideline`, `iOSTapTargetGuideline` and
+  `textContrastGuideline`, all of which are platform-stable — and one
+  `RenderFlex overflowed` was in fact caught that way. Nothing verifies pixels;
+  `docs/verification-backlog.md` row 9 carries the experiment (choose one
+  canonical platform and generate there) and what it costs to be without it.
 - **E2E** — add server → log in → browse → play 5s → assert progress landed in
   `meta.json` on disk.
 
@@ -516,7 +531,7 @@ Each gets a spike before the milestone that depends on it. Tracked in
 | **M0** | Workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture; spike **R1**; record the mpv licensing position (R4) | `just check` exits 0; every gate *seen to fail* |
 | **M1** | `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` | property tests green; purity gate passes |
 | **M2** | `filefin_api`: login, secure-store session+password, F3 retry, browse endpoints, **TLS pinning (F15)** | `just check` exits 0 **and** `just it` exits 0 on a machine with the binary: the integration suite survives a mid-test server restart; a self-signed server connects only after explicit accept, and a changed fingerprint blocks. **The TLS half is met against a Dart `HttpServer.bindSecure`, not against `filefin`** — the binary has no TLS listener at all (§8 R5) |
-| **M3** | App shell + browsing UI: tree, virtualised grid, detail (F4) | 5000-item category scrolls at 60fps (NF2) |
+| **M3** | App shell + browsing UI: tree, virtualised grid, detail (F4) | 5000-item category scrolls at 60fps (NF2) — **met by proxy, and the proxy is named.** 60fps cannot be measured headlessly: `flutter test` runs `flutter_tester` under a fake clock with no vsync and no rasterizer, and `flutter_tools` demands a connected device for anything under `integration_test/` (both measured at M3.0/M3.7). What IS gated is the property 60fps rests on — a bounded live-tile count at the top, middle and end of a 5000-item grid; poster requests far below the item count and never above the tiles ever built; the listing fetched exactly once; a scrolled-away tile cancelling. A build+layout wall-clock number is printed and deliberately NOT gated. Real frame timing is `docs/verification-backlog.md` row 1 |
 | **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | an MKV/HEVC file plays via direct bytes where the server allows |
 | **M5** | HLS path + F12 messaging | a transcoded file plays; a 415 explains itself |
 | **M6** | Search, home rows, favourite/rating/watched (F5, F6, F10) | |
@@ -571,9 +586,8 @@ be reversed *here first*, then in the sections it touches.
 | D6 | Trust-on-first-use with certificate pinning | Self-hosted servers commonly use self-signed or private-CA certs | F15, M2 |
 | D7 | Android 8 / iOS 15 floor | Within `media_kit` support, modern PiP and media-session APIs, small CI matrix | C5 |
 | D8 | Direct APK + TestFlight/sideload; no app store | Removes store review from the release path, and defuses the mpv GPL blocker | C6, R4 |
+| D9 | App state is a hand-written `ChangeNotifier` plus one generic `AsyncController<T>`, `AsyncView<T>` and `InheritedWidget`. No state-management package | M3's real screens are three, each one fetch, one cancel-on-dispose, one error render. A framework's rent at that size is unpaid surface (§1, §5) — and, less obviously, it would SHRINK what `just mutants` reaches, because framework-internal branching is never in our diff. Retirement condition at M7 in `docs/architecture.md` | §6, M3 |
 
 ### Still open
 
-- **Q1.** Which state-management approach for the app layer? Deliberately
-  deferred to M3 so it is chosen against real screens rather than in the
-  abstract (§6). Not a blocker before then.
+Nothing. Q1 was the last entry and became D9 at M3.

@@ -122,10 +122,12 @@ gates can never disagree about which files count:
 | `constitution` / `dead_types` | `dart_sources` | a variant constructed only by a test still has a consumer; §5 asks for *a* consumer, and a test is one. |
 | `constitution` / `undocumented_endpoint` | `dart_lib_sources` | a path literal in a test fixture helper is not a call we make. |
 | `constitution` / `secret_tostring` | `dart_lib_sources` | §9 is about what ships and what logs. |
-| `deps` | every `pubspec.yaml`, sources = that package's `lib bin test integration_test tool example` | a dev-dependency used only by tests is used. `integration_test` joined at M2: without it an undeclared import in an integration suite was reported by nothing, and Dart resolves one anyway through a sibling workspace member — which is exactly how an undeclared dependency survives to break a clean checkout. Proven at M2.7: the same undeclared import gave exit 0 before and 1 after. |
+| `constitution` / `app_no_raw_http` | `apps/*/lib` **only** | added at M3. `filefin_api` cannot satisfy it — dio and `HttpClient` are its entire job — so `dart_lib_sources` would report the layer that is behaving correctly. Tests are out of scope too: `test_live/` sets `HttpOverrides.global = null` to get real sockets back from `flutter_test`'s binding, which is the right thing to do there. |
+| `deps` | every `pubspec.yaml`, sources = that package's `lib bin test integration_test test_live tool example` | a dev-dependency used only by tests is used. `integration_test` joined at M2: without it an undeclared import in an integration suite was reported by nothing, and Dart resolves one anyway through a sibling workspace member — which is exactly how an undeclared dependency survives to break a clean checkout. Proven at M2.7: the same undeclared import gave exit 0 before and 1 after. `test_live` joined at M3.9 for the identical reason in a new location, and was proven the same way. |
 | `dupes` | `packages/` + `apps/`, `*.dart`, generated excluded | generated code is duplicative by construction and nobody can refactor it. |
 | `coverage` | `report-on` each package's `lib/`, `--check-ignore`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. `--check-ignore` is what keeps generated freezed boilerplate out of it — see below. |
-| `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. Never runs over `integration_test/`. |
+| `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. Never runs over `integration_test/` or `test_live/`. |
+| `test` / `coverage` / `mutants` — the RUNNER | by **location**: `packages/*` → `dart test`, `apps/*` → `flutter test` | one rule, enforced in `run-tests.sh` and consulted by `check-mutants.sh`. Location is what a person decides deliberately; a pubspec is what drifts. `run-tests.sh` cross-checks the two and FAILS on a disagreement rather than picking silently — guessing from the pubspec would exempt a package the moment the pubspec is what changed, which is the defect `core_purity` had at M2. |
 | `fixtures-verify` | `test/fixtures/**` | reads committed files only, so it runs in CI without a server. |
 
 Generated files are exempt from every gate. The exemption lives in
@@ -229,15 +231,18 @@ The policy for a package **when it is added**: pinned exactly (no caret), with
 a one-line reason in the pubspec. Every row below is in the tree as of M2
 except `glados`, which was replaced by `kiri_check` — see STATE.md.
 
-**The policy conflicts with CLAUDE.md §4 as written, and the stricter reading
-wins.** §4 says "pre-1.0 packages are pinned exactly", which implies caret above
-1.0; this file says exact on introduction, full stop. M2 resolved it in favour
-of this file and recorded why in the pubspec: a `dio` patch release that changes
-interceptor ordering or `fetch` semantics silently changes F3, and both `just
-mutants` and `just codegen-check` need identical resolution on every machine to
-answer the same way twice. **§4's wording deserves a one-line reconciliation**
-so the two documents stop disagreeing; it is flagged in STATE.md rather than
-edited unilaterally, because CLAUDE.md is the constitution.
+**Reconciled at M3.** This policy and CLAUDE.md §4 used to disagree: §4 said
+"pre-1.0 packages are pinned exactly", implying caret above 1.0, while this file
+said exact on introduction, full stop. M2 followed the stricter reading and
+flagged the conflict rather than editing the constitution unilaterally; M3 put
+the question to the user, who agreed to amend §4. §4 now states exact pinning
+throughout, so the two documents agree and this section is the detail behind it.
+
+The reasoning that settled it: `just mutants` runs the whole suite once per
+mutant and `just codegen-check` compares generated output byte-for-byte, so both
+gates are non-deterministic across machines the moment a constraint can resolve
+two ways. A caret range is also how a patch release silently changes behaviour
+the tests were written against — `dio` is the live example.
 
 | Package | In the tree | Why exact |
 |---|---|---|
@@ -387,8 +392,73 @@ instance would 429 every later suite.
 
 ---
 
+## D-Q1 — state management for the app layer (decided at M3)
+
+**A hand-written `ChangeNotifier`, one generic `AsyncController<T>`, one
+`AsyncView<T>` and one `InheritedWidget`. No state-management package.**
+SPEC.md §13 records it as D9; this is the reasoning.
+
+It was deferred to M3 precisely so it could be chosen against real screens, and
+the real screens turned out to be three — tree, grid, detail — each of which is
+one async fetch, one cancel-on-dispose and one error render.
+
+| Criterion | Verdict |
+|---|---|
+| §4 rent | the rent a framework would have to pay is "one fetch per screen". `ChangeNotifier`, `ListenableBuilder` and `InheritedWidget` ship with the framework and cost nothing |
+| §5 dead branches | a package brings surface this app never constructs — `autoDispose`, `family`, `BlocObserver`. Ours is `UiLoading`/`UiData`/`UiFailure`, all three constructed, `dead_types` clean |
+| §6 boundary | `AsyncController` holds a port and a `CancelToken` and imports no widget, so it is tested with plain `test()` — no binding, no pumping |
+| mutation | **a framework would SHRINK what `just mutants` reaches.** Framework-internal branching is not in our diff, so no mutant is ever generated for it; the branching we wrote produces mutants our tests have to kill, and did |
+| duplication | three screens each writing loading/error/data is ~20 lines three times, which trips `jscpd` at 15 lines / 50 tokens. `AsyncView<T>` is the structural answer |
+
+**RETIREMENT CONDITION — revisit at M7.** Adopt `flutter_riverpod` *then*, with
+the rent it pays then, if either of two things is true: per-server scoping (F11)
+needs more than one `InheritedWidget`, or M4's player needs a listenable shared
+across three routes. Neither is true at M3, and building for either now would be
+§1's speculative construction.
+
+## Where the app's live suite lives, and why it is not `integration_test/`
+
+`apps/mobile/test_live/`, run by `tool/run-integration.sh` as an ordinary
+headless `flutter test`.
+
+`flutter test integration_test` is routed to the **device** path by the tool's
+`_shouldRunAsIntegrationTests`: when every test path starts with
+`<cwd>/integration_test` it requires a connected device and
+`package:integration_test`, and it tool-exits if one invocation mixes
+directories. A different directory name is the whole mechanism.
+
+Two consequences worth writing down:
+
+- **`package:test` and `flutter_test` cannot coexist in one suite.**
+  `filefin_api`'s `server_harness.dart` and `fixture_run.dart` import neither,
+  so the app imports them by relative path and reuses the real server harness.
+  `harness.dart` beside them does import `package:test`, which is why the app
+  writes ten lines of its own glue instead.
+- **`flutter test <dir>` over a directory holding no `*_test.dart` silently
+  runs the package's DEFAULT `test/` directory** and prints "All tests passed!".
+  Measured at M3.0 and demonstrated end to end at M3.9: with the guards
+  removed, `just it` reported "181 tests, floor 1" over the unit suite. Two
+  guards now sit in front of it — a file count before the run, and a refusal of
+  any `test/…dart:` path in the output after it.
+
+## How coverage is produced for a Flutter package
+
+`flutter test --coverage` writes lcov itself: there is no `.vm.json` hitmap and
+no `format_coverage` step, so none of the `--packages` / `--report-on`
+machinery applies to it. What it writes is **package-relative** —
+`SF:lib/src/app.dart` — while the missing-record cross-check anchors on the
+repo-relative path, so `run-coverage.sh` rewrites the prefix.
+
+The rewrite is guarded rather than trusted: an `SF:` line that does not begin
+`SF:lib/` is a hard failure, because a blind rewrite of some other shape
+produces a record that silently names no file. Proven by shadowing `flutter` on
+PATH with a stub that emits absolute paths.
+
+Two facts measured at M3.0 before any of this was written: the shape really is
+`SF:lib/…`, and this path really does honour `// coverage:ignore-file` — so
+`run-coverage.sh`'s refusal of that comment in hand-written lib source protects
+the app exactly as it protects the packages.
+
 ## Open questions
 
-- **Q1 — state management for the app layer.** Deliberately deferred to M3, so
-  it is chosen against real screens rather than in the abstract (SPEC.md §6,
-  §13 "Still open"). Not a blocker before then. The decision lands here.
+- None. Q1 was the last one and is decided above.
