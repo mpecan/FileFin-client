@@ -104,7 +104,13 @@ void main() {
         // index and the other fields default; only these two are consulted.
         FileInfo(size: size, transcode: transcode),
         network,
-        PlaybackSettings(wifiOnly: wifiOnly, meteredWarnBytes: _threshold),
+        PlaybackSettings(
+          wifiOnly: wifiOnly,
+          meteredWarnBytes: _threshold,
+          progressIntervalSecs: 30,
+        ),
+        transport: PlaybackTransport.plainHttp,
+        allowUnverifiedPlayback: false,
       );
       expect(decision, _matcherFor(expected, size));
     });
@@ -117,15 +123,28 @@ void main() {
     const settings = PlaybackSettings(
       wifiOnly: false,
       meteredWarnBytes: _threshold,
+      progressIntervalSecs: 30,
     );
     FileInfo sized(int size) => FileInfo(size: size);
 
     expect(
-      decide(sized(_threshold), NetworkType.metered, settings),
+      decide(
+        sized(_threshold),
+        NetworkType.metered,
+        settings,
+        transport: PlaybackTransport.plainHttp,
+        allowUnverifiedPlayback: false,
+      ),
       isA<PlayDirect>(),
     );
     expect(
-      decide(sized(_threshold + 1), NetworkType.metered, settings),
+      decide(
+        sized(_threshold + 1),
+        NetworkType.metered,
+        settings,
+        transport: PlaybackTransport.plainHttp,
+        allowUnverifiedPlayback: false,
+      ),
       isA<ConfirmLargeOnMetered>(),
     );
   });
@@ -138,7 +157,13 @@ void main() {
         decide(
               const FileInfo(size: 900, transcode: true),
               NetworkType.metered,
-              const PlaybackSettings(wifiOnly: false, meteredWarnBytes: 100),
+              const PlaybackSettings(
+                wifiOnly: false,
+                meteredWarnBytes: 100,
+                progressIntervalSecs: 30,
+              ),
+              transport: PlaybackTransport.plainHttp,
+              allowUnverifiedPlayback: false,
             )
             as ConfirmLargeOnMetered;
     expect(decision.bytes, 900);
@@ -150,19 +175,30 @@ void main() {
     // decide() must never reimplement transcode.DirectPlayable. These two
     // fixtures are the two branches, as the real server decided them.
     const wifi = NetworkType.wifi;
-    const settings = PlaybackSettings(wifiOnly: false, meteredWarnBytes: 1);
+    const settings = PlaybackSettings(
+      wifiOnly: false,
+      meteredWarnBytes: 1,
+      progressIntervalSecs: 30,
+    );
+    PlaybackDecision play(FileInfo f) => decide(
+      f,
+      wifi,
+      settings,
+      transport: PlaybackTransport.plainHttp,
+      allowUnverifiedPlayback: false,
+    );
 
     final direct = MediaDetail.fromJson(
       loadFixture('media_detail_directplay'),
     ).files.single;
     expect(direct.transcode, isFalse);
-    expect(decide(direct, wifi, settings), isA<PlayDirect>());
+    expect(play(direct), isA<PlayDirect>());
 
     final hls = MediaDetail.fromJson(
       loadFixture('media_detail_transcode'),
     ).files.first;
     expect(hls.transcode, isTrue);
-    expect(decide(hls, wifi, settings), isA<PlayHls>());
+    expect(play(hls), isA<PlayHls>());
   });
 
   test('a decision is exhaustively switchable, with no default arm', () {
@@ -190,17 +226,149 @@ void main() {
       describe(const Refuse(RefuseReason.wifiOnlyOnMetered)),
       'refuse wifiOnlyOnMetered',
     );
+    expect(
+      describe(const Refuse(RefuseReason.unverifiablePlaybackTls)),
+      'refuse unverifiablePlaybackTls',
+    );
   });
 
-  test('PlaybackSettings holds exactly the two levers that exist today', () {
-    const settings = PlaybackSettings(wifiOnly: true, meteredWarnBytes: 42);
+  group("D10 — the playback socket is not F15's socket", () {
+    // libmpv opens its own connection from native code and verifies no
+    // certificate by default (measured: mpv 0.41.0 against this repository's
+    // own self-signed server_a.crt — default accepted and the server logged the
+    // request, `--tls-verify=yes` refused with error:0A000086 and the server
+    // logged nothing). So a pinned server is refused unless the user has said
+    // otherwise for that server.
+    const settings = PlaybackSettings(
+      wifiOnly: false,
+      meteredWarnBytes: 1 << 40,
+      progressIntervalSecs: 30,
+    );
+
+    PlaybackDecision over(
+      PlaybackTransport transport, {
+      required bool allow,
+      NetworkType network = NetworkType.wifi,
+    }) => decide(
+      const FileInfo(size: 1),
+      network,
+      settings,
+      transport: transport,
+      allowUnverifiedPlayback: allow,
+    );
+
+    test('plain http plays — F1 already warned about it in words', () {
+      expect(
+        over(PlaybackTransport.plainHttp, allow: false),
+        isA<PlayDirect>(),
+      );
+    });
+
+    test('OS-trusted TLS plays', () {
+      expect(
+        over(PlaybackTransport.osTrustedTls, allow: false),
+        isA<PlayDirect>(),
+      );
+    });
+
+    test('a pinned certificate is REFUSED by default', () {
+      expect(
+        over(PlaybackTransport.pinnedTls, allow: false),
+        isA<Refuse>().having(
+          (r) => r.reason,
+          'reason',
+          RefuseReason.unverifiablePlaybackTls,
+        ),
+      );
+    });
+
+    test('the per-server override lets it through', () {
+      expect(over(PlaybackTransport.pinnedTls, allow: true), isA<PlayDirect>());
+    });
+
+    test('the override does nothing for the other two transports', () {
+      // It must not become a general "play anything" switch: the only thing it
+      // relaxes is the one refusal it is named for.
+      expect(over(PlaybackTransport.plainHttp, allow: true), isA<PlayDirect>());
+      expect(
+        over(PlaybackTransport.osTrustedTls, allow: true),
+        isA<PlayDirect>(),
+      );
+    });
+
+    test('offline still refuses first, pin or no pin', () {
+      // Order matters for the message a user reads: with no connection at all,
+      // "turn on unverified playback" is not the useful sentence.
+      expect(
+        over(
+          PlaybackTransport.pinnedTls,
+          allow: false,
+          network: NetworkType.none,
+        ),
+        isA<Refuse>().having(
+          (r) => r.reason,
+          'reason',
+          RefuseReason.offline,
+        ),
+      );
+    });
+
+    test('the TLS refusal beats both metered guards', () {
+      const wifiOnly = PlaybackSettings(
+        wifiOnly: true,
+        meteredWarnBytes: 0,
+        progressIntervalSecs: 30,
+      );
+      expect(
+        decide(
+          const FileInfo(size: 1 << 30),
+          NetworkType.metered,
+          wifiOnly,
+          transport: PlaybackTransport.pinnedTls,
+          allowUnverifiedPlayback: false,
+        ),
+        isA<Refuse>().having(
+          (r) => r.reason,
+          'reason',
+          RefuseReason.unverifiablePlaybackTls,
+        ),
+      );
+    });
+
+    test(
+      'every transport is reachable and named on the wire of no request',
+      () {
+        expect(PlaybackTransport.values.map((t) => t.name), [
+          'plainHttp',
+          'osTrustedTls',
+          'pinnedTls',
+        ]);
+      },
+    );
+  });
+
+  test('PlaybackSettings holds exactly the levers that exist today', () {
+    const settings = PlaybackSettings(
+      wifiOnly: true,
+      meteredWarnBytes: 42,
+      progressIntervalSecs: 15,
+    );
+    expect(settings.progressIntervalSecs, 15);
+    expect(
+      settings.copyWith(progressIntervalSecs: 60).progressIntervalSecs,
+      60,
+    );
     expect(settings.wifiOnly, isTrue);
     expect(settings.meteredWarnBytes, 42);
     expect(settings.copyWith(wifiOnly: false).wifiOnly, isFalse);
     expect(settings.copyWith(meteredWarnBytes: 7).meteredWarnBytes, 7);
     expect(
       settings,
-      const PlaybackSettings(wifiOnly: true, meteredWarnBytes: 42),
+      const PlaybackSettings(
+        wifiOnly: true,
+        meteredWarnBytes: 42,
+        progressIntervalSecs: 15,
+      ),
     );
   });
 }

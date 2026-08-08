@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PlaybackSettings {
 
- bool get wifiOnly; int get meteredWarnBytes;
+ bool get wifiOnly; int get meteredWarnBytes; int get progressIntervalSecs;
 /// Create a copy of PlaybackSettings
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $PlaybackSettingsCopyWith<PlaybackSettings> get copyWith => _$PlaybackSettingsCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlaybackSettings&&(identical(other.wifiOnly, wifiOnly) || other.wifiOnly == wifiOnly)&&(identical(other.meteredWarnBytes, meteredWarnBytes) || other.meteredWarnBytes == meteredWarnBytes));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlaybackSettings&&(identical(other.wifiOnly, wifiOnly) || other.wifiOnly == wifiOnly)&&(identical(other.meteredWarnBytes, meteredWarnBytes) || other.meteredWarnBytes == meteredWarnBytes)&&(identical(other.progressIntervalSecs, progressIntervalSecs) || other.progressIntervalSecs == progressIntervalSecs));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,wifiOnly,meteredWarnBytes);
+int get hashCode => Object.hash(runtimeType,wifiOnly,meteredWarnBytes,progressIntervalSecs);
 
 @override
 String toString() {
-  return 'PlaybackSettings(wifiOnly: $wifiOnly, meteredWarnBytes: $meteredWarnBytes)';
+  return 'PlaybackSettings(wifiOnly: $wifiOnly, meteredWarnBytes: $meteredWarnBytes, progressIntervalSecs: $progressIntervalSecs)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $PlaybackSettingsCopyWith<$Res>  {
   factory $PlaybackSettingsCopyWith(PlaybackSettings value, $Res Function(PlaybackSettings) _then) = _$PlaybackSettingsCopyWithImpl;
 @useResult
 $Res call({
- bool wifiOnly, int meteredWarnBytes
+ bool wifiOnly, int meteredWarnBytes, int progressIntervalSecs
 });
 
 
@@ -62,10 +62,11 @@ class _$PlaybackSettingsCopyWithImpl<$Res>
 
 /// Create a copy of PlaybackSettings
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? wifiOnly = null,Object? meteredWarnBytes = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? wifiOnly = null,Object? meteredWarnBytes = null,Object? progressIntervalSecs = null,}) {
   return _then(_self.copyWith(
 wifiOnly: null == wifiOnly ? _self.wifiOnly : wifiOnly // ignore: cast_nullable_to_non_nullable
 as bool,meteredWarnBytes: null == meteredWarnBytes ? _self.meteredWarnBytes : meteredWarnBytes // ignore: cast_nullable_to_non_nullable
+as int,progressIntervalSecs: null == progressIntervalSecs ? _self.progressIntervalSecs : progressIntervalSecs // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }
@@ -151,10 +152,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( bool wifiOnly,  int meteredWarnBytes)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( bool wifiOnly,  int meteredWarnBytes,  int progressIntervalSecs)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlaybackSettings() when $default != null:
-return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
+return $default(_that.wifiOnly,_that.meteredWarnBytes,_that.progressIntervalSecs);case _:
   return orElse();
 
 }
@@ -172,10 +173,10 @@ return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( bool wifiOnly,  int meteredWarnBytes)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( bool wifiOnly,  int meteredWarnBytes,  int progressIntervalSecs)  $default,) {final _that = this;
 switch (_that) {
 case _PlaybackSettings():
-return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
+return $default(_that.wifiOnly,_that.meteredWarnBytes,_that.progressIntervalSecs);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -192,10 +193,10 @@ return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( bool wifiOnly,  int meteredWarnBytes)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( bool wifiOnly,  int meteredWarnBytes,  int progressIntervalSecs)?  $default,) {final _that = this;
 switch (_that) {
 case _PlaybackSettings() when $default != null:
-return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
+return $default(_that.wifiOnly,_that.meteredWarnBytes,_that.progressIntervalSecs);case _:
   return null;
 
 }
@@ -207,11 +208,12 @@ return $default(_that.wifiOnly,_that.meteredWarnBytes);case _:
 
 
 class _PlaybackSettings implements PlaybackSettings {
-  const _PlaybackSettings({required this.wifiOnly, required this.meteredWarnBytes});
+  const _PlaybackSettings({required this.wifiOnly, required this.meteredWarnBytes, required this.progressIntervalSecs});
   
 
 @override final  bool wifiOnly;
 @override final  int meteredWarnBytes;
+@override final  int progressIntervalSecs;
 
 /// Create a copy of PlaybackSettings
 /// with the given fields replaced by the non-null parameter values.
@@ -223,16 +225,16 @@ _$PlaybackSettingsCopyWith<_PlaybackSettings> get copyWith => __$PlaybackSetting
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlaybackSettings&&(identical(other.wifiOnly, wifiOnly) || other.wifiOnly == wifiOnly)&&(identical(other.meteredWarnBytes, meteredWarnBytes) || other.meteredWarnBytes == meteredWarnBytes));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlaybackSettings&&(identical(other.wifiOnly, wifiOnly) || other.wifiOnly == wifiOnly)&&(identical(other.meteredWarnBytes, meteredWarnBytes) || other.meteredWarnBytes == meteredWarnBytes)&&(identical(other.progressIntervalSecs, progressIntervalSecs) || other.progressIntervalSecs == progressIntervalSecs));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,wifiOnly,meteredWarnBytes);
+int get hashCode => Object.hash(runtimeType,wifiOnly,meteredWarnBytes,progressIntervalSecs);
 
 @override
 String toString() {
-  return 'PlaybackSettings(wifiOnly: $wifiOnly, meteredWarnBytes: $meteredWarnBytes)';
+  return 'PlaybackSettings(wifiOnly: $wifiOnly, meteredWarnBytes: $meteredWarnBytes, progressIntervalSecs: $progressIntervalSecs)';
 }
 
 
@@ -243,7 +245,7 @@ abstract mixin class _$PlaybackSettingsCopyWith<$Res> implements $PlaybackSettin
   factory _$PlaybackSettingsCopyWith(_PlaybackSettings value, $Res Function(_PlaybackSettings) _then) = __$PlaybackSettingsCopyWithImpl;
 @override @useResult
 $Res call({
- bool wifiOnly, int meteredWarnBytes
+ bool wifiOnly, int meteredWarnBytes, int progressIntervalSecs
 });
 
 
@@ -260,10 +262,11 @@ class __$PlaybackSettingsCopyWithImpl<$Res>
 
 /// Create a copy of PlaybackSettings
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? wifiOnly = null,Object? meteredWarnBytes = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? wifiOnly = null,Object? meteredWarnBytes = null,Object? progressIntervalSecs = null,}) {
   return _then(_PlaybackSettings(
 wifiOnly: null == wifiOnly ? _self.wifiOnly : wifiOnly // ignore: cast_nullable_to_non_nullable
 as bool,meteredWarnBytes: null == meteredWarnBytes ? _self.meteredWarnBytes : meteredWarnBytes // ignore: cast_nullable_to_non_nullable
+as int,progressIntervalSecs: null == progressIntervalSecs ? _self.progressIntervalSecs : progressIntervalSecs // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }

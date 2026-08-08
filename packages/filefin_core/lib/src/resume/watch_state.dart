@@ -103,12 +103,49 @@ abstract class WatchState with _$WatchState {
   );
 }
 
+/// Why a progress report is being sent — the wire body's `event` field.
+///
+/// **Four of the five are upstream's own strings**, read off its player:
+/// `checkpoint`, `pause`, `ended` and `stop`
+/// (`web/src/views/library/Player.svelte`). `seek` is ours, and adding it is
+/// safe in the strongest sense available — `state.Apply` never reads `event` at
+/// all, so no value of it can change what the server stores. It is sent because
+/// a server log that says which trigger fired is worth more than one that says
+/// `checkpoint` five different ways.
+enum ProgressEvent {
+  /// Playback simply advanced past the reporting interval.
+  checkpoint,
+
+  /// The user paused, or the OS backgrounded the app (NF6).
+  pause,
+
+  /// A seek completed. **Ours, not upstream's.**
+  seek,
+
+  /// Playback reached the end of the file.
+  ended,
+
+  /// The player is going away — the route closed, or the item changed.
+  stop;
+
+  /// The exact token the wire body carries.
+  String get wire => name;
+
+  /// Whether this event reports regardless of how long ago the last one was.
+  ///
+  /// The interval exists to stop a *continuous* position from reporting on
+  /// every tick. Every other trigger is a discrete thing that just happened and
+  /// may be the last chance to record it — a `pause` that the OS turns into a
+  /// kill is the whole reason NF6's pointer survives.
+  bool get isTerminal => this != ProgressEvent.checkpoint;
+}
+
 /// One playback report, as `POST /api/media/{id}/progress` sends it.
 ///
-/// The wire body also carries `event`, which the engine ignores — nothing in
-/// `state.Apply` reads it. It is not modelled here: a field no code reads is a
-/// dead branch (§5), and it arrives at M4 with the progress reporter that
-/// actually sends it, for the same reason `progressIntervalSecs` does.
+/// [event] is on the wire and **invisible to the engine**: nothing in
+/// `state.Apply` reads it, which is why `applyProgress` ignores it too and why
+/// adding it here changed no captured vector. It defaults to
+/// [ProgressEvent.checkpoint] so every existing construction keeps its meaning.
 @freezed
 abstract class ProgressReport with _$ProgressReport {
   /// A report of [position] seconds into a [duration]-second [file].
@@ -116,6 +153,7 @@ abstract class ProgressReport with _$ProgressReport {
     required FileIndex file,
     required double position,
     required double duration,
+    @Default(ProgressEvent.checkpoint) ProgressEvent event,
   }) = _ProgressReport;
 }
 

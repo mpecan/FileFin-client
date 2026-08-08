@@ -564,7 +564,7 @@ $ResumePointerCopyWith<$Res>? get pointer {
 /// @nodoc
 mixin _$ProgressReport {
 
- FileIndex get file; double get position; double get duration;
+ FileIndex get file; double get position; double get duration; ProgressEvent get event;
 /// Create a copy of ProgressReport
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -575,16 +575,16 @@ $ProgressReportCopyWith<ProgressReport> get copyWith => _$ProgressReportCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ProgressReport&&(identical(other.file, file) || other.file == file)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ProgressReport&&(identical(other.file, file) || other.file == file)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.event, event) || other.event == event));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,file,position,duration);
+int get hashCode => Object.hash(runtimeType,file,position,duration,event);
 
 @override
 String toString() {
-  return 'ProgressReport(file: $file, position: $position, duration: $duration)';
+  return 'ProgressReport(file: $file, position: $position, duration: $duration, event: $event)';
 }
 
 
@@ -595,7 +595,7 @@ abstract mixin class $ProgressReportCopyWith<$Res>  {
   factory $ProgressReportCopyWith(ProgressReport value, $Res Function(ProgressReport) _then) = _$ProgressReportCopyWithImpl;
 @useResult
 $Res call({
- FileIndex file, double position, double duration
+ FileIndex file, double position, double duration, ProgressEvent event
 });
 
 
@@ -612,12 +612,13 @@ class _$ProgressReportCopyWithImpl<$Res>
 
 /// Create a copy of ProgressReport
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? file = null,Object? position = null,Object? duration = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? file = null,Object? position = null,Object? duration = null,Object? event = null,}) {
   return _then(_self.copyWith(
 file: null == file ? _self.file : file // ignore: cast_nullable_to_non_nullable
 as FileIndex,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double,duration: null == duration ? _self.duration : duration // ignore: cast_nullable_to_non_nullable
-as double,
+as double,event: null == event ? _self.event : event // ignore: cast_nullable_to_non_nullable
+as ProgressEvent,
   ));
 }
 
@@ -702,10 +703,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( FileIndex file,  double position,  double duration)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( FileIndex file,  double position,  double duration,  ProgressEvent event)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ProgressReport() when $default != null:
-return $default(_that.file,_that.position,_that.duration);case _:
+return $default(_that.file,_that.position,_that.duration,_that.event);case _:
   return orElse();
 
 }
@@ -723,10 +724,10 @@ return $default(_that.file,_that.position,_that.duration);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( FileIndex file,  double position,  double duration)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( FileIndex file,  double position,  double duration,  ProgressEvent event)  $default,) {final _that = this;
 switch (_that) {
 case _ProgressReport():
-return $default(_that.file,_that.position,_that.duration);case _:
+return $default(_that.file,_that.position,_that.duration,_that.event);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -743,10 +744,10 @@ return $default(_that.file,_that.position,_that.duration);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( FileIndex file,  double position,  double duration)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( FileIndex file,  double position,  double duration,  ProgressEvent event)?  $default,) {final _that = this;
 switch (_that) {
 case _ProgressReport() when $default != null:
-return $default(_that.file,_that.position,_that.duration);case _:
+return $default(_that.file,_that.position,_that.duration,_that.event);case _:
   return null;
 
 }
@@ -758,12 +759,13 @@ return $default(_that.file,_that.position,_that.duration);case _:
 
 
 class _ProgressReport implements ProgressReport {
-  const _ProgressReport({required this.file, required this.position, required this.duration});
+  const _ProgressReport({required this.file, required this.position, required this.duration, this.event = ProgressEvent.checkpoint});
   
 
 @override final  FileIndex file;
 @override final  double position;
 @override final  double duration;
+@override@JsonKey() final  ProgressEvent event;
 
 /// Create a copy of ProgressReport
 /// with the given fields replaced by the non-null parameter values.
@@ -775,16 +777,16 @@ _$ProgressReportCopyWith<_ProgressReport> get copyWith => __$ProgressReportCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ProgressReport&&(identical(other.file, file) || other.file == file)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ProgressReport&&(identical(other.file, file) || other.file == file)&&(identical(other.position, position) || other.position == position)&&(identical(other.duration, duration) || other.duration == duration)&&(identical(other.event, event) || other.event == event));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,file,position,duration);
+int get hashCode => Object.hash(runtimeType,file,position,duration,event);
 
 @override
 String toString() {
-  return 'ProgressReport(file: $file, position: $position, duration: $duration)';
+  return 'ProgressReport(file: $file, position: $position, duration: $duration, event: $event)';
 }
 
 
@@ -795,7 +797,7 @@ abstract mixin class _$ProgressReportCopyWith<$Res> implements $ProgressReportCo
   factory _$ProgressReportCopyWith(_ProgressReport value, $Res Function(_ProgressReport) _then) = __$ProgressReportCopyWithImpl;
 @override @useResult
 $Res call({
- FileIndex file, double position, double duration
+ FileIndex file, double position, double duration, ProgressEvent event
 });
 
 
@@ -812,12 +814,13 @@ class __$ProgressReportCopyWithImpl<$Res>
 
 /// Create a copy of ProgressReport
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? file = null,Object? position = null,Object? duration = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? file = null,Object? position = null,Object? duration = null,Object? event = null,}) {
   return _then(_ProgressReport(
 file: null == file ? _self.file : file // ignore: cast_nullable_to_non_nullable
 as FileIndex,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double,duration: null == duration ? _self.duration : duration // ignore: cast_nullable_to_non_nullable
-as double,
+as double,event: null == event ? _self.event : event // ignore: cast_nullable_to_non_nullable
+as ProgressEvent,
   ));
 }
 

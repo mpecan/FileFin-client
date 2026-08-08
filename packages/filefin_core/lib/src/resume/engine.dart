@@ -29,6 +29,13 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
 
 /// Go's `round` (`state/engine.go:43-48`): `int(x + 0.5)`, clamped at 0.
 ///
+/// **Public because the progress policy has to dedupe in exactly this
+/// arithmetic.** `decideReport` compares a new position against the seconds the
+/// server stored for the last one; comparing raw doubles instead would drift
+/// from the pointer by up to half a second per report, and `round(29.5) == 30`
+/// versus `29.5 < 30` is the boundary where the two disagree. One rounding, one
+/// place.
+///
 /// **Not Dart's `.round()`.** The two differ for negatives — `(-0.5).round()`
 /// is -1 — and -0.5 is reachable from a seek to the very start of a file.
 ///
@@ -44,7 +51,7 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
 /// `encoding/json` refuses to marshal a non-finite float, so no server payload
 /// can carry one. This is a decision about our runtime, not a claim about the
 /// server.
-int _roundSeconds(double x) {
+int roundReportedSeconds(double x) {
   if (!x.isFinite) return 0;
   if (x < 0) return 0;
   return (x + 0.5).toInt();
@@ -81,7 +88,7 @@ WatchState applyProgress(
       report.position / report.duration >= watchedThreshold;
 
   var targetIndex = file;
-  var targetSeconds = _roundSeconds(report.position);
+  var targetSeconds = roundReportedSeconds(report.position);
   var watched = state.watched;
   if (crossed) {
     if (file == last) {

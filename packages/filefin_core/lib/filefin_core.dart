@@ -26,6 +26,8 @@ export 'src/models/media_detail.dart';
 export 'src/models/media_summary.dart';
 export 'src/models/server_state.dart';
 export 'src/playback/decision.dart';
+export 'src/playback/progress_policy.dart';
+export 'src/playback/resume_choice.dart';
 export 'src/resume/engine.dart';
 export 'src/resume/watch_state.dart';
 export 'src/search_field.dart';
