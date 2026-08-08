@@ -53,19 +53,52 @@ check_placeholders() {
 # because either alone is evadable: the import scan catches code that reaches
 # for the outside world, the pubspec scan catches a dependency that would let
 # it (a package listed but not yet imported is tomorrow's violation).
+#
+# TWO SCOPES, because two different claims are being enforced.
+#
+# `filefin_core` is I/O-free AND deterministic: no dart:io, no HTTP client, no
+# ambient clock or randomness. That is §6 as written.
+#
+# Every OTHER pure-Dart package — `filefin_api` today — claims only to be
+# **Flutter-free**, and until M2's review that claim was prose. `CORE_LIB` was
+# hard-coded here, so the scan never looked at `filefin_api` at all and the
+# sentence in its pubspec was enforced by nobody. It is true today (measured: no
+# flutter/flutter_test/sky_engine in either pubspec.lock, no `package:flutter`
+# or `dart:ui` import anywhere), and a claim that is true and unenforced is a
+# claim that stops being true in a commit nobody reads twice. `filefin_api` DOES
+# use dart:io and dio — F15 cannot exist without them — so the determinism half
+# stays core-only rather than being watered down for both.
+#
+# Membership is decided by LOCATION, and deliberately not by the pubspec.
+# `packages/` is pure Dart and `apps/` is where Flutter lives (§6, and
+# docs/architecture.md). A rule keyed on "does this pubspec depend on flutter?"
+# exempts a package the moment it adds the dependency, which is the one moment
+# the rule exists for — measured while writing this: adding `flutter: {sdk:
+# flutter}` to filefin_api's pubspec made that version of the check go green.
 check_core_purity() {
-    if [ -d "$CORE_LIB" ]; then
-        local files=() f
-        while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done \
-            < <(find "$CORE_LIB" -name '*.dart' -not -name '*.g.dart' -not -name '*.freezed.dart')
-        if [ ${#files[@]} -gt 0 ]; then
-            grep -nHE "package:flutter|dart:io|dart:ui|package:http|package:dio|DateTime\.now\(|Random\(|Stopwatch\(" "${files[@]}" || true
+    local pkg lib pubspec files=() f
+    for pubspec in packages/*/pubspec.yaml; do
+        [ -f "$pubspec" ] || continue
+        pkg="$(dirname "$pubspec")"
+        lib="$pkg/lib"
+        if [ -d "$lib" ]; then
+            files=()
+            while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done \
+                < <(find "$lib" -name '*.dart' -not -name '*.g.dart' -not -name '*.freezed.dart')
+            if [ ${#files[@]} -gt 0 ]; then
+                if [ "$lib" = "$CORE_LIB" ]; then
+                    grep -nHE "package:flutter|dart:io|dart:ui|package:http|package:dio|DateTime\.now\(|Random\(|Stopwatch\(" "${files[@]}" || true
+                else
+                    grep -nHE "package:flutter|dart:ui" "${files[@]}" || true
+                fi
+            fi
         fi
-    fi
-    local pubspec="packages/filefin_core/pubspec.yaml"
-    if [ -f "$pubspec" ]; then
-        grep -nE '^[[:space:]]+(flutter|http|dio|dio_cookie_manager):' "$pubspec" || true
-    fi
+        if [ "$lib" = "$CORE_LIB" ]; then
+            grep -nE '^[[:space:]]+(flutter|http|dio|dio_cookie_manager):' "$pubspec" || true
+        else
+            grep -nE '^[[:space:]]+flutter:' "$pubspec" || true
+        fi
+    done
 }
 
 # §7: IDs are extension types, never typedefs. A typedef gives a CategoryId
@@ -209,6 +242,43 @@ check_secret_tostring() {
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources)
     if [ ${#files[@]} -eq 0 ]; then return 0; fi
     awk '
+        # Braces are counted on a line with its STRINGS AND COMMENTS REMOVED,
+        # and a class still open at the end of a file is REPORTED. Both halves
+        # are load-bearing and both were missing at M2, where seeding `depth`
+        # from the declaration line fixed three false positives and bought a
+        # class of silent false NEGATIVES: `inclass` was only ever cleared by
+        # seeing depth return to zero, with no END rule and no per-file reset,
+        # so one brace the counter should never have seen made the class vanish
+        # from the check entirely. Dart is brace-balanced, so the only way to
+        # unbalance it is a brace inside a string or a comment — all four of
+        # these are ordinary Dart, and all four made a secret-bearing class with
+        # NO toString() pass:
+        #
+        #     static const template = "Bearer {";
+        #     // ... we open a brace here: {
+        #     ///     if (x) {                     (a doc-comment sample)
+        #     static final re = RegExp(r"^\{");
+        #
+        # Known limits, stated rather than papered over: a triple-quoted string
+        # and a multi-line /* */ comment are not tracked across lines, and a
+        # single-line class body is dropped. Every one of them now FAILS CLOSED
+        # — the flush turns a missed close into a report on a class that has no
+        # toString, instead of into silence.
+        function bare(s,   t) {
+            t = s
+            gsub(/\\./, "", t)
+            gsub(/'"'"'[^'"'"']*'"'"'/, "", t)
+            gsub(/"[^"]*"/, "", t)
+            gsub(/\/\*[^*]*\*\//, "", t)
+            sub(/\/\/.*/, "", t)
+            return t
+        }
+        function flush(file) {
+            if (inclass && !seen)
+                printf "%s:%d: class %s bears a secret but does not override toString()\n", file, start, watched
+            inclass = 0
+        }
+        FNR == 1 { flush(prevfile); prevfile = FILENAME }
         /^[[:space:]]*(abstract[[:space:]]+|sealed[[:space:]]+|final[[:space:]]+|base[[:space:]]+|interface[[:space:]]+|mixin[[:space:]]+)*class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/ {
             for (i = 1; i <= NF; i++) if ($i == "class") { cname = $(i + 1); break }
             sub(/[<({].*/, "", cname)
@@ -227,20 +297,19 @@ check_secret_tostring() {
                 # while every one of them overrode it. A gate that cries wolf
                 # teaches people to rename the class, which is precisely the
                 # answer §9 does not want.
-                depth = gsub(/{/, "{") - gsub(/}/, "}")
+                line = bare($0)
+                depth = gsub(/{/, "{", line) - gsub(/}/, "}", line)
             }
             next
         }
         inclass {
             if ($0 !~ /^[[:space:]]*\/\// &&
                 $0 ~ /^[[:space:]]*(@override[[:space:]]+)?String[[:space:]]+toString[[:space:]]*\([[:space:]]*\)/) seen = 1
-            n = gsub(/{/, "{"); depth += n
-            n = gsub(/}/, "}"); depth -= n
-            if (depth <= 0 && index($0, "}") > 0) {
-                if (!seen) printf "%s:%d: class %s bears a secret but does not override toString()\n", FILENAME, start, watched
-                inclass = 0
-            }
+            line = bare($0)
+            depth += gsub(/{/, "{", line) - gsub(/}/, "}", line)
+            if (depth <= 0 && index(line, "}") > 0) flush(FILENAME)
         }
+        END { flush(prevfile) }
     ' "${files[@]}" || true
 }
 

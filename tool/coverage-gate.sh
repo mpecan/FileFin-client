@@ -17,4 +17,8 @@ if no_dart_packages; then
     exit 0
 fi
 
-exec bash tool/check-coverage.sh coverage/lcov.info 50
+# 50 is CLAUDE.md §3's tree-wide floor. The third argument is the one that
+# protects a diff: an absolute ratchet on uncovered lines, which may only ever
+# fall. See the header of check-coverage.sh for why the percentage alone cannot
+# see an untested function.
+exec bash tool/check-coverage.sh coverage/lcov.info 50 0
