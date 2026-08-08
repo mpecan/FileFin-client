@@ -10,7 +10,7 @@ default:
 # `mutants` is last on purpose: mutation_test rewrites sources in place while
 # it runs, so it must never overlap another gate reading the same files. just
 # runs dependencies sequentially, which is what keeps that true.
-check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments constitution deps fixtures-verify test coverage-check mutants
+check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments constitution dupes deps fixtures-verify test coverage-check mutants
 
 # `just it` (integration tests against a real server) joins here at M2. It does
 # not exist yet: there is no integration suite, and a recipe over zero tests
@@ -52,6 +52,12 @@ file-size:
 # === comment budget (CLAUDE.md §2) ===
 comments:
     @bash tool/check-comment-budget.sh
+
+# === duplication ===
+# Evaluated in M0 rather than assumed: jscpd 4 has a Dart tokenizer and was
+# seen to fail on duplicated Dart. docs/architecture.md records the evaluation.
+dupes:
+    @bash tool/check-dupes.sh
 
 # === constitutional debt ratchet ===
 constitution:

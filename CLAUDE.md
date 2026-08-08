@@ -47,6 +47,13 @@ it is genuinely equivalent, with the reason and its retirement condition in
 one `import` referencing it, and a one-line comment naming what needs it.
 Version constraints carry a one-line reason when they are tighter than caret
 default. Pre-1.0 packages are pinned exactly.
+
+Tooling packages are consumed by configuration or by a gate recipe and are
+never imported by anything (`very_good_analysis`, `build_runner`, `freezed`,
+`json_serializable`, `mutation_test`, `coverage`). For those the import
+requirement is satisfied instead by an entry in `tool/dep-allowlist.txt` naming
+what consumes it. The rent comment is required either way — the allowlist
+waives the import, never the justification.
 *Enforced by: `just deps` (unused/undeclared scan), review of the pubspec diff.*
 
 **§5 — No dead branches.** Error variants must be constructed somewhere.
@@ -163,13 +170,18 @@ does not exist.
 | Dependencies | `just deps` | unused-in-pubspec / imported-but-undeclared (§4) |
 | Mutation | `just mutants` | `mutation_test`, diff-scoped vs `HEAD` |
 | Coverage | `just coverage-check` | lcov threshold; 50% floor, 80% target |
+| Duplication | `just dupes` | `jscpd` (Dart tokenizer), 5% threshold, 15 lines / 50 tokens |
+| Toolchain | `just toolchain-check` | fails when `dart` is absent or below 3.6 |
+| Hooks | `just hooks-status` | fails when the git hooks are not installed |
+| Fixtures | `just fixtures-verify` | SHA-256 manifest + structural assertions (§8) |
 
 - `just check` — everything above. **Run this before claiming work is done.**
-- `just it` — integration tests against a real server (below). In `check-all`.
+- `just it` — integration tests against a real server (below). Arrives at M2;
+  it is not in `check-all` until there is a suite for it to run.
 
-Duplication detection is deliberately absent: M0 evaluates `jscpd` for Dart
-and either adds the gate or records in `docs/architecture.md` why not. An
-unevaluated tool does not get a table row.
+`jscpd` was evaluated in M0 rather than assumed: it ships a Dart tokenizer and
+was seen to fail on duplicated Dart (42.9% on a synthetic pair). The evaluation
+and the thresholds are in `docs/architecture.md`.
 
 ### Gates must be able to fail
 
