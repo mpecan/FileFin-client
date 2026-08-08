@@ -11,9 +11,10 @@ environment:
   # producing a confusing resolution error.
   sdk: ^3.6.0
 
-# Members join here as they are created; M1.1 adds packages/filefin_core.
-# Listing a member that does not exist yet fails `dart pub get` outright.
-workspace: []
+# Members join here as they are created. Listing a member that does not exist
+# yet fails `dart pub get` outright, so a member and its directory land together.
+workspace:
+  - packages/filefin_core
 
 # build_runner is deliberately ABSENT. It arrives at M1.4 with the first
 # @freezed model, together with the `just codegen` recipe and freezed /

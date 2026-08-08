@@ -5,8 +5,55 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | | |
 |---|---|
 | **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
-| **Next** | **M1** — `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` |
+| **In progress** | **M1** — `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` |
 | **Exit criterion met** | `just check` exits 0 on a clean tree; every gate has a both-directions proof below |
+
+---
+
+## M1 — what has been built
+
+| Step | Deliverable |
+|---|---|
+| M1.1 | `packages/filefin_core/` — pubspec (`resolution: workspace`), analysis options including the root, the `lib/filefin_core.dart` barrel, `test/support/fixtures.dart` |
+| M1.2 | `lib/src/ids.dart` — `MediaId`, `CategoryId`, `FileIndex`, `SubtitleIndex` as `extension type … implements Object` |
+| M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
+
+### Two M0 gate scripts had to change for the first package to land
+
+Both are recorded here rather than buried in a diff, because a gate that
+changes shape mid-milestone is exactly the thing a reviewer must see.
+
+**`run-coverage.sh` named a `package_config.json` that a workspace member does
+not have.** `dart pub get` writes one `package_config.json`, at the workspace
+root; members get none. The script passed `$pkg_dir/.dart_tool/…`
+unconditionally, so `format_coverage` printed its usage and the run died on the
+following `cat`. It now prefers the package's own and falls back to the root's,
+failing loudly if neither exists.
+
+**`run-coverage.sh`'s "every lib source must produce a coverage record" rule
+required the impossible of a file with no executable code.** The rule (finding
+G2) exists because `dart test --coverage` omits never-loaded libraries
+entirely, so untested code is absent from the denominator rather than sitting at
+0%. But the VM emits a hitmap entry per *compiled function*, and a barrel of
+`export`s or a set of `extension type` declarations compiles to none. Measured:
+`lib/filefin_core.dart` and `lib/src/ids.dart` are absent from the raw
+`.vm.json` hitmap even with a test that imports the barrel and constructs all
+four IDs.
+
+The exemption added is **mechanical, not a list**: a missing record is excused
+only when the file is verified line by line to contain nothing but `library` /
+`import` / `export` directives and empty-bodied `extension type` declarations.
+There is no allowlist and no marker comment, because both are things a reviewer
+can be talked past — to be exempt, a file must literally have nowhere to put a
+statement. Exempted files are printed on every run so the set stays visible.
+
+Proven both ways on the real script:
+
+| Fail input | Exit |
+|---|---|
+| `lib/src/never_imported.dart` — one function, nothing imports it | **1**, names the file |
+| `lib/src/sneaky.dart` — a `library;` + `export` barrel with a single `int sneak() => 1;` smuggled in | **1**, names the file |
+| the clean tree (barrel + `ids.dart` exempt, `json_converters.dart` covered) | 0 |
 
 ---
 

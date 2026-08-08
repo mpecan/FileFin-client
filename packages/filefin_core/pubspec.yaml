@@ -1,0 +1,25 @@
+name: filefin_core
+description: >-
+  Pure-Dart core for the FileFin client: wire models, extension-type IDs, URL
+  construction, the resume/progress engine and the playback decision. I/O-free,
+  Flutter-free and deterministic (CLAUDE.md §6).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+# Resolved against the workspace root's single lockfile, so `codegen-check` and
+# `mutants` see the same package versions on every machine.
+resolution: workspace
+
+dependencies:
+  # @JsonKey / @JsonSerializable and the JsonConverter base class the four ID
+  # converters extend. Pinned exactly: json_serializable's output must be
+  # byte-identical across machines or `just codegen-check` fails on a diff
+  # nobody made.
+  json_annotation: 4.12.0
+
+dev_dependencies:
+  # The test runner `just test` and `just coverage` invoke.
+  test: ^1.25.0
