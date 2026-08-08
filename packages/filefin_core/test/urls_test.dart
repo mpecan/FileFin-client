@@ -1,4 +1,9 @@
 import 'package:filefin_core/filefin_core.dart';
+// The barrel hides `ApiPaths` — it has no consumer outside this library (§5),
+// and its path literals are what `undocumented_endpoint` greps. Importing the
+// private library here is what gives them a consumer and makes the §8 gate's
+// dependency on their exact spelling visible in a test.
+import 'package:filefin_core/src/urls.dart' show ApiPaths;
 import 'package:test/test.dart';
 
 const _id = MediaId('e4285edb34d5');
@@ -213,6 +218,132 @@ void main() {
       ).mediaDetail(const MediaId('a/b')).toString(),
       'https://h/api/media/a%2Fb',
     );
+  });
+
+  group('ApiPaths', () {
+    /// Every route literal, unparameterised ones and parameterised ones alike.
+    final all = <String>[
+      ApiPaths.state,
+      ApiPaths.login,
+      ApiPaths.logout,
+      ApiPaths.me,
+      ApiPaths.categories,
+      ApiPaths.home,
+      ApiPaths.search,
+      ApiPaths.tags,
+      ApiPaths.categoryMedia(const CategoryId(2)),
+      ApiPaths.mediaDetail(_id),
+      ApiPaths.poster(_id),
+      ApiPaths.file(_id, _file),
+      ApiPaths.hlsIndex(_id, _file),
+      ApiPaths.hlsSegment(_id, _file, 'seg0.ts'),
+      ApiPaths.subtitle(_id, _file, const SubtitleIndex(2)),
+      ApiPaths.progress(_id),
+      ApiPaths.watched(_id),
+      ApiPaths.favorite(_id),
+      ApiPaths.rating(_id),
+    ];
+
+    test('every route is one absolute /api/ literal', () {
+      // `_resolve` drops exactly one leading empty segment, which is only
+      // correct because every path starts with `/`. Asserted rather than
+      // assumed: a route written without it would lose its first segment.
+      for (final path in all) {
+        expect(path, startsWith('/api/'), reason: path);
+        expect(path.split('/').first, isEmpty, reason: path);
+      }
+    });
+
+    test('the unparameterised routes are spelled as the doc spells them', () {
+      expect(ApiPaths.state, '/api/state');
+      expect(ApiPaths.login, '/api/login');
+      expect(ApiPaths.logout, '/api/logout');
+      expect(ApiPaths.me, '/api/me');
+      expect(ApiPaths.categories, '/api/categories');
+      expect(ApiPaths.home, '/api/home');
+      expect(ApiPaths.search, '/api/search');
+      expect(ApiPaths.tags, '/api/tags');
+    });
+  });
+
+  group('a segment no encoding can make safe is rejected', () {
+    final urls = FileFinUrls(Uri.parse('https://h'));
+
+    test('an empty id throws instead of addressing a shorter route', () {
+      // MediaId('') is not hypothetical: it is the models' own declared
+      // default, so any payload with a missing or null `id` produces one.
+      // Curled live at v0.20.3, `/api/media` answered 200 text/html — the SPA
+      // catch-all, a success that is not one.
+      expect(() => urls.mediaDetail(const MediaId('')), throwsArgumentError);
+      expect(() => urls.poster(const MediaId('')), throwsArgumentError);
+      expect(() => urls.progress(const MediaId('')), throwsArgumentError);
+      expect(
+        () => urls.hlsSegment(_id, _file, ''),
+        throwsArgumentError,
+      );
+    });
+
+    test('a dot segment throws, because escaping it does not help', () {
+      // Dart's Uri removes dot segments unconditionally, including from their
+      // percent-encoded form: Uri.parse('http://h/api/media/%2E%2E/x').path is
+      // '/api/x'. Rejecting the value is the only defence.
+      expect(() => urls.mediaDetail(const MediaId('..')), throwsArgumentError);
+      expect(() => urls.mediaDetail(const MediaId('.')), throwsArgumentError);
+      expect(() => urls.hlsSegment(_id, _file, '..'), throwsArgumentError);
+      expect(() => urls.hlsSegment(_id, _file, '.'), throwsArgumentError);
+    });
+
+    test('the error names the value, the parameter and the reason', () {
+      // The message is asserted verbatim rather than by type. It is what a
+      // developer reads when this fires, and it is also the only assertion
+      // that can kill a mutant living inside it — three did, until this test
+      // existed. Same reasoning as `setRating`'s RangeError bounds.
+      expect(
+        () => urls.mediaDetail(const MediaId('..')),
+        throwsA(
+          isA<ArgumentError>()
+              .having((e) => e.invalidValue, 'invalidValue', '..')
+              .having((e) => e.name, 'name', 'value')
+              .having(
+                (e) => e.message,
+                'message',
+                'is not a usable path segment. Uri deletes an empty segment '
+                    'and the dot segments "." and "..", so the request would '
+                    'address a shorter route and the SPA catch-all would '
+                    'answer 200 text/html',
+              ),
+        ),
+      );
+    });
+
+    test('escaping a dot segment by hand does not smuggle it past Uri', () {
+      expect(
+        Uri.parse('https://h/api/media/%2E%2E/x').path,
+        '/api/x',
+        reason: 'the proof that percent-encoding cannot be the fix',
+      );
+    });
+
+    test('a dot inside a longer segment is untouched', () {
+      // `seg0.ts` and `index.m3u8` are the real segment names, and `..a` is the
+      // nearest miss to the rejected value — none of them is a dot segment.
+      expect(
+        urls.hlsSegment(_id, _file, 'seg0.ts').toString(),
+        'https://h/api/media/$_id/file/1/hls/seg0.ts',
+      );
+      expect(
+        urls.hlsIndex(_id, _file).toString(),
+        'https://h/api/media/$_id/file/1/hls/index.m3u8',
+      );
+      expect(
+        urls.mediaDetail(const MediaId('..a')).toString(),
+        'https://h/api/media/..a',
+      );
+      expect(
+        urls.hlsSegment(_id, _file, '...').toString(),
+        'https://h/api/media/$_id/file/1/hls/...',
+      );
+    });
   });
 
   test('FileFinUrls compares by base, so it can be cached per server', () {

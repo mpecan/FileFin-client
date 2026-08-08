@@ -21,4 +21,10 @@ export 'src/playback/decision.dart';
 export 'src/resume/engine.dart';
 export 'src/resume/watch_state.dart';
 export 'src/search_field.dart';
-export 'src/urls.dart';
+// `ApiPaths` is hidden rather than exported: nothing outside this library uses
+// it, and by the criterion above that makes exporting it a §5 claim we cannot
+// back. It is `FileFinUrls`'s own route table, and `undocumented_endpoint`
+// (§8) reads its literals straight out of the source, not through the barrel.
+// `urls_test.dart` imports `src/urls.dart` directly to pin them. Unhide it the
+// day `filefin_api` genuinely needs a bare path.
+export 'src/urls.dart' hide ApiPaths;
