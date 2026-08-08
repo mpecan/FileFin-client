@@ -1,79 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:test/test.dart';
 
-/// A real TLS server on loopback, serving `test/support/certs/server_<name>`.
-///
-/// Real `bindSecure`, real handshake, real `X509Certificate` — the only part of
-/// F15 that a stub would render meaningless, because what is under test is
-/// precisely what the TLS stack does with our two callbacks.
-///
-/// It exists because the `filefin` binary has **no TLS listener at all** (no
-/// `ListenAndServeTLS`, no certificate flag anywhere in `internal/` or `cmd/`,
-/// verified at v0.20.3): TLS is a reverse-proxy concern upstream. So SPEC.md
-/// §10's "a self-signed server connects only after explicit accept" is met
-/// against a Dart TLS server rather than a real FileFin, and STATE.md and
-/// docs/risks.md say so.
-class TlsStub {
-  TlsStub._(this._server, this.seen);
-
-  final HttpServer _server;
-
-  /// Every path the server was actually asked for.
-  ///
-  /// The assertion that matters most in this file is that this list is
-  /// **empty** after a refusal: "blocking" measured rather than claimed.
-  final List<String> seen;
-
-  static Future<TlsStub> serving(String name) async {
-    final context = SecurityContext()
-      ..useCertificateChain('test/support/certs/server_$name.crt')
-      ..usePrivateKey('test/support/certs/server_$name.key');
-    final server = await HttpServer.bindSecure(
-      InternetAddress.loopbackIPv4,
-      0,
-      context,
-    );
-    final seen = <String>[];
-    unawaited(
-      server.forEach((request) async {
-        seen.add(request.uri.path);
-        request.response.headers.contentType = ContentType.json;
-        request.response.write('{"needsSetup":false,"version":"0.20.3"}');
-        await request.response.close();
-      }),
-    );
-    return TlsStub._(server, seen);
-  }
-
-  Uri get baseUrl => Uri.parse('https://127.0.0.1:${_server.port}');
-
-  Future<void> close() => _server.close(force: true);
-}
-
-/// The fingerprint of a committed test certificate, read from the PEM on disk.
-///
-/// Computed rather than hard-coded, so regenerating the pair is one command
-/// instead of a hunt through assertions — and so the assertions compare our
-/// digest against the certificate itself rather than against a number someone
-/// once pasted. `README.md` records the `openssl x509 -fingerprint -sha256`
-/// output that proves the two agree.
-///
-/// The DER is the PEM's base64 payload. It is extracted here rather than taken
-/// from an `X509Certificate`, because dart:io only hands one over during a live
-/// handshake — which is the thing under test.
-CertificateFingerprint derFingerprint(String name) {
-  final pem = File('test/support/certs/server_$name.crt').readAsStringSync();
-  final body = pem
-      .split('\n')
-      .where((line) => !line.startsWith('-----'))
-      .join();
-  return CertificateFingerprint.fromDer(base64.decode(body));
-}
+import 'support/tls_stub.dart';
 
 void main() {
   late Dio dio;
@@ -119,7 +53,7 @@ void main() {
     expect(e.validTo.isAfter(DateTime.now()), isTrue);
     // The measurement that turns "blocking" from a claim into a fact: the
     // refusal happened inside the handshake, so nothing was ever sent.
-    expect(stub.seen, isEmpty);
+    expect(stub.bytesReceived, 0);
   });
 
   test(
@@ -139,6 +73,104 @@ void main() {
     },
   );
 
+  group("a private CA, which is F15's stated common case", () {
+    // Every test above serves a SELF-SIGNED certificate, where the chain is one
+    // certificate long and leaf == root. That is exactly what hid the M2
+    // defect: `badCertificateCallback` is handed the certificate at which
+    // verification FAILED, which on a real `[leaf, CA]` chain is the CA, so the
+    // pin was compared against the CA and the leaf was never examined until
+    // after the request — cookie included — had been sent. `server_c` is a leaf
+    // issued by `ca`, and `server_d` is a second leaf from the same CA standing
+    // in for an impostor.
+
+    test('the prompt names the LEAF, not the CA that signed it', () async {
+      final stub = await TlsStub.serving('c');
+      addTearDown(stub.close);
+      final pinner = CertificatePinner();
+      dio = dioFor(stub, pinner);
+      final url = stub.baseUrl.replace(path: '/api/state');
+
+      final failure = await failureFrom(dio, pinner, url);
+
+      expect(failure, isA<CertificateNotTrusted>());
+      final e = failure as CertificateNotTrusted;
+      // The whole finding in three lines: the value the user is asked to
+      // compare against their server must be their server's.
+      expect(e.fingerprint, derFingerprint('c').value);
+      expect(e.fingerprint, isNot(caFingerprint().value));
+      expect(e.subject, contains('filefin-test-c'));
+      expect(e.issuer, contains('filefin-test-ca'));
+      expect(stub.bytesReceived, 0);
+    });
+
+    test('pinning the CA does not admit the leaf it signed, and no '
+        'credential leaves', () async {
+      final stub = await TlsStub.serving('c');
+      addTearDown(stub.close);
+      final pinner = CertificatePinner(pin: caFingerprint());
+      dio = dioFor(stub, pinner);
+      final url = stub.baseUrl.replace(path: '/api/state');
+      // A cookie jar with a live session in it, because "the pin blocked" and
+      // "the session cookie stayed on the device" are different claims and only
+      // the second one is what F15 is for.
+      final jar = DefaultCookieJar();
+      await jar.saveFromResponse(stub.baseUrl, [
+        Cookie(sessionCookieName, 'a-live-session')..path = '/',
+      ]);
+      dio.interceptors.add(CookieManager(jar));
+
+      final failure = await failureFrom(dio, pinner, url);
+
+      expect(failure, isA<CertificatePinMismatch>());
+      expect(
+        (failure as CertificatePinMismatch).actual,
+        derFingerprint('c').value,
+        reason: 'the certificate compared must be the leaf',
+      );
+      expect(stub.bytesReceived, 0);
+      expect(stub.received, isEmpty);
+      expect(stub.received.join(), isNot(contains('a-live-session')));
+    });
+
+    test(
+      'pinned to the leaf the server really serves: it goes through',
+      () async {
+        // The other half of the same defect, and the one that made a private-CA
+        // deployment unusable: before the fix a CORRECT pin — the value
+        // `openssl x509 -fingerprint -sha256` prints for the server's own
+        // certificate — was refused, because the comparison never saw it.
+        final stub = await TlsStub.serving('c');
+        addTearDown(stub.close);
+        final pinner = CertificatePinner(pin: derFingerprint('c'));
+        dio = dioFor(stub, pinner);
+
+        final response = await dio.getUri<dynamic>(
+          stub.baseUrl.replace(path: '/api/state'),
+        );
+
+        expect(response.statusCode, 200);
+        expect(stub.seen, ['/api/state']);
+      },
+    );
+
+    test('an impostor holding another certificate from the same CA is '
+        'blocked', () async {
+      final stub = await TlsStub.serving('d');
+      addTearDown(stub.close);
+      final pinner = CertificatePinner(pin: derFingerprint('c'));
+      dio = dioFor(stub, pinner);
+      final url = stub.baseUrl.replace(path: '/api/state');
+
+      final failure = await failureFrom(dio, pinner, url);
+
+      expect(failure, isA<CertificatePinMismatch>());
+      final e = failure as CertificatePinMismatch;
+      expect(e.expected, derFingerprint('c').value);
+      expect(e.actual, derFingerprint('d').value);
+      expect(stub.bytesReceived, 0);
+    });
+  });
+
   test('pinned to A, served B: blocked, nothing sent, pin unchanged', () async {
     final stub = await TlsStub.serving('b');
     addTearDown(stub.close);
@@ -152,7 +184,7 @@ void main() {
     final e = failure as CertificatePinMismatch;
     expect(e.expected, derFingerprint('a').value);
     expect(e.actual, derFingerprint('b').value);
-    expect(stub.seen, isEmpty);
+    expect(stub.bytesReceived, 0);
     // F15's blocking half must never re-accept. Nothing in this package can
     // write a pin, and this is the assertion that keeps it that way.
     expect(pinner.pin, derFingerprint('a'));
@@ -304,7 +336,7 @@ void main() {
         actual: 'cc:dd',
       ).toString(),
       'CertificatePinMismatch: https://filefin.example/api/state presented '
-      'cc:dd, but aa:bb was pinned. Nothing was sent.',
+      'cc:dd, but aa:bb was pinned. The connection was refused.',
     );
   });
 }

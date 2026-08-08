@@ -7,9 +7,9 @@ import 'package:filefin_api/src/tls/certificate_pinner.dart';
 ///
 /// Two hooks, because they answer different questions and neither is enough:
 ///
-/// - `badCertificateCallback` runs during the handshake, so a refusal happens
-///   *before any request bytes are sent* — but it is per **connection**, and a
-///   pooled connection skips it entirely.
+/// - `connectionFactory` owns the handshake, so a refusal happens *before any
+///   request byte is written* — but dart:io calls it once per **connection**,
+///   and a pooled connection skips it entirely.
 /// - `validateCertificate` runs per **response**, so it re-checks a pooled
 ///   connection — but only after the request has already reached the server.
 ///
@@ -18,12 +18,17 @@ import 'package:filefin_api/src/tls/certificate_pinner.dart';
 /// same pure `decidePin`, so there is exactly one policy and it is the one the
 /// table test proves.
 ///
+/// **`badCertificateCallback` is deliberately left null**, which is dart:io's
+/// fail-closed default. Setting `connectionFactory` takes the handshake away
+/// from dart:io for every direct connection, so the callback would be dead code
+/// on the path that matters (§5) — and on the one path that could still reach
+/// it, an https proxy tunnel this package never configures, a null callback
+/// refuses rather than consulting a hook that is handed the wrong certificate.
+///
 /// This is also the only place `dart:io` and `HttpClient` appear in the request
 /// path, which is what keeps the rest of the package testable without a socket.
 IOHttpClientAdapter pinnedAdapter(CertificatePinner pinner) =>
     IOHttpClientAdapter(
-      createHttpClient: () =>
-          HttpClient(context: pinner.securityContext)
-            ..badCertificateCallback = pinner.allowBadCertificate,
+      createHttpClient: () => HttpClient()..connectionFactory = pinner.connect,
       validateCertificate: pinner.validate,
     );
