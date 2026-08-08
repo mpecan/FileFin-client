@@ -206,8 +206,11 @@ does not exist.
 | Fixtures | `just fixtures-verify` | SHA-256 manifest + captured-key ratchet + structural assertions (§8) |
 
 - `just check` — everything above. **Run this before claiming work is done.**
-- `just it` — integration tests against a real server (below). Arrives at M2;
-  it is not in `check-all` until there is a suite for it to run.
+- `just it` — integration tests against a real server (below). Arrived at M2.
+  It is in **`check-all`, and `check-all` is local-only**: CI has no `filefin`
+  binary, so putting `it` in `check` would make CI permanently red. From M2 on,
+  done means "`just check` exits 0 **and** `just it` exits 0 on a machine with
+  the binary" — DoD item 1 below covers only the first half.
 
 `jscpd` was evaluated in M0 rather than assumed: it ships a Dart tokenizer and
 was seen to fail on duplicated Dart (42.9% on a synthetic pair). The evaluation
@@ -257,9 +260,13 @@ exactly what a mock papers over.
 skipping. A skipped integration suite that reports success is the
 gate-that-cannot-fail problem wearing a different hat.
 
-The recipe does not exist yet — it arrives at **M2** with the first integration
-test, and a recipe over zero tests would report success for the same reason.
-STATE.md carries this as A4.
+`tool/run-integration.sh` refuses on a missing binary, a missing `ffmpeg`, zero
+test files, and **any test marked skippable** — a suite that can excuse itself is
+the same problem wearing a third hat. All four refusals were proven at M2.7, and
+so was the fifth thing that must fail: breaking F3's retry turns the restart
+test red. The one precondition it repairs rather than refuses is a missing
+seeded data directory, because seeding is recoverable and a missing binary is
+not.
 
 ## Playback truths that keep biting
 

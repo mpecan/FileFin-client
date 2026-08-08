@@ -43,6 +43,71 @@ at M4". Do not downgrade it without a run that contradicts the above.
 
 ---
 
+## R5 — TLS: the binary has no listener, and one arm stays unexercised
+
+Not a risk to a milestone so much as two facts that would otherwise be
+rediscovered, both measured at M2 against v0.20.3 and dio 5.11.0.
+
+### The `filefin` binary serves no TLS at all
+
+No `ListenAndServeTLS`, no certificate flag, nothing TLS-shaped anywhere in
+`internal/` or `cmd/`. TLS is a reverse-proxy concern upstream.
+
+So SPEC.md §10's M2 exit criterion — "a self-signed server connects only after
+explicit accept, and a changed fingerprint blocks" — **cannot be met against
+`filefin`**. It is met against a Dart `HttpServer.bindSecure` serving one of two
+committed self-signed certificates (`packages/filefin_api/test/support/certs/`):
+a real handshake with a real `X509Certificate`, just not a real FileFin. Recorded
+so nobody later reads it as an omission, and so nobody goes looking for a TLS
+flag that does not exist.
+
+### `badCertificateCallback` alone would have been a hole, and the fix is measured
+
+SPEC.md §6's original TLS row named `badCertificateCallback` and a pinned
+fingerprint store. That is not sufficient, because **dart:io calls it only for a
+chain the `SecurityContext` does not trust**: a server pinned while self-signed
+that later gets a Let's Encrypt certificate changes fingerprint with the
+callback never firing — exactly the silent re-accept F15 forbids.
+
+The obvious repair — dio's `validateCertificate` — turns out to reject **after
+the request has been sent**. Measured with a spike against a real TLS server:
+
+| Hook | When it runs | Server saw |
+|---|---|---|
+| `badCertificateCallback` → false | during the handshake | **nothing** (`[]`) |
+| `validateCertificate` → false | after response headers arrive | **the request** (`[/w]`) |
+
+A design resting on `validateCertificate` alone would therefore hand the
+request — session cookie included — to a server whose certificate had changed,
+and only then object.
+
+**What was built instead:** whenever a pin exists the client is built on
+`SecurityContext(withTrustedRoots: false)`, so *every* certificate reaches the
+handshake-time hook and the pin decision happens before any bytes are sent.
+Both hooks are still wired, to the same pure `decidePin`, because
+`badCertificateCallback` is per **connection** (a pooled connection skips it)
+and `validateCertificate` is per **response**.
+
+### The gap that remains
+
+**The OS-trusted arm is enforced but unexercised.** Proving the wiring needs a
+CA-signed certificate for `127.0.0.1`, which does not exist. `decidePin` is pure
+and table-tested over all its combinations, which confines the untested part to
+wiring rather than policy — but it is untested, and this is where that is said.
+
+**Consequence for the user, worth stating:** pinning a CA-signed server means
+every certificate renewal changes the fingerprint and needs re-accepting. That
+is F15's bargain rather than a defect, and the error names both fingerprints.
+
+**Also outstanding, as an M3 prerequisite:** F15 permits plain `http://` for LAN
+servers, and neither platform allows it by default. Android needs
+`cleartextTrafficPermitted` in a network security config; iOS needs
+`NSAllowsLocalNetworking` in `Info.plist`. Neither file exists yet — there is no
+`apps/mobile` — and without them every plain-http server will fail on device for
+a reason that looks nothing like its cause.
+
+---
+
 ## R2 — iOS Picture-in-Picture. OPEN. *Spike before M7.*
 
 iOS PiP is built around `AVPlayerLayer` / `AVSampleBufferDisplayLayer`. libmpv
@@ -104,3 +169,6 @@ F-Droid. Both change the question from "which licence" to "who compiles it".
 | Risk | Retired | Evidence |
 |---|---|---|
 | R1 — headers across the 307 | 2026-08-08 | `tool/spikes/r1_headers_across_redirect.sh`, with a negative control that failed as required |
+
+R5 is not in that table on purpose. It is not retired: one arm of it is
+enforced without being exercised, and saying so is worth more than a tick.

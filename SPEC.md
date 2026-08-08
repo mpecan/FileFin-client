@@ -4,11 +4,14 @@ A mobile client for [FileFin](https://github.com/xuedi/FileFin), a
 filesystem-first self-hosted media server (Go backend, Svelte web UI, EUPL
 v1.2).
 
-**Status:** M0 and M1 complete, M2 next. The workspace, every quality gate, the
+**Status:** M0, M1 and M2 complete, M3 next. The workspace, every quality gate, the
 git hooks and CI exist; `docs/server-api.md` records the contract and
-`test/fixtures/` holds captured real payloads. `packages/filefin_core` now holds
+`test/fixtures/` holds captured real payloads. `packages/filefin_core` holds
 the wire models, the extension-type IDs, URL construction, the resume engine and
-`decide()` — pure Dart, no I/O. `STATE.md` is the milestone-by-milestone record.
+`decide()` — pure Dart, no I/O. `packages/filefin_api` holds the HTTP client:
+typed endpoints, the cookie jar, F3's transparent 401 retry and F15's
+certificate pinning, with `just it` running it against a real `filefin` binary.
+`STATE.md` is the milestone-by-milestone record.
 
 **Verified against:** FileFin `master` @ v0.20.3, source read 2026-08-08.
 Every claim in §3 cites the upstream file that proves it.
@@ -244,7 +247,10 @@ filesystem truth, not cache. It survives a server cache rebuild.
   ("Conventions") records the catch-all and the general rule: a non-JSON
   content type on a JSON route is a transport failure, never a payload.
 - **F2.** Log in; store both the session and the password in the platform
-  secure store, so F3 can re-authenticate silently and indefinitely. Typing a
+  secure store, so F3 can re-authenticate silently and indefinitely. The store
+  is an injected **port** (`SecretStore`) from M2, with the Keychain/Keystore
+  implementation at M7 — `filefin_api` is Flutter-free so `dart test` can run
+  it (`docs/architecture.md`, "Why `filefin_api` has no Flutter"). Typing a
   password on a phone every time the server restarts is not acceptable given
   how routine L1 is.
 - **F3.** On any `401`, re-authenticate and retry the request **once**
@@ -260,7 +266,9 @@ filesystem truth, not cache. It survives a server cache rebuild.
 - **F9.** Report progress on an interval and on pause/seek/completion/close;
   reflect resulting watched/continue changes locally without a full refetch.
 - **F10.** Toggle favourite, set rating, mark/clear watched.
-- **F11.** Switch between saved servers.
+- **F11.** Switch between saved servers. The *mechanism* lands at M2 — one
+  client per `ServerId`, each with its own cookie jar, secret namespace and
+  certificate pin — and the switching UI at M7 (§10).
 - **F12.** Explain playback refusals in the user's terms. A `415` means
   "transcoding is disabled on the server and this file needs it" — name that,
   never "playback failed".
@@ -400,7 +408,7 @@ written until it has them.
 | HTTP | `dio` + `dio_cookie_manager` | Interceptors are the natural home for F3's 401-retry |
 | Models | `freezed` + `json_serializable` | Sealed unions for decisions; tolerant decode (§8) |
 | Secrets | `flutter_secure_storage` | Keychain / Keystore (§9); holds session **and** password (F2) |
-| TLS | custom `badCertificateCallback` + pinned fingerprint store | F15; must be in the `dio` setup from M2, not retrofitted |
+| TLS | custom `badCertificateCallback` **plus** per-response certificate validation, over a pinned fingerprint store | F15; must be in the `dio` setup from M2, not retrofitted. **Both hooks are required** — see §8 R5 |
 | Settings | plain JSON in app support dir, no secrets | inspectable |
 | Network type | `connectivity_plus` | F13's metered check |
 | OS floor | Android 8 (API 26), iOS 15 | C5 |
@@ -443,6 +451,16 @@ Each gets a spike before the milestone that depends on it. Tracked in
   Conclusion: `Media(httpHeaders: {'Cookie': …})` is sufficient for both
   playback paths. §5.3's assumption holds and M5 needs no alternative design.
   Harness: `tool/spikes/r1_headers_across_redirect.sh`.
+- **R5 — The `filefin` binary has no TLS listener.** Verified at v0.20.3: no
+  `ListenAndServeTLS`, no certificate flag, nothing TLS-shaped anywhere in
+  `internal/` or `cmd/`. TLS is a reverse-proxy concern upstream. So M2's exit
+  criterion "a self-signed server connects only after explicit accept" is met
+  against a Dart `HttpServer.bindSecure` with committed test certificates — a
+  real handshake, just not a real FileFin. SPEC §6's TLS row also understated
+  F15: `badCertificateCallback` alone is not enough, because dart:io does not
+  call it for an OS-trusted certificate, so a server pinned while self-signed
+  that later gets a CA certificate would change fingerprint with the callback
+  never firing. `docs/risks.md` carries the full measurement.
 - **R2 — iOS Picture-in-Picture.** iOS PiP is built around `AVPlayerLayer` /
   `AVSampleBufferDisplayLayer`; libmpv renders its own surface. PiP may be
   unavailable or need custom platform work. Affects F14. *Spike before M7.*
@@ -490,7 +508,7 @@ Each gets a spike before the milestone that depends on it. Tracked in
 |---|---|---|
 | **M0** | Workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture; spike **R1**; record the mpv licensing position (R4) | `just check` exits 0; every gate *seen to fail* |
 | **M1** | `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` | property tests green; purity gate passes |
-| **M2** | `filefin_api`: login, secure-store session+password, F3 retry, browse endpoints, **TLS pinning (F15)** | integration test survives a mid-test server restart; a self-signed server connects only after explicit accept, and a changed fingerprint blocks |
+| **M2** | `filefin_api`: login, secure-store session+password, F3 retry, browse endpoints, **TLS pinning (F15)** | `just check` exits 0 **and** `just it` exits 0 on a machine with the binary: the integration suite survives a mid-test server restart; a self-signed server connects only after explicit accept, and a changed fingerprint blocks. **The TLS half is met against a Dart `HttpServer.bindSecure`, not against `filefin`** — the binary has no TLS listener at all (§8 R5) |
 | **M3** | App shell + browsing UI: tree, virtualised grid, detail (F4) | 5000-item category scrolls at 60fps (NF2) |
 | **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | an MKV/HEVC file plays via direct bytes where the server allows |
 | **M5** | HLS path + F12 messaging | a transcoded file plays; a 415 explains itself |

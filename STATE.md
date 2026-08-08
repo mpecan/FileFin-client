@@ -6,18 +6,293 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 |---|---|
 | **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
 | **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()`, then remediated against three adversarial reviews |
-| **Next** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, and `just it` |
-| **Exit criterion met** | `just check` exits 0 on a clean tree; **every** gate now has a both-directions proof on real code, none deferred |
+| **Done** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, F15's certificate pinning, and `just it` against a real `filefin` |
+| **Next** | **M3** — app shell and browsing UI |
+| **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary |
 
-**The "clean tree" in that last row was not clean the first time it was claimed,
-and the claim is re-made here only because it has since been re-run.** Three
+**"Clean tree" is a claim this file has got wrong before, which is why it is
+spelled out rather than asserted.** At M1 it was wrong: three
 untracked probe files (`zz_attack_test.dart`, `zz_probe2_test.dart`,
 `zz_probe_test.dart`) sat in `packages/filefin_core/test/` when M1 was declared
 done. `just test` runs them, and one wrote to a hard-coded absolute path under a
-scratch directory — it would have failed on any other machine. They are deleted.
-Re-verified without them and with the remediation applied: `just check` exit 0,
-coverage 100%, 174 of 174 mutants, `git status --porcelain
---untracked-files=all` empty. No figure this file reports ever depended on them.
+scratch directory — it would have failed on any other machine. They were deleted and
+M1 re-verified without them: `just check` exit 0, coverage 100%, 174 of 174
+mutants, `git status --porcelain --untracked-files=all` empty. No figure this
+file reports ever depended on them.
+
+M2 hit the same class of problem from a different direction and it is recorded
+in full below: `mutation_test` left rewritten sources on disk twice, in
+**untracked** files where `git status` shows `??` and no diff can reveal
+anything. `git add -N` on every new file is the practice adopted in response.
+
+
+---
+
+## M2 — what was built
+
+| Step | Deliverable |
+|---|---|
+| M2.0 | Two gate fixes, alone, with both-directions proofs: `secret_tostring` blind to `interface`/`mixin` class modifiers; `check-deps.sh` not scanning `integration_test/` |
+| M2.1 | `ServerId` in `filefin_core` — closes A2 |
+| M2.2 | `packages/filefin_api`: pubspec, barrel, the sealed error hierarchy, `mapDioException` |
+| M2.3 | `test/support/stub_server.dart`, `transport.dart`, `json_response.dart`, `probe_result.dart` + `server_probe.dart` (F1) |
+| M2.4 | `lib/src/tls/` — `CertificateFingerprint`, the pure `decidePin`, `CertificatePinner`, `pinnedAdapter`, two committed test certificates (F15) |
+| M2.5 | `secret_store.dart`, `credentials.dart`, `session.dart` (F2), plus a third gate fix |
+| M2.6 | `auth_interceptor.dart` (F3) and `client.dart`, plus a fourth gate fix |
+| M2.7 | `tool/run-integration.sh`, `just it`, `check-all: check it`, four integration suites |
+| M2.8 | This section, `docs/architecture.md`, `docs/risks.md` R5, and the SPEC/server-api corrections |
+
+**Numbers as measured, not as hoped.** `just check` exits 0 on a clean tree
+with **zero gate warnings**. `just it` exits 0: **19 integration tests in 4
+seconds** against the real `filefin` v0.20.3 binary. Coverage **100%
+(726/726)**; per package, `filefin_api` **100% (395/395)** and `filefin_core`
+**100% (331/331)** — stated separately because `check-coverage.sh` reads one
+concatenated lcov and its floor is a **tree-wide** ratio, so `filefin_core` at
+100% over 331 lines would have masked a substantially untested `filefin_api`.
+Across the whole milestone
+(`FILEFIN_MUTANTS_BASE=7412862`, the last M1 commit): **138 of 138 mutants
+killed** over `filefin_api`'s 17 changed lib sources, 0 timeouts, 6m05s.
+`filefin_core`'s single M2 change — `ServerId` — produces **0 mutants** on the
+same run, which is the declaration-only case the one use of
+`FILEFIN_MUTANTS_ALLOW_ZERO=1` covers and which the gate correctly refuses to
+call a pass. **884 tests** in all (112 in `filefin_api`, 772 in
+`filefin_core`), plus the 19 integration tests, which `dart test` counts
+separately because they are a separate suite. The constitution baseline is
+still **0 across all six checks**.
+
+### Four gate scripts had to change, and three of the four were found by real code
+
+Every one is recorded here rather than buried in a diff, and every one was
+proven in both directions on the real script.
+
+**1. `secret_tostring` could not see `interface` or `mixin` class modifiers.**
+The awk modifier alternation was `(abstract|sealed|final|base)`, so
+`abstract interface class TokenStore { … }` matched the declaration pattern not
+at all and was exempt from §9 entirely — while the byte-identical
+`class TokenStore` was flagged. The pattern is what decides whether a class is
+looked at, so a missing keyword is not a weaker check, it is no check.
+
+**2. `secret_tostring` stopped reading a class at its first braced member.** The
+declaration line was consumed by `next` *before* brace counting began, so
+`depth` started at 0 and the first member line holding a balanced `{…}` read as
+the class closing. Traced on real M2 code: `class Credentials {` was declared
+closed at `const Credentials({required this.username, …});` on line 13, so the
+`toString()` on line 38 was never seen, and **all three** new secret-bearing
+classes were reported as violations while every one of them overrode it. A gate
+that cries wolf teaches people to rename the class, which is the answer §9 does
+not want. The declaration line now seeds the count.
+
+**3. `check-deps.sh` did not scan `integration_test/`.** Its source list was
+`lib test bin tool example`. An undeclared import in an integration suite was
+therefore reported by nothing — and Dart resolves one anyway when a sibling
+workspace member pulls it in, which is exactly how an undeclared dependency
+survives to break a clean checkout. The proof was deliberately deferred two
+steps, to M2.7, because it needs a suite to run against; it was executed there
+and is in the table below.
+
+**4. `check-mutants.sh` could wedge itself permanently.** It built temp files
+with `mktemp "$TMPDIR/filefin-mutants-XXXXXX.xml"`. **BSD/macOS mktemp only
+substitutes the `X`s when they END the template**: given a suffix it creates a
+file called *literally* `filefin-mutants-XXXXXX.xml`, and the next run gets
+`mkstemp failed … File exists` and the gate cannot run at all. The trailing
+`rm -f` normally hides this; an interrupted run never reaches that line, and
+from then on the gate is dead until someone deletes a file with six literal X's
+in its name. Now one `mktemp -d` directory with fixed names inside.
+
+### The mutation tool rewrote sources in place — twice — and git could not see it
+
+Both times a `mutation_test` run was killed by a command timeout, and both times
+it left a **mutated source on disk**. Both files were **untracked**, so
+`git status` showed `??`, `git diff` had nothing to compare against, and
+`dart analyze` was clean:
+
+| File | What was left behind | How it presented |
+|---|---|---|
+| `lib/src/tls/fingerprint.dart` | `i += 2` rewritten to `i = 2` | a test that had passed minutes earlier exhausted the heap |
+| `lib/src/auth_interceptor.dart` | `handler.next(options);` **deleted** | every F3 test timed out at 30s with the server never receiving the request; `analyze` stayed clean because a `void` method may return without calling its handler |
+
+Neither was found by a gate. The first took a variant bisect over dio adapter
+configurations; the second took wrapper interceptors inserted around the chain.
+
+**Two things changed as a result.** `git add -N` is now used on every new file
+as soon as it is written, so `git diff` can see an in-place rewrite even before
+the first real commit. And `_group`'s indexed loop in `fingerprint.dart` was
+replaced by a regex over byte pairs — not cosmetics: `for (var i = 0; …; i += 2)`
+hands the gate an `i += 2` to rewrite as `i = 2`, and the resulting infinite
+loop is reported as a **timeout**, which `mutation_test` counts as *undetected*
+rather than killed. A mutant that turns a failure into a hang is a mutant the
+gate cannot score.
+
+### F15 was built differently from the plan, because the plan leaked the request
+
+The plan pinned OS-trusted certificates through dio's `validateCertificate`.
+Measured against dio 5.11.0 with a real TLS server:
+
+| Hook | When it runs | Server recorded |
+|---|---|---|
+| `badCertificateCallback` → false | inside the handshake | **nothing** (`[]`) |
+| `validateCertificate` → false | after the response headers arrive | **the request** (`[/w]`) |
+
+So `validateCertificate` rejects; it does not block. A design resting on it
+would hand the request — session cookie included — to a server whose
+certificate had changed, and only then object. But `badCertificateCallback`
+alone is not enough either, because dart:io calls it only for a chain the
+context does not trust, so an OS-trusted certificate never reaches it.
+
+**What was built:** whenever a pin exists, the client is constructed on
+`SecurityContext(withTrustedRoots: false)`, which routes *every* certificate
+through the handshake-time hook and makes the pin decision happen before any
+bytes are sent. With no pin, the default context is used and ordinary public
+HTTPS behaves exactly as the OS says. Both hooks remain wired to the same pure
+`decidePin`, because one is per **connection** (a pooled connection skips it)
+and the other per **response**.
+
+Every refusal test asserts the TLS server recorded **zero requests**. That is
+what makes "blocking" a measurement rather than a claim.
+
+### Both concurrency guards were proven necessary, separately
+
+The plan predicted one test would discriminate both. It does not:
+
+| Guard deleted | Which test goes red |
+|---|---|
+| the generation counter | "a stale generation returns without a request at all" |
+| the in-flight future | "eight concurrent callers cause exactly ONE login" |
+
+The 8-concurrent test alone would **not** have caught a missing generation
+counter, because the in-flight future collapses that case. Both tests exist.
+
+### The stale-socket surprise did not happen, so nothing was written for it
+
+The plan warned that after `server.restart()` a pooled TCP connection might
+surface `HttpException: Connection closed before full header was received`
+instead of a clean 401, and that F3 — which keys on a status code — would then
+never fire. Measured: it does not. The restart produces a clean 401 and F3
+recovers, across all four integration suites. **No retry-on-`connectionError`
+was written**, per §1, and the evidence that none is needed is that 19 tests
+pass without one. If a device ever shows the other shape, that is the moment.
+
+### Deviations from the plan, with the reason
+
+- **`SecretStore` is an `abstract base class`, not `abstract interface class`.**
+  `base` forces subtypes to `extend` rather than `implement`, which makes the
+  redacting `toString` *inherited* instead of merely recommended — an interface
+  could only ask. `secret_store_test.dart` proves it with a store that
+  overrides nothing and still prints `ForgetfulSecretStore(<redacted>)`. The
+  M2.0 gate fix that this shape motivated stands on its own: `interface class`
+  and `mixin class` are shapes this tree can still produce, and both were
+  proven with a probe.
+- **`ProbeResult` is in `probe_result.dart`, separate from `server_probe.dart`**,
+  for the same reason `errors.dart` is separate from `error_mapper.dart`:
+  `dead_types` requires construction outside the declaring file.
+- **A non-2xx from `GET /api/state` is `NotAFileFinServer`, not
+  `ServerUnreachable`.** That route is unauthenticated and always answers 200
+  (`install.go:24`), so anything else proves the thing at that URL is not
+  FileFin's state route. Only a transport failure is "unreachable" — the two
+  lead a user to different actions, and merging them is how a wrong port looks
+  like a wrong product.
+- **`transport.dart` sets `ResponseType.plain`**, which the plan did not
+  specify. dio's default decodes the body itself when it likes the content
+  type, which hands two decisions to a dependency that belong here. Measured
+  consequence of the default: a malformed body under an `application/json`
+  header makes dio's transformer throw, arriving as `DioExceptionType.unknown`,
+  which `mapDioException` can only read as a connection failure — so a
+  truncated payload would be reported as "could not reach the server".
+- **`Credentials` has no `==`/`hashCode`.** It had; the mutation gate reported
+  four survivors over them because nothing compares two Credentials. Deleted
+  rather than tested: four untested branches nothing needs are §1 and §5, and
+  deleting a comparison beats excluding a mutant.
+
+### Gate proof log — M2
+
+Every row was executed against the real script. Both exit codes were observed.
+
+| Gate | Fail input | Exit | Clean | Exit |
+|---|---|---|---|---|
+| `constitution` / `secret_tostring` — modifiers | `abstract interface class TokenStore`, no `toString()` | **1** (was **0** before the fix) | the same class with a `toString()` | 0 |
+| same | `mixin class SecretHolder`, no `toString()` | **1** (was **0**) | probe deleted | 0 |
+| `constitution` / `secret_tostring` — brace counting | the three real M2 classes, **all of which override `toString()`** | **0** (was **3** false positives) | — | — |
+| same | `Credentials` with its `toString()` deleted | **1** | restored | 0 |
+| same | M0's original probe, `class SessionCookie` with no `toString()` | **1** | — | — |
+| same | `SessionCookie` with a `toString()` **after** a braced member | **0** (was **1**, wrongly) | — | — |
+| `deps` — `integration_test` scope | `import 'package:kiri_check/…'` in `browse_test.dart`, undeclared in that pubspec but declared by a sibling workspace member | **1** (was **0** — invisible) | import removed | 0 |
+| `mutants` — mktemp | the old `…-XXXXXX.xml` template, called twice | 1st **rc 0 with a LITERAL path**, 2nd **rc 1**, gate wedged | `mktemp -d …-XXXXXX` twice | 0 and 0, two distinct dirs |
+| `it` — missing binary | `FILEFIN_BIN=/nonexistent just it` | **1**, names the binary and prints the build command | real binary | 0 |
+| `it` — zero tests | every `*_test.dart` moved out of `integration_test/` | **1**, "a recipe over zero tests reports success" | moved back | 0 |
+| `it` — a skippable test | one test marked skippable | **1**, names the file and line | reverted | 0 |
+| `it` — F3 itself | `AuthInterceptor`'s 401 branch short-circuited | **1**, the restart test fails | restored | 0 |
+| F1's conjunction | the `needsSetup` half of the probe's key check deleted | **1** test red, exactly the discriminating one | restored | 14 of 14 |
+| F15's policy | `decidePin`'s changed branch inverted to Accept | **5** tests red including "pinned to A, served B" | restored | 26 of 26 |
+| F3's concurrency | the generation guard deleted | the stale-generation test red | restored | 25 of 25 |
+| same | the in-flight future deleted | the 8-concurrent test red | restored | 25 of 25 |
+
+**Nothing is deferred out of M2.** M2.0(b)'s proof was deferred two steps by
+design and executed at M2.7.
+
+### Debt this milestone knowingly accepts
+
+- **`FILEFIN_MUTANTS_ALLOW_ZERO=1` was used on one commit** — M2.1, `ServerId`.
+  The cause is the first of the two the gate names: a declaration-only diff.
+  The entire non-doc addition to `lib/` is one line, an `extension type const`
+  with no operator, literal or conditional. Verified by reading the diff.
+- **There is no platform `SecretStore`.** F2's "platform secure store" is a port
+  plus an in-memory implementation until M7. **Nothing at M2 proves a password
+  survives an app restart** — the in-memory store is the production *cache*, and
+  the persistence half does not exist yet.
+- **F15's OS-trusted-certificate-change arm is enforced but unexercised.**
+  Proving the wiring needs a CA-signed certificate for `127.0.0.1`. `decidePin`
+  is pure and table-tested over every combination, which confines the gap to
+  wiring rather than policy — but it is a gap. `docs/risks.md` R5.
+- **The `filefin` binary has no TLS listener**, so SPEC §10's "self-signed
+  server" half of M2's exit criterion is met against a Dart
+  `HttpServer.bindSecure` with committed certificates. A real handshake, not a
+  real FileFin. R5.
+- **The coverage floor is tree-wide.** `check-coverage.sh` reads one
+  concatenated lcov, so a well-covered package can mask a poorly covered one.
+  Both figures are stated above and both are 100%. A **per-package floor is
+  proposed, not smuggled in**: it is a larger gate change than M2 should make
+  on its way past.
+- **The mutation gate still gives zero assurance for `filefin_core`'s wire
+  models and converters.** Unchanged from M1 — nothing in them is an operator,
+  literal or conditional. `filefin_api`'s healthy mutant count must not be read
+  as covering them.
+- **Endpoints deliberately not built:** search, home rows and tags (M6), poster
+  bytes (M3), playback and progress (M4/M5). Each is documented and captured
+  already; §1 says the code arrives with the screen that needs it.
+- **Error variants deliberately not built:** `TranscodingDisabled` (415, M5,
+  where F12's wording *is* the variant) and `BadRequest` (400, M4/M6). At M2 the
+  only 400 the server can produce is `bad category id`, and `CategoryId` is an
+  `int`, so nothing can construct that request. 403 is never — admin only (C4).
+  `dead_types` would fail each of them today.
+- **Android and iOS cleartext-traffic configuration is an M3 prerequisite.**
+  F15 permits plain `http://` for LAN servers; Android needs
+  `cleartextTrafficPermitted` in a network security config and iOS needs
+  `NSAllowsLocalNetworking` in `Info.plist`. Neither file exists — there is no
+  `apps/mobile` yet — and without them every plain-http server fails on device
+  for a reason that looks nothing like its cause.
+- **`just it` is local-only.** CI runs `just check` and cannot run `it`, so the
+  integration suite protects a developer's machine and not the pipeline. A CI
+  job would need a `filefin` binary built from upstream (Go plus a Node web
+  build); a job that skipped without one would report success while checking
+  nothing, which is the shape this repository refuses everywhere else.
+- **`filefin_api` has one `// ignore:` per gate-adjacent decision — three in
+  total**, each with the reason written immediately above it:
+  `avoid_catching_errors` twice (at the wire boundary, where a `TypeError` from
+  a generated decoder is a fact about the payload rather than a bug of ours) and
+  `avoid_redundant_argument_values` twice (`withTrustedRoots: false` and
+  `ProcessSignal.sigterm`, where the argument *is* the mechanism and a reader
+  must not have to look a default up).
+- **CLAUDE.md §4 and `docs/architecture.md` disagree on version pinning**, and
+  M2 followed the stricter reading (exact pins for every new dependency) rather
+  than picking. §4 says "pre-1.0 packages are pinned exactly", which implies
+  caret above 1.0; architecture.md says exact on introduction. **This wants a
+  one-line reconciliation in CLAUDE.md**, which M2 has not made because
+  CLAUDE.md is the constitution and editing it to match one's own code is the
+  wrong direction.
+- **F11 is not dropped, it is split.** The M2 brief lists it; SPEC §10 puts it
+  at M7. M2 delivers the *mechanism* — one client per `ServerId`, each with its
+  own cookie jar, secret namespace and certificate pin — and M7 delivers the
+  switching UI.
 
 ---
 
@@ -663,8 +938,8 @@ floor is set by the strictest constraint in the tree, not the loosest.
 
 | Item | Decision | Where |
 |---|---|---|
-| **A2** — `ServerId` | Deferred to **M2**. CLAUDE.md §7 names it, but no consumer exists until multi-server lands, and §1 forbids building ahead of the milestone that needs it. `id_typedefs` already greps for it, so a typedef version cannot sneak in meanwhile. | M1.2 defines the other four |
-| **A4** — `just it` | **Not created in M0.** There is no integration suite until M2, and a recipe over zero tests reports success. M0's exit criterion is `just check`, which does not include `it`. `check-all` is currently an alias for `check`. | M2 |
+| **A2** — `ServerId` | **Closed at M2.1.** `filefin_api` is the consumer: it keys the per-server cookie jar, secret namespace and certificate pin. | M2.1 |
+| **A4** — `just it` | **Closed at M2.7.** Four suites, 19 tests, 4 seconds, against the real binary; `check-all: check it`, local-only. All four refusal paths proven. | M2.7 |
 | **A5** — `mutants` / `coverage-check` on real code | Created and proven in M0 (synthetically for coverage, against a real scratch package for mutants); re-proven against `filefin_core` at **M1.9**. | above |
 | **A9** — `progressIntervalSecs` | `PlaybackSettings` is `{wifiOnly, meteredWarnBytes}` only. The interval arrives at **M4** with the progress reporter; a settings field nobody reads is a dead branch (§5). | M4 |
 | **A10** — `RefuseReason` | `{offline, wifiOnlyOnMetered}` only. The 415 "transcoding disabled" message is knowable only *after* a request, so it is an M5 `filefin_api` concern, not a `decide()` branch. | M5 |

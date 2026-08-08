@@ -33,6 +33,39 @@ needs a clock, a socket, or a screen cannot be.
 interpreted, so F3's re-auth-and-retry exists once rather than at every call
 site.
 
+### Why `filefin_api` has no Flutter
+
+Decided at M2, and structural rather than stylistic. Three gates make it so:
+
+- `tool/run-tests.sh`, `run-coverage.sh` and `check-mutants.sh` all run `dart
+  test` per package. A Flutter package needs `flutter test` and a different
+  coverage path, so a Flutter dependency here would force all three to grow a
+  Flutter branch at M2 instead of M3.
+- `flutter_secure_storage` has **no VM implementation**: under `dart test` it
+  throws `MissingPluginException`. Every F3 unit test would need a Flutter
+  binding and a fake platform channel — mocking exactly the layer that matters.
+- §6 constrains only `filefin_core`. `dart:io` in `filefin_api` is fine and F15
+  requires it. "Pure" here means **Flutter-free**, not I/O-free.
+
+So credential storage is an injected port. `SecretStore` is an
+**`abstract base class`** — `base` forces every subtype to `extend` rather than
+`implement`, which is what makes its redacting `toString` *inherited* instead of
+merely recommended; an interface could only ask an implementation to redact.
+`InMemorySecretStore` ships with it and is **not a stub**: F3 needs the password
+in memory for the process lifetime whatever the persistence story is, because a
+re-auth cannot await a Keychain prompt in the middle of a 401 retry. M7's
+platform store is a persistence decorator around it.
+
+This resolves SPEC.md §5.1 vs §6 on where secure storage lives: the *port* is in
+`filefin_api`, the *platform implementation* is in `apps/mobile`. **Nothing at
+M2 proves a password survives an app restart**, and STATE.md says so rather than
+letting the port's existence imply it.
+
+The SPEC §7 key layout (`filefin/{serverId}/session|password|certpin`) lives in
+exactly one function, `secretKeyFor`. A layout written twice is a layout that
+will be written differently, and the failure mode is a credential that silently
+cannot be found rather than an error anyone sees.
+
 ---
 
 ## Repository layout
@@ -89,10 +122,10 @@ gates can never disagree about which files count:
 | `constitution` / `dead_types` | `dart_sources` | a variant constructed only by a test still has a consumer; §5 asks for *a* consumer, and a test is one. |
 | `constitution` / `undocumented_endpoint` | `dart_lib_sources` | a path literal in a test fixture helper is not a call we make. |
 | `constitution` / `secret_tostring` | `dart_lib_sources` | §9 is about what ships and what logs. |
-| `deps` | every `pubspec.yaml`, sources = that package's `lib bin test tool example` | a dev-dependency used only by tests is used. |
+| `deps` | every `pubspec.yaml`, sources = that package's `lib bin test integration_test tool example` | a dev-dependency used only by tests is used. `integration_test` joined at M2: without it an undeclared import in an integration suite was reported by nothing, and Dart resolves one anyway through a sibling workspace member — which is exactly how an undeclared dependency survives to break a clean checkout. Proven at M2.7: the same undeclared import gave exit 0 before and 1 after. |
 | `dupes` | `packages/` + `apps/`, `*.dart`, generated excluded | generated code is duplicative by construction and nobody can refactor it. |
 | `coverage` | `report-on` each package's `lib/`, `--check-ignore`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. `--check-ignore` is what keeps generated freezed boilerplate out of it — see below. |
-| `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. |
+| `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. Never runs over `integration_test/`. |
 | `fixtures-verify` | `test/fixtures/**` | reads committed files only, so it runs in CI without a server. |
 
 Generated files are exempt from every gate. The exemption lives in
@@ -193,17 +226,29 @@ gate-that-cannot-fail problem wearing a different hat.
 ## Version pinning policy
 
 The policy for a package **when it is added**: pinned exactly (no caret), with
-a one-line reason in the pubspec. Only the first and last rows are in the tree
-today; the rest name the pin to apply at the milestone that introduces them, so
-the decision is made before the pressure to skip it.
+a one-line reason in the pubspec. Every row below is in the tree as of M2
+except `glados`, which was replaced by `kiri_check` — see STATE.md.
+
+**The policy conflicts with CLAUDE.md §4 as written, and the stricter reading
+wins.** §4 says "pre-1.0 packages are pinned exactly", which implies caret above
+1.0; this file says exact on introduction, full stop. M2 resolved it in favour
+of this file and recorded why in the pubspec: a `dio` patch release that changes
+interceptor ordering or `fetch` semantics silently changes F3, and both `just
+mutants` and `just codegen-check` need identical resolution on every machine to
+answer the same way twice. **§4's wording deserves a one-line reconciliation**
+so the two documents stop disagreeing; it is flagged in STATE.md rather than
+edited unilaterally, because CLAUDE.md is the constitution.
 
 | Package | In the tree | Why exact |
 |---|---|---|
 | `mutation_test` | yes | a mutation result that changes with a patch release makes `just mutants` non-deterministic across machines |
+| `dio` (5.11.0) | M2 | an interceptor-ordering or `fetch` change is an F3 change, and it would arrive silently |
+| `dio_cookie_manager` (3.5.0), `cookie_jar` (4.0.9) | M2 | the session cookie's round trip is what F3 replays through; `cookie_jar` is named directly so the jar stays in memory, since `PersistCookieJar` writes a session cookie to a plain file and §9 forbids that |
+| `crypto` (3.0.7) | M2 | a fingerprint that changed with a patch release would look to every user like their server's certificate had been replaced |
 | `jscpd` (literal in `tool/check-dupes.sh`) | yes | a detector whose defaults move between patch releases turns "duplication rose" into "the tool changed its mind" |
 | `freezed`, `freezed_annotation` | M1.4 | generated output must be byte-identical or `just codegen-check` fails on a machine that merely resolved differently |
 | `json_serializable`, `json_annotation` | M1.4 | same |
-| `glados` | M1 | property-test shrinking and seeding must reproduce a reported failure |
+| `kiri_check` (1.3.1) | M1 | property-test shrinking and seeding must reproduce a reported failure, and `just mutants` runs the suite once per mutant — a generator drawing a different sample each run turns a surviving mutant into a coin flip. (This row named `glados`, which does not resolve on any Dart 3 SDK.) |
 
 `build_runner` is not in the pubspec at M0 either: nothing generates anything
 yet, so it paid no rent (§1, §4). It arrives at M1.4 with the first `@freezed`
@@ -296,6 +341,49 @@ thing that would have noticed.
 `PROVENANCE.md` is inside the manifest, not exempt from it: the record of how a
 fixture was produced is part of the fixture set. All three halves were proven to
 fail independently.
+
+---
+
+## The integration harness (`just it`, M2)
+
+**It is in `check-all`, not `check`, and that is deliberate.** CI has no
+`filefin` binary, so `check` would be permanently red. `check-all: check it` is
+local-only, which makes M2's definition of done "`just check` exits 0 **and**
+`just it` exits 0 on a machine with the binary" — an amendment to CLAUDE.md's
+DoD item 1.
+
+`tool/run-integration.sh` **fails** on: a missing or non-executable binary, a
+missing `ffmpeg`, zero `*_test.dart`, and any test marked skippable. It
+auto-seeds one thing only — a missing data directory — because seeding is
+recoverable and deterministic while a missing binary is neither.
+
+Server control is Dart rather than shell because the restart happens *in the
+middle of a test*.
+
+### Three upstream facts the harness depends on
+
+Verified in the source at v0.20.3. Get any of them wrong and it fails in a way
+that looks like a client bug.
+
+| Fact | Where | Consequence |
+|---|---|---|
+| **`--port` is IGNORED once a config exists** | `bootstrapServe`, `cmd/filefin/main.go:85` returns early on `config.Exists()` and only *warns* about a differing `--port` | the copied config's `port` must be rewritten; passing a flag silently collides every suite on 8099 |
+| **the config is `$HOME/.filefin.json`, `dataDir` absolute** | `internal/config/config.go:201` | `HOME` points at the copy and `dataDir` is repointed at it |
+| **the SQLite cache is under `os.UserCacheDir()`** | `internal/db/db.go:18` | it is *not* in the data dir; `cache.db-wal` and `-shm` must travel with `cache.db` (WAL mode — without the `-wal` the library comes back empty) |
+
+**Seed once, copy per suite.** Seeding is three ffmpeg encodes plus a cache
+rebuild; a copy of the 4.2 MB result with two rewritten fields starts in about a
+second. The whole run is 4 seconds. A suite slow enough to skip is worse than
+none.
+
+**Readiness is not "any 200."** The SPA catch-all answers 200 for anything and a
+half-started server can too, so the poll requires `200` **and**
+`application/json` **and** a `version` field — the same three facts F1 uses — and
+**throws** on a 10s deadline with the last 40 log lines.
+
+The rate-limit suite gets its **own** server and run directory: five bad logins
+lock the account for fifteen minutes and the limiter is in-memory, so sharing an
+instance would 429 every later suite.
 
 ---
 

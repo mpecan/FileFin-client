@@ -66,9 +66,19 @@ So a typo'd path, a trailing slash from a `Uri` join, a method mismatch, and an
 endpoint upstream later removes **all present as success**, and surface as a
 JSON decode error rather than an HTTP one.
 
-**A non-JSON `Content-Type` on a JSON route is a transport failure, not a
-payload.** `filefin_api` checks the media type before decoding and reports it as
-"this is not a FileFin API response", never as a malformed model. This is also
+**On a 2xx response, a non-JSON `Content-Type` on a JSON route is a transport
+failure, not a payload.** `filefin_api` checks the media type before decoding
+and reports it as "this is not a FileFin API response", never as a malformed
+model.
+
+**The "on a 2xx" qualifier is load-bearing and was missing until M2.** Read
+unconditionally, this paragraph contradicts the rest of this document: the same
+server answers `401 unauthorized` and `404 page not found` as **plain text**
+(above, and under `GET /api/media/{id}`). A client applying the media-type check
+to every response would turn every documented error into "not a FileFin server"
+— and F3 would never see a 401, so session recovery would never happen at all.
+`filefin_api` applies it in `json_response.dart`, to 2xx bodies it intends to
+decode, and `error_mapper.dart` never looks at a content type. This is also
 why SPEC.md F1 probes for `application/json` plus `needsSetup`/`version` rather
 than for a status code: `200` from `GET /api/state` is what *any* SPA host
 answers, and proves nothing.
