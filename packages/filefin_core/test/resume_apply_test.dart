@@ -74,14 +74,41 @@ void main() {
     });
 
     test('duration <= 0 is never crossed, whatever the position', () {
+      // The positions matter as much as the durations. With only a positive
+      // position the ratio is negative anyway, so the guard is never the thing
+      // doing the work and the test name overstates what it checks — see the
+      // dedicated negative-duration case below.
       for (final duration in [0.0, -1.0, -100.0]) {
-        final out = applyProgress(
-          const WatchState(),
-          at(0, 1000, duration),
-          fileCount: 1,
-        );
-        expect(out.watched, isFalse, reason: 'duration $duration');
+        for (final position in [1000.0, -95.0, 0.0]) {
+          final out = applyProgress(
+            const WatchState(),
+            at(0, position, duration),
+            fileCount: 1,
+          );
+          expect(
+            out.watched,
+            isFalse,
+            reason: 'position $position of duration $duration',
+          );
+        }
       }
+    });
+
+    test('a negative duration never crosses, even at a "90%" ratio', () {
+      // The guard is `duration > 0`, not `duration != 0`, and this is the only
+      // input that tells the two apart: -95 / -100 is 0.95, which clears the
+      // 0.90 threshold. Go's `crossed(-10, -1)` is false, so `watched` must
+      // stay false. Without this the mutant `!= 0` survived the whole suite —
+      // the 601-vector oracle's only negative duration is `{pos 10, dur -1}`,
+      // where the ratio is negative, and the property generators drew the
+      // last-file-and-unwatched combination it needs zero times in 300.
+      final out = applyProgress(
+        const WatchState(),
+        at(0, -95, -100),
+        fileCount: 1,
+      );
+      expect(out.watched, isFalse);
+      expect(out.pointer, const ResumePointer(file: FileIndex(0), seconds: 0));
     });
 
     test('a huge position over a zero duration still does not cross', () {
@@ -144,6 +171,22 @@ void main() {
       expect(_secondsAfter(1.5), 2);
       expect(_secondsAfter(1.6), 2);
       expect(_secondsAfter(2.5), 3);
+    });
+
+    test('the positive side differs from .round() too, not just the clamp', () {
+      // `0.49999999999999994` is the double immediately below 0.5. Adding 0.5
+      // rounds up to exactly 1.0 in binary64, so Go's int(x + 0.5) answers 1;
+      // Dart's .round() answers 0. Without this assertion the mutant
+      // `return x.round();` — negative clamp intact — survived the whole
+      // suite: the captured vectors use 1.4/1.5/1.6 and the property
+      // generators draw tenths, so neither oracle can reach this input.
+      const justBelowAHalf = 0.49999999999999994;
+      expect(_secondsAfter(justBelowAHalf), 1);
+      expect(
+        justBelowAHalf.round(),
+        0,
+        reason: 'what we deliberately do NOT do',
+      );
     });
 
     test('a negative position clamps to 0 rather than rounding', () {

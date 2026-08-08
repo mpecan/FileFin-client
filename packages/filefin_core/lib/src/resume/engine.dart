@@ -34,8 +34,16 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
 ///
 /// The non-finite guard is client hardening with no upstream counterpart:
 /// Dart's
-/// `.toInt()` throws on NaN and Infinity where Go's `int()` does not. That is a
-/// decision about our runtime, not a claim about the server.
+/// `.toInt()` throws on NaN and Infinity where Go's `int()` does not — and what
+/// Go produces instead is worth naming, because only one of the three is a
+/// deliberate difference. Measured on darwin/arm64 against upstream's own
+/// `round`: `+Inf` → `9223372036854775807`, `NaN` → `0`, `-Inf` → `0` (through
+/// the negative clamp). So returning 0 for `NaN` and `-Inf` agrees with Go by
+/// accident of the platform, and `+Infinity` is the sole place we deliberately
+/// answer something else. Neither is reachable over the wire: Go's
+/// `encoding/json` refuses to marshal a non-finite float, so no server payload
+/// can carry one. This is a decision about our runtime, not a claim about the
+/// server.
 int _roundSeconds(double x) {
   if (!x.isFinite) return 0;
   if (x < 0) return 0;
