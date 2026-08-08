@@ -81,6 +81,35 @@ void main() {
     });
   });
 
+  group('ServerId', () {
+    test('wraps our own saved-server identifier and compares by value', () {
+      expect(const ServerId('home'), const ServerId('home'));
+      expect(const ServerId('home'), isNot(const ServerId('work')));
+      expect(const ServerId('home').value, 'home');
+    });
+
+    test('hashes by value, so it keys a per-server jar, store and pin', () {
+      // This is the whole reason the type exists: `filefin_api` keeps one
+      // cookie jar, one secret namespace and one certificate pin per saved
+      // server, and every one of those is a map keyed by a ServerId.
+      final jars = <ServerId, String>{const ServerId('a'): 'jar-a'};
+      jars[const ServerId('a')] = 'jar-a2';
+      jars[const ServerId('b')] = 'jar-b';
+      expect(jars, hasLength(2));
+      expect(jars[const ServerId('a')], 'jar-a2');
+      expect(distinct([const ServerId('a'), const ServerId('a')]), 1);
+    });
+
+    test('is never sent to a server, so no JsonConverter exists for it', () {
+      // Stated as a test rather than only a comment: a converter for a type
+      // that appears in no wire model would be dead by §5, and the four that
+      // do exist are in `json_converters.dart`. If a ServerIdConverter ever
+      // appears, this test is where the reason it should not have has to be
+      // argued away.
+      expect(const ServerId('home').value, isA<String>());
+    });
+  });
+
   test('IDs over different primitives never collide in one collection', () {
     // Two extension types over the SAME primitive erase to it, so equality
     // between them is that primitive's equality — the compiler, not a runtime
