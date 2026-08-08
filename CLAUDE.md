@@ -31,6 +31,18 @@ Denominator is non-blank lines, excluding generated files (`*.g.dart`,
 what invariant holds, which server quirk a workaround exists for. Comments
 that don't: what the code already says.
 
+**One size exemption, and it is named here because an exemption a rule does
+not mention is a blind spot rather than a decision.** A file under **20**
+counted lines is not measured: below twenty, one comment moves the ratio by
+five points or more, so 15% and 25% cannot be stated to the precision they are
+written at. The number was 40 through M3 and was in the script only; at 40 it
+hid three files past the ERROR line — `filefin_api.dart` 32%, `filefin_core.dart`
+28%, `visible_rows.dart` 27% — while `just comments` printed "0 error(s), 0
+warning(s)" and STATE.md quoted that. All three were paid at M3.R by moving the
+rationale into the `///` doc comment of the declaration it describes. Every
+file still exempt **and over a line** is printed by the gate on every run, so
+the exemption is visible rather than inferred.
+
 **This budget governs Dart, and `just comments` measures Dart only.** The shell
 under `tool/` is deliberately exempt, and the exemption is a decision rather
 than an oversight: by §2's own arithmetic 12 of the 21 M0 shell scripts are past
@@ -254,6 +266,35 @@ suppresses scrutiny. Classic ways a shell gate silently always-passes:
 **When you add or change a gate, prove both directions.** Construct an input
 that must fail, run the gate, confirm non-zero exit; then confirm the clean
 tree still passes. A gate change is not done until you have seen it fail.
+
+### Anything that rewrites lib sources in place runs alone
+
+`mutation_test` edits the real source files and restores them, which is why
+`just check` runs `mutants` last and why `just` runs its dependencies
+sequentially. **The same hazard applies to any harness you write**, and at M3
+it bit: a review agent's `mutate.py` was editing files in the main working copy
+while a second agent ran the gates over them. The symptoms did not look like a
+concurrency problem at all —
+
+- `just fmt-check` failed 3 times in ~35 invocations, always naming one file,
+  never reproducible on demand;
+- `git status` once reported ` M apps/mobile/lib/src/app.dart` with an **empty
+  diff** and an md5 identical to HEAD.
+
+Both were the other process's window. Before you believe any gate failure,
+check `git status --untracked-files=all` **and** check that nothing else is
+mid-mutation; and run a mutation harness against a `git worktree` or a copy,
+never against the tree someone else is measuring.
+
+**A killed `just check` is the same hazard with one process.** `mutation_test`
+restores each source after testing it, so interrupting the run — a timeout, a
+Ctrl-C, a SIGTERM — leaves the mutant it was holding **on disk**. Demonstrated
+at M3.R: a `just check` cancelled at ten minutes left
+`if (isExpanded)` rewritten to `if (!(isExpanded))` in `visible_rows.dart`, and
+the next run reported it as an `unnecessary_parenthesis` **info** from
+`analyze` — a lint complaint about a silently inverted branch. Run `mutants` to
+completion or not at all, and after any interrupted run diff the lib sources
+before doing anything else.
 
 ## Working against a real server
 

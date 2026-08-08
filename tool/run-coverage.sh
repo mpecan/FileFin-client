@@ -44,6 +44,16 @@ while IFS= read -r pubspec; do
     # rather than passing an argument that silently means "no packages".
     echo "coverage: $pkg_dir"
 
+    # The lcov file is named after the FULL path with slashes turned into
+    # dashes, not after `basename "$pkg_dir"`. Under the basename the app's
+    # file was literally `coverage/mobile.lcov`, so a future `packages/mobile`
+    # would have overwritten it. That is fail-closed — the missing-record
+    # cross-check below would then report every source of whichever package
+    # lost the race — but it would name the wrong cause, and a gate that fails
+    # for a reason its own message contradicts is a gate people learn to work
+    # around.
+    slug="${pkg_dir//\//-}"
+
     # THE FLUTTER BRANCH. `flutter test --coverage` writes lcov itself — there
     # is no `.vm.json` hitmap and no `format_coverage` step, so none of the
     # `--packages` / `--report-on` machinery below applies to it.
@@ -69,7 +79,7 @@ while IFS= read -r pubspec; do
     # app exactly as it protects the packages, and `dart_lib_sources` already
     # covers `apps/*/lib`.
     if [ "${pkg_dir#apps/}" != "$pkg_dir" ]; then
-        raw="$PWD/$OUT/$(basename "$pkg_dir").flutter.lcov"
+        raw="$PWD/$OUT/$slug.flutter.lcov"
         (cd "$pkg_dir" && flutter test --coverage --coverage-path="$raw")
         [ -s "$raw" ] || fail "flutter test --coverage produced no lcov for $pkg_dir"
         bad=$(grep '^SF:' "$raw" | grep -cv '^SF:lib/' || true)
@@ -81,7 +91,7 @@ while IFS= read -r pubspec; do
        is now wrong, and a wrong rewrite is a record that silently names no
        file. Fix the rewrite; do not delete this check."
         fi
-        sed "s|^SF:lib/|SF:$pkg_dir/lib/|" "$raw" > "$OUT/$(basename "$pkg_dir").lcov"
+        sed "s|^SF:lib/|SF:$pkg_dir/lib/|" "$raw" > "$OUT/$slug.lcov"
         rm -f "$raw"
         measured=$((measured + 1))
         continue
@@ -90,7 +100,7 @@ while IFS= read -r pubspec; do
     pkg_config="$pkg_dir/.dart_tool/package_config.json"
     [ -f "$pkg_config" ] || pkg_config=".dart_tool/package_config.json"
     [ -f "$pkg_config" ] || fail "no package_config.json for $pkg_dir — run 'dart pub get'"
-    (cd "$pkg_dir" && dart test --coverage="../../$OUT/raw/$(basename "$pkg_dir")")
+    (cd "$pkg_dir" && dart test --coverage="../../$OUT/raw/$slug")
     # --check-ignore honours `// coverage:ignore-file`, which freezed writes on
     # line 2 of everything it generates. Without it the denominator is mostly
     # freezed's pattern-matching helpers (`when`, `maybeMap`, `whenOrNull`) —
@@ -104,8 +114,8 @@ while IFS= read -r pubspec; do
     dart run coverage:format_coverage \
         --lcov \
         --check-ignore \
-        --in="$OUT/raw/$(basename "$pkg_dir")" \
-        --out="$OUT/$(basename "$pkg_dir").lcov" \
+        --in="$OUT/raw/$slug" \
+        --out="$OUT/$slug.lcov" \
         --packages="$pkg_config" \
         --report-on="$pkg_dir/lib"
     measured=$((measured + 1))

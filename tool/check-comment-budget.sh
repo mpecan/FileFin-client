@@ -20,15 +20,29 @@ cd "$(repo_root)"
 # Scope is `dart_lib_sources`: test files are excluded because test narration
 # is a feature, not debt (docs/architecture.md records this).
 #
-# Files under MIN_LINES counted lines are skipped: on a 6-line file one comment
-# is 17% and the ratio says nothing.
+# Files under MIN_LINES counted lines are skipped, and MIN_LINES IS PART OF THE
+# RULE — CLAUDE.md §2 names it, because an undocumented size exemption is a
+# blind spot rather than a decision. It was 40 through M3, and at 40 it hid four
+# files that were over a line: `filefin_api.dart` at 32%, `filefin_core.dart` at
+# 28% and `visible_rows.dart` at 27% were all past the ERROR line while `just
+# comments` printed "0 error(s), 0 warning(s)" and STATE.md quoted it. M3.R
+# lowered it to 20 and paid all four, by moving the rationale into the `///`
+# doc comment of the declaration it is about — which is where it belonged, and
+# which §2 excludes from both sides of the ratio.
+#
+# 20 rather than 0: below twenty counted lines one comment moves the ratio by
+# five points or more, so the 15/25 thresholds cannot be stated to the
+# precision they are written at. Everything still skipped is listed by the run
+# itself (below), so the exemption is visible on every invocation instead of
+# being a number in a script nobody opens.
 
 WARN_PCT=15
 ERROR_PCT=25
-MIN_LINES=40
+MIN_LINES=20
 
 exit_code=0
 warnings=0
+skipped=0
 errors=0
 
 while IFS= read -r file; do
@@ -49,7 +63,15 @@ while IFS= read -r file; do
         ' "$file"
     )
 
-    [ "$total" -lt "$MIN_LINES" ] && continue
+    # Named, not silently dropped. The old gate skipped in silence, so a file
+    # over the ERROR line and a file with nothing to say printed identically —
+    # which is how three errors sat behind a summary line reading "0 error(s)".
+    if [ "$total" -lt "$MIN_LINES" ]; then
+        skipped=$((skipped + 1))
+        [ "$pct" -gt "$WARN_PCT" ] &&
+            echo "SKIP:  $file is ${pct}% comments (${comments}/${total}, under ${MIN_LINES} counted lines — §2's size exemption)"
+        continue
+    fi
 
     if [ "$pct" -gt "$ERROR_PCT" ]; then
         echo "ERROR: $file is ${pct}% comments (${comments}/${total}, max ${ERROR_PCT}%)"
@@ -61,5 +83,5 @@ while IFS= read -r file; do
     fi
 done < <(dart_lib_sources)
 
-echo "comment budget: $errors error(s), $warnings warning(s)"
+echo "comment budget: $errors error(s), $warnings warning(s), $skipped file(s) under ${MIN_LINES} counted lines"
 exit $exit_code

@@ -74,7 +74,12 @@ strip_xml_comments() {
     ' "$1"
 }
 
-if strip_xml_comments "$RULES" | grep -q '<commands>'; then
+# `<commands[[:space:]]*>` rather than the literal, because XML permits
+# whitespace before the closing angle bracket and mutation_test's parser
+# accepts it: a reproduction ran with `<commands  >`, executed `dart test` out
+# of the rules file exactly as the refusal below describes, and the refusal
+# never fired. A gate a single space turns off is a gate you have already lost.
+if strip_xml_comments "$RULES" | grep -qE '<commands[[:space:]]*>'; then
     fail "$RULES declares a <commands> block.
        It would run IN ADDITION to the per-package command this script writes
        into its generated targets file, so every package would also be tested

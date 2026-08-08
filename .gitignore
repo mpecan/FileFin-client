@@ -45,6 +45,10 @@ mutation-test-report/
 **/ios/**/*.perspectivev3
 **/ios/**/xcuserdata/
 
+# Kotlin's incremental-compile session directory, written by the Android
+# Gradle build and left behind as an untracked `*.salive` file mid-build.
+**/.kotlin/
+
 # Editors
 .idea/
 *.iml

@@ -139,6 +139,28 @@ check_id_typedefs() {
 #
 # The construction search carries the same allowance: `UiData<int>(…)` is a
 # construction and `\bUiData[[:space:]]*\(` does not match it.
+#
+# **THE DECLARATION IS A LOGICAL LINE, NOT A PHYSICAL ONE, and that is not a
+# hypothetical.** Until M3.R the match ran per physical line, so a header
+# `dart format` had wrapped —
+#
+#     final class SomethingRatherLong<T>
+#         extends Base<T> {
+#
+# — matched nothing and the variant was exempt from §5 entirely. `dart format`
+# is mandatory here (`just fmt-check`) and it produced exactly that shape
+# unprompted from a one-line declaration over 80 columns; generics widen
+# declarations, so M3's first generic sealed hierarchy makes it likelier, not
+# less. The header is now accumulated until the `{` (or the `;` of a class
+# alias) before it is matched at all.
+#
+# **`implements` counts as well as `extends`.** A sealed hierarchy's variants
+# can only be declared in the same library, and `implements Base` is a legal
+# and common way to write one — it was silently exempt.
+#
+# Generics are erased before the words are read, innermost-first, so a nested
+# bound (`class X<T extends Map<String, int>> extends Base<T>`) cannot hide the
+# real `extends` behind the one inside the type-parameter list.
 check_dead_types() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_sources)
@@ -161,20 +183,53 @@ check_dead_types() {
             || ! grep -qE "\b${name}(<.*>)?[[:space:]]*\(" "${others[@]}" 2>/dev/null; then
             echo "$file: sealed variant '$name' is never constructed outside its own file"
         fi
-    done < <(awk '
-        match($0, /^[[:space:]]*((final|base|interface)[[:space:]]+)?class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*(<[^>]*>)?[[:space:]]+extends[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/) {
-            decl = substr($0, RSTART, RLENGTH)
-            n = split(decl, w, /[[:space:]]+/)
+    done < <(awk -v sealed="$(tr '\n' ' ' <<< "$sealed_names")" '
+        # SPACE-separated, not newline-separated: BSD awk refuses a `-v` value
+        # containing a newline outright ("newline in string"), and the refusal
+        # goes to stderr — which this call sends to /dev/null, so the first
+        # draft of this fix reported ZERO violations on a probe file carrying
+        # six of them and looked like it was passing.
+        BEGIN {
+            n = split(sealed, s, /[[:space:]]+/)
+            for (i = 1; i <= n; i++) if (s[i] != "") isSealed[s[i]] = 1
+        }
+        # Erase generics innermost-first, so `<T extends Map<String, int>>`
+        # disappears whole rather than leaving a dangling `>`.
+        function degeneric(t,   prev) {
+            do { prev = t; gsub(/<[^<>]*>/, "", t) } while (t != prev)
+            return t
+        }
+        function emit(buf,   decl, k, w, i, cname, bname, cand) {
+            sub(/[{;].*/, "", buf)
+            decl = degeneric(buf)
+            gsub(/,/, " ", decl)
+            k = split(decl, w, /[[:space:]]+/)
             cname = ""; bname = ""
-            for (i = 1; i <= n; i++) {
-                if (w[i] == "class")   cname = w[i + 1]
-                if (w[i] == "extends") bname = w[i + 1]
+            for (i = 1; i <= k; i++) if (w[i] == "class") { cname = w[i + 1]; break }
+            for (i = 1; i <= k; i++) if (w[i] == "extends") { bname = w[i + 1]; break }
+            # `extends` wins when it names a sealed base; otherwise every name
+            # in the `implements` clause is a candidate, because that is the
+            # other legal way to declare a variant.
+            if (cname != "" && !(bname in isSealed)) {
+                cand = 0
+                for (i = 1; i <= k; i++) {
+                    if (w[i] == "implements") cand = 1
+                    else if (w[i] == "with" || w[i] == "extends") cand = 0
+                    else if (cand && w[i] in isSealed) { bname = w[i]; break }
+                }
             }
-            # `EmptyBox<T>` names the class `EmptyBox`; the type parameters are
-            # not part of the name the construction search looks for.
-            sub(/<.*/, "", cname)
-            sub(/<.*/, "", bname)
             if (cname != "" && bname != "") printf "%s\t%s\t%s\n", FILENAME, cname, bname
+        }
+        # The modifier set is enumerated rather than `[a-z]+`, and `sealed` and
+        # `abstract` are still deliberately absent from it: neither can be
+        # constructed at all, so "never constructed" is their definition rather
+        # than a violation. Measured — a permissive `[a-z]+` reported the
+        # intermediate `sealed class PlayNow extends PlaybackDecision` as debt.
+        FNR == 1 { buf = "" }
+        {
+            if (buf != "") buf = buf " " $0
+            else if ($0 ~ /^[[:space:]]*((final|base|interface|mixin)[[:space:]]+)*class[[:space:]]/) buf = $0
+            if (buf != "" && buf ~ /[{;]/) { emit(buf); buf = "" }
         }
     ' "${files[@]}" 2>/dev/null || true)
 }
@@ -351,11 +406,27 @@ check_secret_tostring() {
 # therefore report the layer that is behaving correctly. Tests are out of scope
 # too: `test_live/` sets `HttpOverrides.global = null` to get real sockets back
 # from `flutter_test`'s binding, which is the right thing to do there.
+#
+# **THE PATTERN LISTS `Image.network` BECAUSE IT DID NOT, AND THAT WAS THE ONE
+# BYPASS THE PARAGRAPH ABOVE NAMES.** Until M3.R the pattern was
+# `package:dio/|package:http/|HttpClient\(|HttpOverrides|IOClient`, and
+# `Image.network`, `NetworkImage` and `FadeInImage.network` match none of them:
+# they build their own `HttpClient` *inside the framework*, so nothing the
+# check greps for ever appears in the app's source. Measured on a probe file —
+# `check-constitution.sh` said "no new violations", rc 0, and `dart analyze
+# --fatal-infos` said "No issues found". The only proof run recorded at M3 was
+# `final c = HttpClient();`, which is the one form the old pattern did list.
+#
+# The comment-line filter is load-bearing, not tidiness:
+# `poster_image_provider.dart`'s own doc comments explain *why* `Image.network`
+# cannot work here, and without the filter the file documenting the rule
+# becomes two violations of it.
 check_app_no_raw_http() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources -path 'apps/*')
     if [ ${#files[@]} -eq 0 ]; then return 0; fi
-    grep -nHE "package:dio/|package:http/|HttpClient\(|HttpOverrides|IOClient" "${files[@]}" || true
+    grep -nHE "package:dio/|package:http/|HttpClient\(|HttpOverrides|IOClient|NetworkImage|Image\.network|FadeInImage\.[a-zA-Z]*[Nn]etwork" "${files[@]}" \
+        | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(///|//|\*)" || true
 }
 
 CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http"

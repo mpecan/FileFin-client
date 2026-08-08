@@ -51,10 +51,22 @@ fi
 # a two-space-indented `flutter:` key whose child is `sdk: flutter`, which is
 # also how `flutter_test` is declared — so the match is on the `sdk: flutter`
 # line, which both produce and neither can have without the framework.
+#
+# A trailing `# comment` counts. The pattern used to anchor on `$` immediately
+# after the optional whitespace, so `sdk: flutter  # the framework` in a
+# `packages/*` pubspec was not flagged HERE — it died later with the much less
+# helpful `dart test exited 65`. YAML allows the comment and so does this.
 declares_flutter() {
-    grep -qE '^[[:space:]]+sdk:[[:space:]]*flutter[[:space:]]*$' "$1"
+    grep -qE '^[[:space:]]+sdk:[[:space:]]*flutter[[:space:]]*(#.*)?$' "$1"
 }
 
+# `-mindepth 2 -maxdepth 2` finds `packages/<pkg>/pubspec.yaml` and
+# `apps/<app>/pubspec.yaml` and nothing deeper, so a grouped
+# `packages/<group>/<pkg>/pubspec.yaml` would be invisible HERE. Left as-is and
+# stated rather than widened: no such package exists, and `run-coverage.sh`'s
+# missing-record cross-check reports every lib source that produced no coverage
+# record, which a silently untested package cannot survive. Widen both together
+# on the day a grouped package lands.
 ran=0
 while IFS= read -r pubspec; do
     pkg_dir="$(dirname "$pubspec")"
