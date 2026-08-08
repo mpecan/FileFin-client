@@ -408,7 +408,7 @@ written until it has them.
 | HTTP | `dio` + `dio_cookie_manager` | Interceptors are the natural home for F3's 401-retry |
 | Models | `freezed` + `json_serializable` | Sealed unions for decisions; tolerant decode (§8) |
 | Secrets | `flutter_secure_storage` | Keychain / Keystore (§9); holds session **and** password (F2) |
-| TLS | custom `badCertificateCallback` **plus** per-response certificate validation, over a pinned fingerprint store | F15; must be in the `dio` setup from M2, not retrofitted. **Both hooks are required** — see §8 R5 |
+| TLS | a custom `HttpClient.connectionFactory` that owns the handshake **plus** per-response certificate validation, over a pinned fingerprint store | F15; must be in the `dio` setup from M2, not retrofitted. **Both hooks are required**, and `badCertificateCallback` is not one of them — it is handed the CA, not the leaf. See §8 R5 |
 | Settings | plain JSON in app support dir, no secrets | inspectable |
 | Network type | `connectivity_plus` | F13's metered check |
 | OS floor | Android 8 (API 26), iOS 15 | C5 |
@@ -457,10 +457,17 @@ Each gets a spike before the milestone that depends on it. Tracked in
   criterion "a self-signed server connects only after explicit accept" is met
   against a Dart `HttpServer.bindSecure` with committed test certificates — a
   real handshake, just not a real FileFin. SPEC §6's TLS row also understated
-  F15: `badCertificateCallback` alone is not enough, because dart:io does not
-  call it for an OS-trusted certificate, so a server pinned while self-signed
-  that later gets a CA certificate would change fingerprint with the callback
-  never firing. `docs/risks.md` carries the full measurement.
+  F15 **twice**: `badCertificateCallback` alone is not enough, because dart:io
+  does not call it for an OS-trusted certificate, so a server pinned while
+  self-signed that later gets a CA certificate would change fingerprint with the
+  callback never firing — and, worse, that hook is handed **the certificate at
+  which chain verification failed**, which on a real `[leaf, CA]` chain is the
+  CA. A private CA is F15's stated common case, and against one the pin was
+  compared against the CA, the trust-on-first-use prompt named the CA, and an
+  impostor holding any other certificate from that CA received the session
+  cookie. The row now names `HttpClient.connectionFactory`, which is the only
+  hook that sees the leaf before a request byte is written. `docs/risks.md`
+  carries the full measurement, before and after, in bytes.
 - **R2 — iOS Picture-in-Picture.** iOS PiP is built around `AVPlayerLayer` /
   `AVSampleBufferDisplayLayer`; libmpv renders its own surface. PiP may be
   unavailable or need custom platform work. Affects F14. *Spike before M7.*

@@ -98,6 +98,24 @@ above is trustworthy: the server always declares a type and means it.
 **No pagination anywhere.** No listing endpoint takes a limit, offset, or
 cursor. A large library returns everything in one array (SPEC.md L2).
 
+**`503 cache unavailable` does not mean "rebuilding".** Every route below that
+lists it reaches it the same way: `ensureDB` failed, for *any* reason
+(`server/media.go:192-198`). A rebuild in progress is one of those reasons and a
+permanently unreadable cache directory is another — provoked live at v0.20.3
+with `chmod 000` on the cache dir, which produced the identical `503`. The
+status carries no way to tell them apart, which is why `CacheUnavailable`'s
+message says "unavailable, possibly rebuilding" rather than promising a wait
+that may never end.
+
+**`files[].path` is relative to the data directory**, produced by
+`relTo(dataDir, f.Path)`. The cache stores the path ABSOLUTE and `relTo`
+returns its input unchanged when the row is not under `dataDir`, so a server
+whose cache and data directory have been separated answers this field absolute —
+which is a fact about a broken deployment, not a second documented shape.
+`integration_test/support/fixture_run.dart` repoints the cache for exactly this
+reason, and `browse_test.dart` asserts the relative form against the live
+binary.
+
 ---
 
 ## `GET /api/state`
@@ -159,6 +177,11 @@ The client honours `Retry-After` and must not treat a `401` here as a session
 loss.
 
 Fixture: `login.json`, and the 429 sequence in `error_shapes.txt`.
+`login.json` is what the stub serves for this route in `filefin_api`'s unit
+suite (`test/support/client_harness.dart`), and `client_endpoints_test.dart`
+asserts all five of its keys. It used to be captured, checksummed and read by
+nothing, with a hand-written literal carrying `user` and `admin` alone standing
+in for it — which proves we can spell our own field names and nothing else (§8).
 
 ---
 

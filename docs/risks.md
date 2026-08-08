@@ -81,12 +81,47 @@ A design resting on `validateCertificate` alone would therefore hand the
 request — session cookie included — to a server whose certificate had changed,
 and only then object.
 
-**What was built instead:** whenever a pin exists the client is built on
-`SecurityContext(withTrustedRoots: false)`, so *every* certificate reaches the
-handshake-time hook and the pin decision happens before any bytes are sent.
-Both hooks are still wired, to the same pure `decidePin`, because
-`badCertificateCallback` is per **connection** (a pooled connection skips it)
-and `validateCertificate` is per **response**.
+**What was built first, and why it was wrong.** Whenever a pin existed the
+client was built on `SecurityContext(withTrustedRoots: false)`, so every
+certificate reached `badCertificateCallback` and the decision happened before
+any bytes were sent. The reasoning above is sound and the conclusion was still
+wrong, because of a fact about that hook the spike never had to confront:
+**`badCertificateCallback` is handed the certificate at which chain
+verification failed, which for a multi-certificate chain is the CA at the top,
+not the leaf.** With no trusted roots every chain fails at the top, so the pin
+was compared against the CA.
+
+The committed test certificates were **self-signed**, where the chain is one
+certificate long and leaf == root — so the whole suite passed against a
+mechanism that was wrong for every real deployment. A private CA in front of a
+self-hosted server is F15's *stated common case*. Measured at M2.9 against a
+real `[leaf, CA]` chain:
+
+- the trust-on-first-use prompt showed the **CA's** subject and fingerprint, so
+  a user comparing against their own server's certificate would see a mismatch
+  and a user who accepted stored a **CA pin** — which admits any certificate
+  that CA has ever issued;
+- with that pin in place, an impostor holding another certificate from the same
+  CA completed the handshake and **received 106 bytes of request, session cookie
+  included**, before `validateCertificate` objected — the exact failure the
+  table above exists to prevent;
+- pinning the server's **real** certificate, as `openssl x509 -fingerprint
+  -sha256` prints it, was refused.
+
+**What is built now:** `HttpClient.connectionFactory`. `CertificatePinner.connect`
+runs the handshake itself with `SecureSocket.startConnect`, compares
+`socket.peerCertificate` — which *is* the leaf — against the pin, and
+`destroy()`s the socket on a mismatch before dart:io writes a request byte. Its
+`onBadCertificate` returns true not to relax anything but to learn the OS's
+verdict, which is `decidePin`'s third input. `validateCertificate` stays wired
+to the same pure `decidePin` as the per-**response** backstop, because a pooled
+connection never handshakes again. `badCertificateCallback` is left null, which
+is dart:io's fail-closed default.
+
+The fixtures are the durable half of the fix: `test/support/certs/ca`,
+`server_c` (a leaf it signed) and `server_d` (a second leaf, standing in for an
+impostor). A self-signed-only fixture set cannot fail this test, which is
+precisely why it did not.
 
 ### The gap that remains
 

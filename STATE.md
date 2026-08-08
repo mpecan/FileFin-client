@@ -41,24 +41,23 @@ anything. `git add -N` on every new file is the practice adopted in response.
 | M2.6 | `auth_interceptor.dart` (F3) and `client.dart`, plus a fourth gate fix |
 | M2.7 | `tool/run-integration.sh`, `just it`, `check-all: check it`, four integration suites |
 | M2.8 | This section, `docs/architecture.md`, `docs/risks.md` R5, and the SPEC/server-api corrections |
+| M2.9 | Remediation of three adversarial reviews — one exploitable pinning bypass, two gates that could not fail, four vacuous tests |
 
-**Numbers as measured, not as hoped.** `just check` exits 0 on a clean tree
-with **zero gate warnings**. `just it` exits 0: **19 integration tests in 4
-seconds** against the real `filefin` v0.20.3 binary. Coverage **100%
-(726/726)**; per package, `filefin_api` **100% (395/395)** and `filefin_core`
-**100% (331/331)** — stated separately because `check-coverage.sh` reads one
-concatenated lcov and its floor is a **tree-wide** ratio, so `filefin_core` at
-100% over 331 lines would have masked a substantially untested `filefin_api`.
-Across the whole milestone
-(`FILEFIN_MUTANTS_BASE=7412862`, the last M1 commit): **138 of 138 mutants
-killed** over `filefin_api`'s 17 changed lib sources, 0 timeouts, 6m05s.
-`filefin_core`'s single M2 change — `ServerId` — produces **0 mutants** on the
-same run, which is the declaration-only case the one use of
-`FILEFIN_MUTANTS_ALLOW_ZERO=1` covers and which the gate correctly refuses to
-call a pass. **884 tests** in all (112 in `filefin_api`, 772 in
-`filefin_core`), plus the 19 integration tests, which `dart test` counts
-separately because they are a separate suite. The constitution baseline is
-still **0 across all six checks**.
+**Numbers as measured, not as hoped**, after M2.9. `just check` exits 0 on a
+clean tree with **zero gate warnings**. `just it` exits 0: **20 integration
+tests in 4 seconds** against the real `filefin` v0.20.3 binary, with a committed
+floor of 20 and a runtime refusal of any skipped test. Coverage **100%
+(749/749)** with **0 uncovered lines against a ratchet of 0**. **896 tests** in
+all (124 in `filefin_api`, 772 in `filefin_core`), plus the 20 integration
+tests, which `dart test` counts separately because they are a separate suite.
+The M2.9 diff produced **97 mutations over 9 changed lib sources, 0 undetected,
+0 timeouts**. The constitution baseline is still **0 across all six checks**.
+
+The pre-remediation figures, for comparison: 19 integration tests, 726/726
+lines, 884 tests, and 138 of 138 mutants over the whole milestone
+(`FILEFIN_MUTANTS_BASE=7412862`, the last M1 commit) — `filefin_core`'s single
+M2 change, `ServerId`, produces **0 mutants** on that run, which is the
+declaration-only case the one use of `FILEFIN_MUTANTS_ALLOW_ZERO=1` covers.
 
 ### Four gate scripts had to change, and three of the four were found by real code
 
@@ -229,6 +228,135 @@ Every row was executed against the real script. Both exit codes were observed.
 **Nothing is deferred out of M2.** M2.0(b)'s proof was deferred two steps by
 design and executed at M2.7.
 
+### M2.8 — remediation of three adversarial reviews
+
+Three reviews (gate, security, contract) went at M2. One finding was an
+exploitable pinning bypass; two gates could not fail the way they claimed; four
+tests were vacuous. What follows is what changed and what was measured.
+
+**S1 [CRITICAL] — the pin was compared against the CA, not the leaf, and the
+cookie went out before the leaf was checked.** `badCertificateCallback` is
+handed the certificate at which chain verification *failed*, which under
+`withTrustedRoots: false` is the top of the chain. With a self-signed peer the
+chain is one certificate long and leaf == root, so the entire suite — every test
+in `certificate_pinner_test.dart` — passed while the mechanism was wrong for
+every real deployment. A private CA in front of a self-hosted server is F15's
+stated common case.
+
+Measured against a real `[leaf, CA]` chain (`test/support/certs/server_c`,
+issued by `ca`), before and after, counting **bytes the peer received** rather
+than exception types:
+
+| Step | Before | After |
+|---|---|---|
+| unpinned — what the TOFU prompt shows | `/CN=filefin-test-ca`, `4c:b6:…` (**the CA**) | `/CN=filefin-test-c`, `a5:fb:…` (**the leaf**) |
+| pinned to the value that prompt offered (the CA) | `CertificatePinMismatch` … **106 bytes reached the server**, cookie included | refused, **0 bytes** |
+| pinned to the server's REAL certificate | **refused** — a correct pin rejected | 200, request goes through |
+| impostor holding another certificate from the same CA | **106 bytes reached the impostor** | refused, **0 bytes**, and the message names the impostor's own leaf |
+
+The fix is `HttpClient.connectionFactory`: `CertificatePinner.connect`
+establishes the socket with `SecureSocket.startConnect`, compares
+`socket.peerCertificate` — which *is* the leaf — against the pin, and
+`destroy()`s before dart:io writes a request byte. `onBadCertificate` returns
+true not to relax anything but to learn the OS's verdict, which is
+`decidePin`'s third input. `validateCertificate` stays as the per-response
+backstop for pooled connections, and `badCertificateCallback` is now left null,
+which is dart:io's fail-closed default. `CertificatePinMismatch.toString()` no
+longer ends "Nothing was sent." — on a pooled connection that is false, and the
+variant cannot tell which case it is.
+
+**The fixtures are the real fix.** `ca`, `server_c` and `server_d` are a private
+CA and two leaves it signed; `server_d` is the impostor. A self-signed-only
+fixture set cannot fail this test, which is why it did not.
+
+**S6 does not reproduce, and it is not fixed.** The review predicted that dio's
+`receiveTimeout` was time-to-headers and that a drip-fed body would hang forever
+past it. Measured against dio 5.11.0 with the exact `fileFinBaseOptions` this
+client uses: a stalled body aborted after **2038 ms** and a body dripping two
+bytes every 100 ms aborted after **2005 ms**, both under a 2 s timeout. The
+adapter's deadline covers the whole receive rather than resetting per chunk, so
+`transport.dart`'s "applied to all three phases" is true. A `withTotalDeadline`
+wrapper was written, measured to be redundant, and **removed** (§1); what stayed
+is a regression test with a real drip-feeding server, because this is a fact
+about a pinned dependency.
+
+**S7 is closed by S5's fix rather than by its own.** With `followRedirects:
+false` a request cannot reach a host other than the one asked for, so the
+`decisionFor(requested)` lookup can no longer miss, and `_seen` is bounded at
+one entry per pinner — one per server.
+
+**C6 was measured and left alone.** The two production sites that can raise
+`SessionExpired` *are* individually pinned, by the unit suite: deleting
+`error_mapper.dart`'s `401 => SessionExpired` turns **7** tests red and deleting
+`session.dart`'s no-password throw turns **3** red. What the review observed is
+that the *integration* suite reaches both through one path — which is what an
+end-to-end suite is for. No change.
+
+#### Gate proof log — M2.8
+
+Every row executed against the real script or the real suite; both exit codes
+observed each time.
+
+| Gate / test | Fail input | Exit | Clean | Exit |
+|---|---|---|---|---|
+| `it` — skip marker (G1) | `@Skip('…')` library annotation | **1** (was **0**: 19 tests → 12, "All tests passed!") | reverted | 0 |
+| same | `solo: true` | **1** (was **0**) | reverted | 0 |
+| same | `markTestSkipped(…)` + early return | **1** (was **0**) | reverted | 0 |
+| same | `skip: true` — the shape the old marker caught | **1** | reverted | 0 |
+| `it` — `dart_test.yaml` | an empty `dart_test.yaml` in the package | **1** (was **0** — invisible to any `*.dart` grep) | deleted | 0 |
+| `it` — runtime `~N` (G1) | grep marker blinded to `ZZ_NO_SUCH_MARKER`, then one test skipped | **1**, `+19 ~1` refused | marker restored | 0 |
+| `it` — test-count floor (G1) | one test deleted | **1**, "only 19 ran; floor is 20" | restored | 0, "20 tests, floor 20" |
+| `constitution` / `secret_tostring` (G2) | `static const template = 'Bearer {';` in a secret class with no `toString()` | **1** (was **0** when the class is the last file scanned) | — | 0 |
+| same | `// … we open a brace here: {` | **1** | — | 0 |
+| same | a doc-comment sample containing `if (x) {` | **1** | — | 0 |
+| same | `static final re = RegExp(r'^\{');` | **1** | — | 0 |
+| same | a class whose braces never balance (END flush) | **1** | — | 0 |
+| same | the false positives 1b fixed: named-parameter ctor + `toString()`; a braced string + `toString()` | **0** each | — | 0 |
+| `constitution` / `core_purity` (G4) | `import 'package:flutter/widgets.dart';` in **`filefin_api`** | **1** (was **0** — the scan never looked there) | deleted | 0 |
+| same | `import 'dart:ui';` in `filefin_api` | **1** | deleted | 0 |
+| same | `flutter: {sdk: flutter}` in `filefin_api`'s pubspec | **1** | reverted | 0 |
+| same | `import 'dart:io';` in `filefin_core` — the determinism half must stay core-only | **1** | deleted | 0 |
+| `coverage-check` — uncovered ratchet (G3) | 1 untested line (`745/746`) | **1** | 746/746 | 0 |
+| same | 6 untested lines | **1** (the 50% floor alone: **0**, reporting `99%`) | — | — |
+| same | 100 untested lines | **1** (floor alone: **0**, reporting `87%`) | — | — |
+| S1 — the chain fixture | the pre-fix `badCertificateCallback` pinner, against `[leaf, CA]` | **4** tests red, incl. `Expected: <0>  Actual: <146>` bytes | fixed pinner | 14 of 14 |
+| S2 | `response.headers.value('retry-after')` on a duplicated header | **1** red | list form | 0 |
+| same | `Headers.value(contentType)` on a duplicated header | **1** red | list form | 0 |
+| S3 | `_refuseWhileRejected()` deleted from `_renew` | **1** red — 10 logins instead of 1 | restored | 0 |
+| S4 | one probe message back to the un-redacted `$url` | **1** red | restored | 0 |
+| S5 | `followRedirects: false` removed | **1** red — `client.me()` returned `AuthResult(user: attacker, admin: true)` from a cleartext impostor | restored | 0, impostor contacted 0 times |
+| C1 | `logout`: `postUri` → `getUri` | **1** integration test red (was **0**: 772 unit + 19 integration all green) | restored | 20 of 20 |
+| same, unit half | ditto | **1** red — `session_test` asserts the method | restored | 124 of 124 |
+| C2 | `transcode: json['watched']` in the generated decoder | **1** integration test red (was **0** — the two were correlated in the seed) | restored | 20 of 20 |
+| C3 | `_repointCache` skipped | **2** red — `files[].path` came back `/Users/…/filefin-test/run/data/…` | restored | 20 of 20 |
+| C4 | `_refuseWhileBlocked` made a no-op | **1** red (the old 100 ms timing assertion could not see it: a loopback 429 is 0.31 ms) | restored | 0 |
+| C5 | `ApiPaths.categories` → `/api/categories/` | `filefin_core` **1**, `filefin_api` **0** — see below | restored | 0 |
+
+**C5's limit, stated rather than claimed away.** `StubServer.on` now takes a
+required method, and that closes the method half: `logout` as a GET is red, and
+so is any registration that lies about its verb. It does **not** close the path
+half, and structurally cannot — the stub takes its path from
+`urls.X.path`, the same expression the client evaluates, so a wrong route is
+symmetric no matter what the stub does. A trailing slash on `ApiPaths.categories`
+is caught by `filefin_core`'s literal `urls_test.dart` and by `just it`, and by
+nothing in `filefin_api`. That division is the design; a stub cannot be evidence
+about a route.
+
+**What the harness now does that it did not.** `FixtureRun.create()` repoints
+the copied SQLite cache at the copied media (`media.path`, `media_files.path`,
+verified, `sqlite3` refused up front by `run-integration.sh`) and writes a
+`watched` state into each copy's `meta.json` that is the **opposite** of
+`transcode`. The second half is also what makes the suite reproducible: seeding
+happens only when `$RUN/data` is missing, so before this, whether a machine's
+library carried per-user state depended on whether fixtures had ever been
+captured there. `run-integration.sh` also reaps stale `filefin-it-*` directories
+and orphaned `filefin serve` processes before each run, because `addTearDown`
+does not run when the isolate is killed — 5 orphans and 19 leaked directories
+(~80 MB) had accumulated. There is deliberately **no** port-collision claim
+attached to that: `fixture_run.dart` binds port 0, the OS does not re-hand a
+LISTENing port, and `just it` was measured passing twice with five orphans alive.
+`harness.dart`'s comment used to say otherwise; it now says this.
+
 ### Debt this milestone knowingly accepts
 
 - **`FILEFIN_MUTANTS_ALLOW_ZERO=1` was used on one commit** — M2.1, `ServerId`.
@@ -239,6 +367,9 @@ design and executed at M2.7.
   plus an in-memory implementation until M7. **Nothing at M2 proves a password
   survives an app restart** — the in-memory store is the production *cache*, and
   the persistence half does not exist yet.
+- **`just it` now needs `sqlite3` as well as `ffmpeg` and the binary.** The
+  harness repoints the copied cache with it; the gate refuses up front rather
+  than producing a library that silently reads the shared seed.
 - **F15's OS-trusted-certificate-change arm is enforced but unexercised.**
   Proving the wiring needs a CA-signed certificate for `127.0.0.1`. `decidePin`
   is pure and table-tested over every combination, which confines the gap to
@@ -247,11 +378,17 @@ design and executed at M2.7.
   server" half of M2's exit criterion is met against a Dart
   `HttpServer.bindSecure` with committed certificates. A real handshake, not a
   real FileFin. R5.
-- **The coverage floor is tree-wide.** `check-coverage.sh` reads one
-  concatenated lcov, so a well-covered package can mask a poorly covered one.
-  Both figures are stated above and both are 100%. A **per-package floor is
-  proposed, not smuggled in**: it is a larger gate change than M2 should make
-  on its way past.
+- **The coverage floor is tree-wide, and the floor is not what protects a
+  diff.** `check-coverage.sh` reads one concatenated lcov, so a well-covered
+  package can mask a poorly covered one. A **per-package floor is proposed, not
+  smuggled in**: it is a larger gate change than M2 should make on its way past.
+  What M2.8 did add is the thing the percentage cannot do — an absolute ratchet
+  on uncovered lines, `MAX_UNCOVERED=0` in `tool/coverage-gate.sh`. Measured
+  against the M2 baseline, the 50% floor alone exited 0 on 6 untested lines
+  (`99%`) and on 100 (`87%`), and only failed at 727; the ratchet fails at one.
+  Raising it is an edit to that file, visible in a diff, with a reason here —
+  not a fourth environment override, because CLAUDE.md's list of three is the
+  complete list.
 - **The mutation gate still gives zero assurance for `filefin_core`'s wire
   models and converters.** Unchanged from M1 — nothing in them is an operator,
   literal or conditional. `filefin_api`'s healthy mutant count must not be read
@@ -275,7 +412,7 @@ design and executed at M2.7.
   job would need a `filefin` binary built from upstream (Go plus a Node web
   build); a job that skipped without one would report success while checking
   nothing, which is the shape this repository refuses everywhere else.
-- **`filefin_api` has one `// ignore:` per gate-adjacent decision — three in
+- **`filefin_api` has one `// ignore:` per gate-adjacent decision — four in
   total**, each with the reason written immediately above it:
   `avoid_catching_errors` twice (at the wire boundary, where a `TypeError` from
   a generated decoder is a fact about the payload rather than a bug of ours) and
