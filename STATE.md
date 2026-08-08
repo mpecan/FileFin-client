@@ -52,14 +52,21 @@ that has never been committed.
 | M3.9 | `apps/mobile/test_live/` against the real binary, and `just it` over two suites |
 | M3.10 | This section, `docs/verification-backlog.md`, and the SPEC/architecture updates |
 
-**Numbers as measured, not as hoped.** `just check` exits 0 on a clean tree with
-**zero gate warnings**. `just it` exits 0: **33 integration tests across two
-suites** — 26 in `packages/filefin_api/integration_test` and 7 in
-`apps/mobile/test_live`, with separate committed floors. Coverage **100%
-(1446/1446 lines)**, **0 uncovered against a ratchet of 0**. **1111 unit tests**:
-181 in `apps/mobile`, 133 in `filefin_api`, 797 in `filefin_core`. The
-constitution baseline is **0 across seven checks** — `app_no_raw_http` is new at
-M3.
+**Numbers as measured, not as hoped**, and re-measured after the M3.R
+remediation below. `just check` exits 0 on a clean tree with **zero gate
+warnings and zero gate errors** — the comment gate additionally names the 12
+files under its 20-line size exemption, one of which (`credentials.dart`, 18%)
+is over a line and stated rather than hidden. `just it` exits 0: **33
+integration tests across two suites** — 26 in
+`packages/filefin_api/integration_test` and 7 in `apps/mobile/test_live`, with
+separate committed floors. Coverage **100% (1456/1456 lines)**, **0 uncovered
+against a ratchet of 0**. **1124 unit tests**: 194 in `apps/mobile`, 133 in
+`filefin_api`, 797 in `filefin_core`. The constitution baseline is **0 across
+seven checks** — `app_no_raw_http` is new at M3.
+
+(At the end of M3 itself the figures were 1111 unit tests — 181 in
+`apps/mobile` — and 100% of 1446 lines. The remediation added 13 app tests and
+10 covered lines.)
 
 The whole-M3 mutation run (`FILEFIN_MUTANTS_BASE=0529f65`, the last M2 commit)
 produced **263 mutations over 23 changed lib sources, 0 undetected, 0
@@ -216,9 +223,24 @@ instrument needs a connected device.
 Gated instead, over **5000 items decoded once by the real `FileFinClient` over a
 real `dart:io` `HttpServer`**: a live `PosterTile` count under 80 at the top,
 the middle and the end; poster requests far below 5000 and never above the tiles
-ever built; the listing fetched exactly once across twenty scrolls; a
-scrolled-away tile cancelling its request; tile size and both tap-target
-guidelines.
+ever built; the listing fetched exactly once across twenty scrolls **for the
+category that was opened**; a scrolled-away tile cancelling its request; the
+grid's children delegate being a `SliverChildBuilderDelegate`; tile size and
+both tap-target guidelines.
+
+**Narrowed at M3.R, because two of the three regressions this was said to catch
+were not caught.** The live-widget count catches "the sliver lays everything
+out" — `shrinkWrap: true` takes it from under 80 to 5000 — and nothing more:
+
+- `GridView(children: [...])` builds all 5000 widgets on every frame and used to
+  **pass**, because `SliverChildListDelegate` still mounts only the visible
+  range. The delegate assertion above is what separates them, and it goes red on
+  that rewrite.
+- `addAutomaticKeepAlives: false` is inert in this tree: nothing under
+  `apps/mobile/lib` mixes in `AutomaticKeepAliveClientMixin`, so there are no
+  keep-alives to disable and flipping the flag changes nothing any test can see.
+  It stays as a guard for a future tile that does, and both the docstring and
+  `category_grid_page.dart` now say so instead of claiming it is gated.
 
 Reported and **deliberately not gated**: **1460 µs/frame** over 60 scrolled
 pumps of the 5000-item grid. That is **not frame time and is not evidence of
@@ -301,6 +323,7 @@ Every row executed against the real script, both exit codes observed.
 |---|---|---|
 | `flutter build apk --debug` | **rc 0**, `app-debug.apk` | the merged manifest carries `android:minSdkVersion="26"`, `android:networkSecurityConfig="@xml/network_security_config"`, `android:usesCleartextTraffic="true"` and `android.permission.INTERNET` — read out of `build/app/intermediates/merged_manifest/` |
 | `flutter build ios --no-codesign` | **rc 0**, `Runner.app` 16.7 MB | the **built binary** plist carries `NSAppTransportSecurity` → `NSAllowsLocalNetworking: true`, the `NSLocalNetworkUsageDescription` string, and `MinimumOSVersion 15.0` — read with `plutil` |
+| `flutter build apk --release` | **rc 0**, `app-release.apk` **50.7 MB** (50,725,304 bytes) | the artefact C6 says we distribute can actually be produced. **Debug-signed**, by the decision recorded at `android/app/build.gradle.kts:29-34`: C6 makes distribution a direct APK rather than a store upload, so there is no release keystore and inventing one before there is a release to sign is a §1 violation. Re-measured at M3.R on the remediated tree |
 
 Neither proves a socket opens. Backlog rows 3–6.
 
@@ -324,13 +347,23 @@ Neither proves a socket opens. Backlog rows 3–6.
   `NSAllowsArbitraryLoads` is deliberately not set. F1's warning says so in
   words; backlog row 5 checks whether the words are true.
 - **The live suite's widgets do not issue their own calls** — backlog row 14.
+  Narrowed at M3.R: the identifiers those widgets pass are now asserted, so the
+  remaining gap is the socket rather than the wiring.
 - **A seventh constitution check**, `app_no_raw_http`, baseline 0.
 - **One mutation exclusion added**, for two mutants that are genuinely
   unkillable: every permutation of `Object.hash`'s arguments satisfies
   `hashCode`'s only contract. Verified by hand, including the swapped-pair test
-  that passes either way. It costs a third mutant that was being killed, and the
-  pattern has to cover the whole statement — recorded above.
-- **`FILEFIN_MUTANTS_ALLOW_ZERO` was not used at M3.** No commit needed it.
+  that passes either way. It costs a third mutant, and the pattern has to cover
+  the whole statement — recorded above. **The third one is not "a permutation
+  already being killed", as this said until M3.R:** a `--dry -v` diff shows it
+  is the builtin `&&`-negation rule running into the excluded statement and
+  producing text that does not compile, so it was killed by the compiler rather
+  than by an assertion. Consequence nil, but `other.size == size` now has no
+  mutant at all and field order rests on the two constructor swaps.
+- **`FILEFIN_MUTANTS_ALLOW_ZERO` was not used at M3, and WAS used once at
+  M3.R** — for `packages/filefin_api`, whose only changed lib source is a
+  barrel of `export` declarations. Which of the two causes it was, and the
+  evidence, is in the M3.R section below.
 - **`MAX_UNCOVERED` was not raised.** It came close twice and both times the
   answer was code rather than the number: `const FileFinApp()` was uncoverable
   because a canonicalised const invocation executes nothing (one test builds it
@@ -1159,6 +1192,202 @@ The C2 replay is the proof that matters for the oracle: the fixture is only
 worth having if a plausible wrong implementation fails it. It did not, and now
 it does.
 
+### M3.R — remediation of three adversarial reviews of M3
+
+Three independent reviews (app architecture and constitution, the gate changes
+M3 made, test genuineness) found two critical defects, a credential leak and a
+test harness that could not see wrong behaviour. Every gate changed was
+re-proven in both directions on the real scripts; every test changed was proven
+genuine by breaking the production code it covers and watching **that** test go
+red.
+
+#### The credential leak (A1), before and after
+
+`add_server_page.dart` stored the parsed `Uri` unmodified, so a password typed
+into the **address** field was persisted in plain JSON, printed by `toString()`
+and sent back as a `Basic` header. Driving the real `AddServerPage` with
+`http://sam:hunter2@192.168.1.10:8099`:
+
+```
+BEFORE
+ON DISK  : {"servers":[{"id":"http://192.168.1.10:8099","name":"192.168.1.10",
+            "baseUrl":"http://sam:hunter2@192.168.1.10:8099","lastUser":"","wifiOnly":false}]}
+toString : SavedServer(http://192.168.1.10:8099, 192.168.1.10, http://sam:hunter2@192.168.1.10:8099)
+
+AFTER
+ON DISK  : {"servers":[{"id":"http://192.168.1.10:8099","name":"192.168.1.10",
+            "baseUrl":"http://192.168.1.10:8099","lastUser":""}]}
+toString : SavedServer(http://192.168.1.10:8099, 192.168.1.10)
+```
+
+**Both purpose-built tests missed it, and both are fixed structurally.**
+`settings_store_test.dart`'s §9 assertion searched the file text for the words
+`password`, `session` and `certpin`; `sam:hunter2@` contains none of them. It
+now decodes the JSON and asserts `Uri.parse(baseUrl).userInfo` is empty, over a
+server built through the same normaliser the app uses. The strip itself moved
+off the call site and onto the type as `SavedServer.fromTypedUrl`, and the
+constructor now asserts an empty `userInfo`, so a second construction path
+cannot skip it. **Asserts are off in a release build**, so what a shipped APK
+relies on is the single construction path plus the test that reads the bytes on
+disk — said out loud rather than implied.
+
+#### The argument-blind fake (C1) — five shippable bugs, each now red
+
+`FakeLibraryApi._answer` returned one field regardless of arguments, so five
+bugs passed 181 unit tests **and** the 33-test `just it`. `calls` already
+recorded the argument; `size` was added to the `posterBytes` record and the
+tests now assert exact strings. Each bug was applied to the real source and the
+whole app suite run:
+
+| Bug | Applied at | Test that went red |
+|---|---|---|
+| grid requests category `999` | `category_grid_page.dart:55` | `grid_test` "the listing is fetched ONCE…" **and** `app_test` "tree to grid to detail" |
+| detail requests a hard-coded media id | `media_detail_page.dart:41` | `media_detail_page_test` "the detail asked for is the item that was TAPPED" |
+| tile requests another item's poster | `poster_tile.dart:58` | `grid_test` "each tile asks for ITS OWN poster, at the tile size" |
+| poster `size` hint dropped | `poster_tile.dart:59` | the same test |
+| detail pushed with a **fabricated** item | `app.dart:115` | `app_test` "tree to grid to detail, and back out again" |
+
+The live suite (`just it`) carried the same blindness — backlog row 14 said the
+wiring was "proven only against a fake", and it was not proven against the fake
+either. Its widget tests now assert the identifiers too.
+
+#### Gates changed, both directions
+
+| Gate | Fail input | Exit | Clean tree | Exit |
+|---|---|---|---|---|
+| `constitution` / `app_no_raw_http` | a lib file using `Image.network`, `NetworkImage` and `FadeInImage.memoryNetwork` — the exact bypass the check's own rationale names, and which the old pattern (`package:dio/\|package:http/\|HttpClient(\|HttpOverrides\|IOClient`) matched **not at all** | **1**, three violations named | probe removed; `poster_image_provider.dart`'s doc comments explaining the rule are **not** false positives, because comment lines are filtered | 0 |
+| `constitution` / `dead_types` | one probe file with all six declaration shapes: plain, generic, **`dart format`-wrapped across two lines**, `implements`, nested bound (`<T extends Map<String, int>>`), and with-mixin | **1**, **all six** named (before: only plain, generic and with-mixin) | probe removed | 0 |
+| `constitution` / `dead_types` — no false positive | the intermediate `sealed class PlayNow extends PlaybackDecision`, which cannot be constructed at all | **0** (correct: `sealed` and `abstract` stay out of the modifier set — a permissive `[a-z]+` reported it as debt, measured) | — | — |
+| `check-mutants` / `<commands>` refusal | `<commands  >` with `<command group="test">dart test</command>` — XML-legal, and `mutation_test` parses it | **1**, the refusal fires. Old grep on the same comment-stripped file: **MISSED** | rules file restored | 0 |
+| `comments` | 26-line probe, 12 `//` lines → 46% | **1** | probe removed | 0 |
+| `run-tests` / `declares_flutter` | `sdk: flutter  # a trailing comment` in a `packages/*` pubspec. Old anchor (`…flutter[[:space:]]*$`): **MISSED**, and the run died later with `dart test exited 65` | **1**, `packages/filefin_core … declares an 'sdk: flutter' dependency` | restored | 0 |
+| `run-coverage` lcov naming | `apps/mobile` and a future `packages/mobile` both named `mobile.lcov` under `basename` | now `apps-mobile.lcov` / `packages-mobile.lcov`; coverage re-run end to end, **100% (1456/1456)**, 0 uncovered | — | — |
+
+**The comment budget's `MIN_LINES` was lowered from 40 to 20 and the debt was
+paid** — the alternative was writing the blind spot into §2. At 40 the gate
+skipped three files past the 25% ERROR line (`filefin_api.dart` 32%,
+`filefin_core.dart` 28%, `visible_rows.dart` 27%) and one past the warn line
+(`main.dart` 18%) while printing "0 error(s), 0 warning(s)", which this file
+quoted. All four were paid by moving the rationale into the `///` doc comment of
+the declaration it describes, which is where it belonged and which §2 excludes
+from both sides of the ratio — no reasoning was deleted. §2 now names the number
+and the gate prints every file it still skips that is over a line
+(`credentials.dart`, 18% of 16 lines, the only one).
+
+#### The mutation run found four survivors in the new code, and they were not the same kind
+
+`just mutants` over the 10 changed app sources produced **121 mutants, 4
+undetected — all four in `settings.dart`**, the file this remediation changed
+most. They needed opposite answers, and telling them apart was the work:
+
+**One was a real missing assertion.** The `SavedServer` constructor's assert
+message had `user-typed` rewritten to `user+typed` and the whole 194-test suite
+stayed green, because the new test asserted only
+`throwsA(isA<AssertionError>())`. An assertion message is mutable source that
+nothing else reads — the same lesson `error_presentation_test` records about
+`RateLimited`'s wording — so the message is now pinned **verbatim**. Mutant
+killed; no exclusion.
+
+**Three were `Object.hash` argument permutations**, and they are genuinely
+equivalent in the sense §3 requires — the same case as `PosterKey`, decided the
+same way rather than by analogy to it. `==` compares all four fields, so equal
+servers hash identically under any fixed order and unequal ones differ under
+any fixed order: every permutation preserves the whole of `hashCode`'s
+contract. The reason no assertion can catch them was **measured**: `id` is an
+extension type over String, so the (id, name) swap merely *exchanges* the
+hashes of `(ServerId('a'), 'b')` and `(ServerId('b'), 'a')` and any `isNot`
+assertion passes either way — which leaves a golden value, and there is none to
+pin, because `Object.hash` is seeded per process. Three runs of the same
+two-line program printed `'a'.hashCode` as 170824770 every time and
+`Object.hash('a', 'b')` as **480010859, 191724426 and 356100938**. Excluded,
+with that measurement and a retirement condition in `mutation_rules.xml`.
+
+**The exclusion costs four mutants, not three, and B4's correction applies a
+second time.** 23 without the line, 19 with it; a `--dry -v` diff names the
+fourth, and it is not a permutation — it is the builtin `&&`-negation rule
+matching at line 101 and running past the end of the `==` expression into the
+excluded statement, producing text that does not compile. Killed by the
+compiler, not by an assertion. Checked rather than assumed, precisely because
+the neighbouring note on `PosterKey` had assumed it and been wrong.
+
+After both: **117 mutants over the 10 app sources, 0 undetected.**
+
+#### `FILEFIN_MUTANTS_ALLOW_ZERO=1` was used, and here is which of the two causes it was
+
+`packages/filefin_api`'s only changed lib source is its **barrel** —
+`lib/filefin_api.dart`, `library;` plus fifteen `export` lines — because the
+comment-budget debt was paid by moving its narration into the library doc
+comment. It produced `Found 0 mutations`, which `check-mutants.sh` fails on,
+and its error message names two possible causes that look identical at the exit
+code: pure declarations, or the `Found N mutations` scrape having silently
+stopped working.
+
+**It is the first, and the same run proves it rather than a separate argument.**
+`packages/filefin_core`'s barrel changed in exactly the same way and produced
+**1 mutation, detected**, and `apps/mobile` produced **121** — both scraped by
+the same line of the same script in the same invocation. A scrape pinned at 0
+could not have returned 1 and 121. The zero is what a file containing nothing
+but `export` declarations legitimately yields.
+
+#### A12 — confirmed as a concurrent-agent artefact, not a gate defect
+
+Review A reported `just fmt-check` failing 3 times in ~35 invocations, always on
+`category_grid_page.dart`, never reproducible, plus one ` M app.dart` with an
+empty diff and an md5 matching HEAD. Confirmed rather than assumed: a sibling
+agent's `mutate.py` lives in this session's shared scratchpad, its `REPO`
+constant points at **this working copy**, and its backup directory contains
+`apps__mobile__lib__src__browse__category_grid_page.dart` stamped 16:25 — the
+same file, inside the reported window. It edits a source, runs a command, and
+restores in a `finally`; anything reading the tree in that window sees a
+mutated or freshly-rewritten file. Recorded in CLAUDE.md beside the existing
+`mutation_test` warning.
+
+**And then it happened again, to this remediation, with one process.** A
+`just check` cancelled at a ten-minute timeout left the mutant `mutation_test`
+was holding on disk: `visible_rows.dart`'s `if (isExpanded)` came back as
+`if (!(isExpanded))`. The next run did not report a broken branch — it reported
+`unnecessary_parenthesis`, an **info**-severity lint, and only `--fatal-infos`
+turned that into a non-zero exit. Every changed lib file was then diffed line by
+line against HEAD before continuing; the mutant was the only stray. Both halves
+of the hazard — a concurrent writer and an interrupted run — are now in
+CLAUDE.md.
+
+#### Everything else, by finding
+
+| Finding | What was done |
+|---|---|
+| **A2** | `onSignIn` was declared, documented, plumbed to `AsyncView` and never given a value, so a `SessionExpired` on the grid or the detail page rendered "Please sign in again" with no button and no retry. Wired in `app.dart`; the callback `popUntil`s the root. Proven: removing it from the grid, from the detail page, or removing the `popUntil`, each turns a named test red |
+| **A3** | `AppDependencies.secrets` deleted — written by `main()`, read by nothing; its two "consumers" were `expect(deps.secrets, isNotNull)` on a non-nullable final field and a test copying it |
+| **A4** | `SavedServer.wifiOnly` deleted. §1 is unconditional, and the tree already ruled this way on `PlaybackSettings.progressIntervalSecs`. M4 adding a reader is what makes re-adding it free: §13 means no migration, no lenient decoder, and the field arrives with the code that reads it. Keeping it would have meant M4 inheriting a default nobody chose |
+| **A5** | Two messages named the one cause they cannot carry — "a server restart signs everyone out" is exactly what F3 renews and replays without a message. `SessionExpired` and the signed-out launch screen now name `session.dart:137`/`:223`'s real causes: no stored session, no password to renew with |
+| **A6** | `SettingsStore.write` failures were unhandled async errors — the button re-enabled, no callback fired, nothing appeared, and `read()` swallowing every failure made an unwritable directory completely invisible. Both screens now catch `FileSystemException` and print the OS message. Proven on both: removing either catch turns its test red |
+| **A7** | See the comment-budget paragraph above |
+| **A8** | `_signInRoute`'s `pops` parameter could only ever be 1 — replaced with one `Navigator.pop()` |
+| **A9** | Signing out of the second saved server offered the **first** one, with no picker to correct it. `_server` is kept across sign-out and is what the button offers |
+| **A10 / A11** | `meta` pinned exactly (1.18.0) in all three pubspecs, with the reason beside it; `pubspec.lock` unchanged by the pin. The stale "deliberately not here yet" comment above the block declaring `path_provider` and both platform interfaces was corrected. `docs/architecture.md`'s "Why exact" table gained all four of M3's packages |
+| **A13** | `obtainKey names the API's server, not a literal` used `ServerId('home')` in both the fake and the expectation, so the literal it rules out passed — now a distinct id. The empty-body poster test asserted only `isA<StateError>()`, which the harness's own `StateError('nothing happened')` sentinel also satisfies — now `contains('no poster')` as well. The userInfo-redaction sweep was a hand-kept list of 11 of 14 variants; it is now one table of all 15 rows shared by three sweeps |
+| **B4** | The exclusion's third suppressed mutant is **not** "a third permutation already being killed" — a `--dry -v` diff shows it is the builtin `&&`-negation rule running into the excluded statement and producing text that does not compile. Corrected, along with the consequence: `other.size == size` now has no mutant at all, so field order rests on the two constructor swaps |
+| **B6** | `declares_flutter` fixed (above). The depth-3 `packages/<group>/<pkg>/pubspec.yaml` blind spot is left as-is and stated: pre-existing, and backstopped by coverage's missing-record cross-check |
+| **C2** | The first 401-discipline test drove a fake that **succeeds** — no 401, no retry, no interceptor. Adding `needsSignIn: statusCode == 401` to the `ServerFailure` arm left all 181 tests green. Replaced by a table over all 15 rows with an exhaustive `expectedNeedsSignIn` switch; the same edit now goes red |
+| **C3** | See the NF2 section above |
+| **C4** | Live test 7 was labelled "The 404 branch, end to end" while setting `posterResult = null` by hand; the real 404 is `showPoster`, fetched from the binary in `setUpAll`. Relabelled to what it proves. The live widget tests gained identifier assertions |
+| **C5** | `media_detail_page_test`'s empty-id test hand-injected the error, so a silent repair — the exact G5 failure — passed. It now asserts `api.calls == ['mediaDetail()']`; a page that short-circuits an empty id goes red |
+| minor | `.kotlin/` added to `.gitignore` (a transient `*.salive` surfaced as `??` mid-session) |
+
+#### Left undone, deliberately
+
+- **`check_secret_tostring` still selects classes by NAME**
+  (`Credential|Password|Secret|Session|Token`), which is why `SavedServer`
+  passed every gate while persisting a password. A second arm keyed on what a
+  type *carries* was considered and not written: "any persisted type holding a
+  `Uri`" is a heuristic, and the leak it would have caught is now closed
+  structurally by the constructor assert plus a test that reads the bytes on
+  disk. Recorded here rather than left implied.
+- **The depth-3 package blind spot** in `run-tests.sh` / `run-coverage.sh`
+  (`-mindepth 2 -maxdepth 2`), as above.
+- **`credentials.dart` at 18% of 16 counted lines** remains under §2's size
+  exemption. It is now printed on every run rather than skipped in silence.
+
 ### Gate proofs deliberately deferred
 
 Stated here rather than left implied by silence.
@@ -1400,6 +1629,7 @@ floor is set by the strictest constraint in the tree, not the loosest.
 | **A4** — `just it` | **Closed at M2.7.** Four suites, 19 tests, 4 seconds, against the real binary; `check-all: check it`, local-only. All four refusal paths proven. | M2.7 |
 | **A5** — `mutants` / `coverage-check` on real code | Created and proven in M0 (synthetically for coverage, against a real scratch package for mutants); re-proven against `filefin_core` at **M1.9**. | above |
 | **A9** — `progressIntervalSecs` | `PlaybackSettings` is `{wifiOnly, meteredWarnBytes}` only. The interval arrives at **M4** with the progress reporter; a settings field nobody reads is a dead branch (§5). | M4 |
+| **`SavedServer.wifiOnly`** | Removed at **M3.R** on the same reasoning, after the review found it read by nothing. SPEC §7 still lists it and M4 will add a reader — together with `allowUnverifiedPlayback` — but §13 means our own format changes freely before release, so the field arrives with the code that reads it and no migration is owed. | M4 |
 | **A10** — `RefuseReason` | `{offline, wifiOnlyOnMetered}` only. The 415 "transcoding disabled" message is knowable only *after* a request, so it is an M5 `filefin_api` concern, not a `decide()` branch. | M5 |
 | **glados** | Replaced by **kiri_check** 1.3.1. Every published glados version declares `sdk: >=2.12.0 <3.0.0` and cannot resolve on any Dart 3 SDK. Not a workaround — the package has never been updated for Dart 3. | M1.7 |
 | **A11** — `Tag` model | `GET /api/tags` is documented and captured, but **no model in M1** — no F-requirement consumes the vocabulary yet. | when a screen needs it |
