@@ -104,7 +104,14 @@ for pkg in $packages; do
 
     log="$(mktemp "${TMPDIR:-/tmp}/filefin-mutants-XXXXXX.log")"
     set +e
-    (cd "$pkg" && dart run mutation_test -b --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
+    # NO `-b`. It adds mutation_test's builtin EXCLUSIONS as well as its rules,
+    # and one of those (`[\s]for[\s]*\(.*?\)[\s]*{` with dotAll) swallows
+    # everything after a Dart collection-for — 1,959 characters of engine.dart,
+    # measured. Exclusions are additive and cannot be subtracted, so the builtin
+    # rules are transcribed into mutation_rules.xml instead and this flag is
+    # gone. Restoring it silently re-opens the hole; mutation_rules.xml carries
+    # the retirement condition.
+    (cd "$pkg" && dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
         > "$log" 2>&1
     rc=$?
     set -e
@@ -142,6 +149,16 @@ for pkg in $packages; do
         echo "       no test objects to. Add the assertion; exclude it in"
         echo "       mutation_rules.xml only if it is genuinely equivalent, with a"
         echo "       reason and a retirement condition."
+        # mutation_test's own per-file report cannot tell the two apart, and a
+        # remediator who reads "1/62 undetected" as a real survivor goes looking
+        # for a missing assertion that does not exist. Observed: a run killed by
+        # the 300s command timeout reported exactly that; the same tree run to
+        # completion reported 62/62. Failing safe when interrupted is right —
+        # this line is so the reader knows which happened.
+        echo "NOTE:  a mutant killed by the 300s command timeout (mutation_rules.xml) is"
+        echo "       also counted 'undetected'. If the log above shows a timeout, the"
+        echo "       run was interrupted rather than a mutant surviving — re-run"
+        echo "       on a quiescent machine before hunting for a missing test."
         status=1
     fi
     rm -f "$targets" "$log"

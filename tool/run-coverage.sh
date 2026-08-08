@@ -124,10 +124,32 @@ cat "$OUT"/*.lcov > "$LCOV"
 # past. To be exempt your file must literally have nowhere to put a statement,
 # and the exempted files are printed on every run so the set stays visible.
 # STATE.md records the decision.
+#
+# It COUNTS the offending lines rather than asking whether one exists, and that
+# is not a style choice. The first version was
+# `! sed … | grep -vE '^[[:space:]]*$' | grep -qvE '<allowed forms>'` under
+# `set -euo pipefail`. `grep -q` exits the instant it matches, so on a file that
+# DOES contain executable code the upstream `sed` and `grep -v` died of SIGPIPE
+# (141); `pipefail` made 141 the pipeline's status and the leading `!` inverted
+# it into "no executable code". The louder the evidence, the likelier the
+# function said there was none — measured on a 2001-line file with
+# `int sneak(int a, int b) => a > b ? a : b;` on line 1: 20 of 20 trials wrongly
+# EXEMPT, and 9 of 20 at 53 KB, which is inside `file-size`'s 600-line hard
+# limit. `grep -c` has to read every line to produce a count, so no reader can
+# exit early, there is no pipe left to break, and the result is deterministic.
+# `|| true` is required because `grep -c` exits 1 when the count is 0, which is
+# the passing case here.
+#
+# The `library` alternative carries a word boundary (`library` alone, or
+# `library` followed by whitespace). Without it `library[^;]*;` also excused
+# `libraryHandle bar = compute();` — a real statement, exempted by a prefix.
 has_no_executable_code() {
-    ! sed -E 's|//.*$||' "$1" \
-        | grep -vE '^[[:space:]]*$' \
-        | grep -qvE '^[[:space:]]*(library[^;]*;|import[[:space:]][^;]*;|export[[:space:]][^;]*;|extension type const [A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_<>?,[:space:]]*\) implements Object \{\})[[:space:]]*$'
+    local other
+    other=$(
+        sed -E 's|//.*$||' "$1" \
+            | grep -cvE '^[[:space:]]*$|^[[:space:]]*(library([[:space:]][^;]*)?;|import[[:space:]][^;]*;|export[[:space:]][^;]*;|extension type const [A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_<>?,[:space:]]*\) implements Object \{\})[[:space:]]*$'
+    ) || true
+    [ "${other:-1}" -eq 0 ]
 }
 
 missing=()
