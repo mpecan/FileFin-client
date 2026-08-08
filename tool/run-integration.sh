@@ -135,7 +135,7 @@ fi
 #        `solo:` silently ran one test out of twenty while printing success.
 #        FLOOR is a committed ratchet: raise it when tests are added, never
 #        lower it to make a deletion pass.
-FLOOR=23
+FLOOR=26
 
 echo "it: $count suite(s) against $BIN"
 out=$(cd "$PKG" && dart test -j 1 --reporter expanded integration_test 2>&1) || {

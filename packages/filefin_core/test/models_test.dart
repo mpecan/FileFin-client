@@ -75,7 +75,10 @@ void main() {
       expect(m.id, const MediaId('e4285edb34d5'));
       expect(m.title, 'Direct Play Movie');
       expect(m.year, 2020);
-      expect(m.hasPoster, isFalse);
+      // True since M3.3: the seed copies a poster into the film's folder, so
+      // the captured payload carries the `true` half of this field for the
+      // first time. The show is deliberately left without one.
+      expect(m.hasPoster, isTrue);
       expect(m.watched, isFalse);
     },
     onDefaults: (m) {
@@ -129,7 +132,7 @@ void main() {
       expect(m.year, 2020);
       expect(m.description, startsWith('A short H.264 clip'));
       expect(m.plot, startsWith('Colour bars'));
-      expect(m.hasPoster, isFalse);
+      expect(m.hasPoster, isTrue);
       expect(m.files, hasLength(1));
       expect(m.metadata.last.key, 'customKey');
       expect(m.ratings.map((p) => p.key), contains('IMDb'));

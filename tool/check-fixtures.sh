@@ -169,6 +169,13 @@ need categories.json 'any(.[]; .media == 0 and .empty == true)' \
 need media_detail_directplay.json '(.id | type) == "string"' \
     "media id must be a string (MediaId is a 12-char hex string, CLAUDE.md §7)"
 need search_empty.json 'length == 0' "the empty-search fixture is not empty"
+# BOTH poster answers must be captured. Before M3.3 every item said
+# `hasPoster:false`, so a decoder or a UI that never handled `true` looked
+# perfectly healthy — and the poster route's 200 branch was covered nowhere.
+need category_media.json 'any(.[]; .hasPoster == true)' \
+    "no item has a poster; seed.sh copies tool/testserver/poster.jpg into the film"
+need media_detail_multifile_advanced.json '.hasPoster == false' \
+    "the show must have NO poster, so the 404-means-no-poster branch stays covered"
 need tags.json 'length > 0' "the tag vocabulary is empty"
 
 # resume_vectors.json — the M1.7 differential oracle. It is not an HTTP capture

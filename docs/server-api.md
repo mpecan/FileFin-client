@@ -462,10 +462,34 @@ returned dimensions.
 
 Status `200`, or `404` when the item has no poster at all — which is the normal
 answer for an un-enriched library, and must not be surfaced as an error.
+`filefin_api`'s `posterBytes` returns **null** for that 404 and keeps every
+other status in the sealed error hierarchy, so a `503` never reads as "you have
+no artwork".
 
-**No fixture.** The seeded items have no poster, so the endpoint 404s; a
-fixture would be a binary blob no model decodes. Recorded as a gap in
-`test/fixtures/PROVENANCE.md`.
+**Fixture: `poster.jpg` (added M3.3; this section previously said "No
+fixture").** The old reasoning had two halves and both were reconsidered.
+
+*"The seeded items have no poster"* stopped being true. Measured against the
+real binary at v0.20.3: the importer picks up a file named exactly `poster.jpg`
+in a media folder and writes it into the cache's `media.poster` column, which is
+what `hasPoster` is derived from (`(m.poster <> '')` in the summary query).
+`tool/testserver/seed.sh` now copies one into the **film** and deliberately not
+into the **show**, so both branches — bytes, and the 404 that means "no poster"
+— have a real server behind them. Before this, every captured payload said
+`hasPoster:false`, so a client that never handled `true` looked healthy.
+
+*"A binary blob no model decodes"* is true and is not the point. What the
+fixture asserts is not a decode: it is that `http.ServeFile` returns the seeded
+bytes **unchanged**. The seed input is a committed file
+(`tool/testserver/poster.jpg`) rather than a fresh `ffmpeg` encode, which is
+what makes the captured fixture reproducible — an encode would produce different
+bytes on a different libjpeg and rewrite the SHA-256 manifest on every machine.
+The two files are byte-identical by construction, and
+`integration_test/browse_test.dart` asserts exactly that against the live
+server.
+
+`tool/check-fixtures.sh` asserts that some item has `hasPoster: true` and that
+the show still has `false`, so a re-seed that loses either branch fails.
 
 ---
 

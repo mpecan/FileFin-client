@@ -101,7 +101,16 @@ class StubServer {
       reply.contentType,
     );
     reply.headers.forEach(request.response.headers.set);
-    request.response.write(reply.body);
+    // Bytes rather than text when a route serves them. The poster route is the
+    // only one, and it matters: writing image bytes through `write` would
+    // UTF-8-encode them, so the client would receive a different length than
+    // the server sent and a byte-for-byte assertion could never be written.
+    final bytes = reply.bytes;
+    if (bytes == null) {
+      request.response.write(reply.body);
+    } else {
+      request.response.add(bytes);
+    }
     await request.response.close();
   }
 
@@ -153,11 +162,20 @@ class StubResponse {
     required this.body,
     required this.contentType,
     this.headers = const {},
-  });
+  }) : bytes = null;
+
+  /// Raw [bytes] under [contentType] — for the one route that serves an image.
+  const StubResponse.binary(
+    this.bytes, {
+    required this.contentType,
+    this.status = 200,
+    this.headers = const {},
+  }) : body = '';
 
   /// `200 application/json` carrying [value] encoded.
   StubResponse.json(Object? value, {this.status = 200, this.headers = const {}})
     : body = jsonEncode(value),
+      bytes = null,
       contentType = 'application/json; charset=utf-8';
 
   /// The plain-text `401 unauthorized` the auth middleware writes
@@ -165,14 +183,18 @@ class StubResponse {
   const StubResponse.unauthorized()
     : status = 401,
       body = 'unauthorized',
+      bytes = null,
       contentType = 'text/plain; charset=utf-8',
       headers = const {};
 
   /// The status line.
   final int status;
 
-  /// The body, written as UTF-8.
+  /// The body, written as UTF-8. Ignored when [bytes] is set.
   final String body;
+
+  /// Raw bytes to write instead of [body], or null for a text response.
+  final List<int>? bytes;
 
   /// The `Content-Type` header.
   final String contentType;

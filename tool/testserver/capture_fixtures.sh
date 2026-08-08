@@ -77,6 +77,15 @@ get "/api/search?q=zzzznope&field=all" | save search_empty.json
 get "/api/media/$TRANS/file/0/hls/index.m3u8" | save hls_index.m3u8
 get "/api/media/$DIRECT/file/0/sub/0"         | save subtitle.vtt
 
+# The poster BYTES. docs/server-api.md carried "No fixture" here until M3.3, on
+# the grounds that the seeded items had no poster and a blob decodes into no
+# model. The first half stopped being true when seed.sh started copying one in;
+# the second half is answered by what this fixture actually asserts — not a
+# decode, but that `http.ServeFile` hands back the seeded bytes UNCHANGED. That
+# is reproducible precisely because the seed input is a committed file rather
+# than a fresh encode.
+get "/api/media/$DIRECT/poster" | save poster.jpg
+
 # Error and header shapes. These are contract too: F12 promises to explain a
 # 415 in the user's terms, and F3 keys off the 401.
 {

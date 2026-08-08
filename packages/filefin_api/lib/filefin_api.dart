@@ -18,6 +18,16 @@
 /// library and is dead by §5.
 library;
 
+// `CancelToken` is dio's, and it is re-exported so `apps/mobile` never has to
+// import dio itself. NF5 puts a cancel token on every endpoint, so the app
+// cannot call one without naming the type — and `just constitution`'s
+// `app_no_raw_http` check refuses `package:dio/` in `apps/*/lib` precisely
+// because an app that imports dio can also build its own client, skipping F3's
+// 401 retry, F15's pinning and the cookie jar in one line. Re-exporting the one
+// type the app legitimately needs is what makes that refusal live-able rather
+// than something to route around.
+export 'package:dio/dio.dart' show CancelToken;
+
 export 'src/auth_interceptor.dart';
 export 'src/client.dart';
 export 'src/credentials.dart';

@@ -98,6 +98,28 @@ done
 printf '1\n00:00:00,000 --> 00:00:02,000\nHello fixture\n\n' \
   > "$FILMS/(2020) Direct Play Movie.en.srt"
 
+# A poster for the FILM and deliberately not for the SHOW.
+#
+# `GET /api/media/{id}/poster` had no live coverage of its 200 path at all
+# before M3.3, and every captured payload carried `hasPoster:false`, so a model
+# or a UI that never handled `true` looked perfectly healthy. One item with a
+# poster and one without puts BOTH branches in front of the real server: the
+# bytes come back for one, and the 404-that-means-"no poster" (which
+# docs/server-api.md says must never surface as an error) comes back for the
+# other.
+#
+# Measured at M3.3 against the real binary at v0.20.3: the importer picks up a
+# file named exactly `poster.jpg` in the media folder and writes it to the
+# cache's `media.poster` column, which is what `hasPoster` is derived from
+# (`(m.poster <> '')` in the summary query).
+#
+# The bytes are COPIED from a committed file rather than encoded here, and that
+# is what makes the captured fixture reproducible: an ffmpeg run produces
+# different bytes on a different libjpeg, so a re-capture on another machine
+# would rewrite test/fixtures/poster.jpg and the SHA-256 manifest with it, for
+# no reason anybody could review.
+cp "$(dirname "${BASH_SOURCE[0]}")/poster.jpg" "$FILMS/poster.jpg"
+
 # Rich metadata. `version` MUST be importer.MetaVersion (2, importer.go:26):
 # anything lower trips upgradeMeta (importer.go:86), which treats the legacy
 # `tags` key as genres and nils Tags — which is exactly how the first attempt at

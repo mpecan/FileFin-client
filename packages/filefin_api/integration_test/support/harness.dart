@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 
 import 'server_harness.dart';
 
+export '../../test/support/fixtures.dart' show fixtureBytes;
 export 'fixture_run.dart';
 export 'server_harness.dart';
 

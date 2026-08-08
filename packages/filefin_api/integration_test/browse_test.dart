@@ -92,6 +92,57 @@ void main() {
     },
   );
 
+  test('the seeded film has a poster, served back verbatim', () async {
+    // The 200 branch of the poster route had no live coverage at all before
+    // M3.3, and every captured payload said `hasPoster:false` — so a client
+    // that never handled `true` looked perfectly healthy. `seed.sh` now copies
+    // a committed `poster.jpg` into the film's folder.
+    //
+    // The assertion is byte-for-byte against the SAME committed file, which is
+    // what makes it a contract test rather than a smoke test: it says
+    // `http.ServeFile` hands the bytes back unmodified. It is reproducible for
+    // the same reason — the input is a committed file, not a fresh encode.
+    final films = (await client.categories()).firstWhere(
+      (c) => c.leaf == 'Films',
+    );
+    final film = (await client.categoryMedia(films.id)).single;
+
+    expect(film.hasPoster, isTrue);
+
+    final bytes = await client.posterBytes(film.id);
+
+    expect(bytes, isNotNull);
+    expect(bytes, fixtureBytes('poster.jpg'));
+  });
+
+  test('an item with no poster answers null, not an error', () async {
+    // docs/server-api.md: a 404 here is the normal answer for an un-enriched
+    // library and must never surface as a failure. The show is deliberately
+    // seeded without a poster so this branch has a real server behind it.
+    final shows = (await client.categories()).firstWhere(
+      (c) => c.leaf == 'Shows',
+    );
+    final show = (await client.categoryMedia(shows.id)).single;
+
+    expect(show.hasPoster, isFalse);
+    expect(await client.posterBytes(show.id), isNull);
+  });
+
+  test('the size hint never fails, even when no variant exists', () async {
+    // `size` is a hint (`media.go:351`): the server serves the pre-built
+    // variant when it exists and silently falls back otherwise. Nothing in the
+    // seed builds variants, so this asserts the fallback rather than the
+    // variant — which is the case a client actually has to survive.
+    final films = (await client.categories()).firstWhere(
+      (c) => c.leaf == 'Films',
+    );
+    final film = (await client.categoryMedia(films.id)).single;
+
+    for (final size in PosterSize.values) {
+      expect(await client.posterBytes(film.id, size: size), isNotNull);
+    }
+  });
+
   test('a category listing decodes into MediaSummary', () async {
     final categories = await client.categories();
     final films = categories.firstWhere((c) => c.leaf == 'Films');

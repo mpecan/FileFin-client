@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:test/test.dart';

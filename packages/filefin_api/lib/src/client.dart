@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -175,6 +177,75 @@ class FileFinClient {
     (r, url) => _one(r, url, MediaDetail.fromJson),
     cancelToken: cancelToken,
   );
+
+  /// `GET /api/media/{id}/poster` — image bytes, or **null when there is no
+  /// poster**.
+  ///
+  /// **`null` is a 404 and a 404 is normal here.** `docs/server-api.md` records
+  /// it: an un-enriched library has no artwork, and the server answers that
+  /// with a 404 rather than an empty body. Surfacing it as an error would put a
+  /// failure in front of every tile of a freshly imported library. Every OTHER
+  /// failure stays in the sealed hierarchy — a 503 is still `CacheUnavailable`,
+  /// so "the server is rebuilding" never reads as "you have no artwork".
+  ///
+  /// [size] is a hint and not a contract (`media.go:351`): the server serves
+  /// the pre-built variant **if it exists** and silently falls back otherwise,
+  /// so the returned image may be any dimensions. It is only put on the wire
+  /// when asked for, because an absent value and an unrecognised one behave
+  /// identically and sending one always would make every request look like a
+  /// request for a variant.
+  ///
+  /// `async` for the same reason as [categoryMedia]: a rejected identifier
+  /// arrives as a failed Future. A grid building 5000 tiles must not have to
+  /// wrap the call in a `try` as well as an `await`.
+  Future<Uint8List?> posterBytes(
+    MediaId id, {
+    PosterSize? size,
+    CancelToken? cancelToken,
+  }) async {
+    final url = _uri(() => urls.poster(id, size: size), 'media id');
+    try {
+      final response = await _dio.getUri<List<int>>(
+        url,
+        cancelToken: cancelToken,
+        // NOT `_send`. That path decodes JSON, and a poster is bytes; running
+        // an image through `jsonDecode` would report a broken server for a
+        // working one. `ResponseType.bytes` also stops dio deciding for itself
+        // what to do with the body based on the content type.
+        options: Options(responseType: ResponseType.bytes),
+      );
+      _refuseSpaCatchAll(response, url);
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException catch (e) {
+      final cause = e.error;
+      if (cause is FileFinApiException) throw cause;
+      final mapped = mapDioException(e, requested: url, pinner: pinner);
+      if (mapped is NotFound) return null;
+      throw mapped;
+    }
+  }
+
+  /// Refuses an HTML body on a route that serves bytes.
+  ///
+  /// Same reasoning as F1, and the same mechanism: this server registers its
+  /// SPA catch-all outside the route table (`server.go:352`), so a route that
+  /// moved — or an address that is not FileFin at all — answers `200
+  /// text/html` with `index.html`. Those bytes handed to an `ImageProvider`
+  /// become a broken image with no explanation; named here they become a
+  /// sentence.
+  ///
+  /// Anything else is allowed through on purpose. The server serves the poster
+  /// with `http.ServeFile`, so the content type is whatever the file is — WebP,
+  /// PNG, or absent — and a client insisting on `image/*` would refuse posters
+  /// that work.
+  static void _refuseSpaCatchAll(Response<List<int>> response, Uri url) {
+    final contentType =
+        response.headers[Headers.contentTypeHeader]?.firstOrNull;
+    if (contentType != null &&
+        contentType.split(';').first.trim().toLowerCase() == 'text/html') {
+      throw NotAFileFinServerResponse(url, contentType);
+    }
+  }
 
   /// Releases both clients' sockets.
   void close() {

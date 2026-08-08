@@ -20,7 +20,17 @@ import 'dart:io';
 const fixtureDir = '../../test/fixtures';
 
 /// The raw bytes of `test/fixtures/<name>`, as text.
-String fixtureText(String name) {
+String fixtureText(String name) => _fixture(name).readAsStringSync();
+
+/// The raw bytes of `test/fixtures/<name>`, undecoded.
+///
+/// `poster.jpg` is the only binary fixture, and reading it as text would be
+/// lossy in a way that hides the very thing it asserts: the poster route
+/// serves the seeded file through `http.ServeFile`, so what is being checked
+/// is that the bytes arrive unchanged.
+List<int> fixtureBytes(String name) => _fixture(name).readAsBytesSync();
+
+File _fixture(String name) {
   final file = File('$fixtureDir/$name');
   if (!file.existsSync()) {
     throw StateError(
@@ -29,5 +39,5 @@ String fixtureText(String name) {
       'mutation_test both run from.',
     );
   }
-  return file.readAsStringSync();
+  return file;
 }

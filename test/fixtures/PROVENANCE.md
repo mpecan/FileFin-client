@@ -108,9 +108,16 @@ header. It is `int(retry.Seconds()) + 1` over the remaining account lock
 Stated so silence does not read as coverage. None of these is claimed by any
 M1 model, so §8 is intact; they land on the `just it` harness at M2/M5.
 
-- **Poster bytes.** `GET /api/media/{id}/poster` is documented but not
-  captured: the seeded items have no poster, so the endpoint 404s. A fixture
-  would have to ship a binary image, and no model decodes it.
+- ~~**Poster bytes.**~~ **Closed at M3.3.** `poster.jpg` is captured. The gap
+  rested on "the seeded items have no poster", which stopped being true: the
+  importer picks up a file named exactly `poster.jpg` in a media folder
+  (measured at v0.20.3), so `seed.sh` copies a committed one into the **film**
+  and deliberately not into the **show** — both branches now have a real server
+  behind them. The remaining half of the old reasoning, that no model decodes a
+  blob, is true and beside the point: what the fixture asserts is that
+  `http.ServeFile` returns the seeded bytes unchanged. The seed input is a
+  committed file rather than a fresh encode, so the capture is byte-reproducible
+  on any machine — an `ffmpeg` run would rewrite the manifest on every one.
 - **HLS segments.** `hls_index.m3u8` is captured; `seg0.ts` is not. It is
   multi-megabyte binary and nothing in `filefin_core` parses it. R1 already
   proved the segment fetch works end-to-end
