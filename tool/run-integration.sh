@@ -18,8 +18,22 @@ cd "$(repo_root)"
 # local-only. STATE.md records that, and M2's definition of done is "`just
 # check` exits 0 AND `just it` exits 0 on a machine with the binary".
 
-PKG="packages/filefin_api"
-SUITE="$PKG/integration_test"
+# TWO SUITES, and the app's may NOT live in `integration_test/`.
+#
+# `flutter test integration_test` is routed to the DEVICE path by the tool's
+# `_shouldRunAsIntegrationTests`: if every test path starts with
+# `<cwd>/integration_test` it demands a connected device and
+# `package:integration_test`, and it tool-exits if you mix directories in one
+# invocation. So the app's live suite is `test_live/`, run as an ordinary
+# headless `flutter test`. docs/architecture.md records the reasoning.
+#
+# Fields: <package> <suite dir> <runner> <floor>. Every refusal below applies
+# per suite, and the floors are separate ratchets — a suite that lost tests
+# must not be covered by another that gained some.
+SUITES=(
+    "packages/filefin_api integration_test dart 26"
+    "apps/mobile test_live flutter 7"
+)
 BIN="${FILEFIN_BIN:-$HOME/development/filefin-test/filefin}"
 RUN="${FILEFIN_RUN:-$HOME/development/filefin-test/run}"
 
@@ -46,13 +60,19 @@ command -v sqlite3 >/dev/null 2>&1 || fail "sqlite3 is not on PATH.
        paths into the shared seed, every suite reads the same bytes, and
        files[].path comes back ABSOLUTE where the contract says relative."
 
-[ -d "$SUITE" ] || fail "$SUITE does not exist — there is no integration suite to run"
-
-count=$(find "$SUITE" -name '*_test.dart' | grep -c . || true)
-if [ "$count" -eq 0 ]; then
-    fail "$SUITE has no *_test.dart files. A recipe over zero tests reports
-       success, which is the one thing this gate may never do (§3)."
-fi
+for entry in "${SUITES[@]}"; do
+    read -r pkg dir _ _ <<< "$entry"
+    [ -d "$pkg/$dir" ] || fail "$pkg/$dir does not exist — there is no integration suite to run"
+    n=$(find "$pkg/$dir" -name '*_test.dart' | grep -c . || true)
+    if [ "$n" -eq 0 ]; then
+        fail "$pkg/$dir has no *_test.dart files. A recipe over zero tests reports
+       success, which is the one thing this gate may never do (§3).
+       For a Flutter suite this is not belt-and-braces: measured at M3.0,
+       'flutter test <dir>' over a directory holding no *_test.dart silently
+       runs the package's DEFAULT test/ directory instead and prints
+       'All tests passed!'. The unit suite would stand in for the live one."
+    fi
+done
 
 # A suite that can excuse itself is the gate-that-cannot-fail in test clothes.
 # `dart test` prints skipped tests in a colour nobody reads and still exits 0,
@@ -66,19 +86,24 @@ fi
 # with `dart format` and `dart analyze` both content. `solo:` and
 # `markTestSkipped` evaded it too.
 marker='@[S]kip|[s]kip[[:space:]]*:|[s]olo[[:space:]]*:|markTest[S]kipped'
-if grep -rlE "$marker" "$SUITE" --include='*.dart' >/dev/null 2>&1; then
-    grep -rnE "$marker" "$SUITE" --include='*.dart' | sed 's/^/  /'
-    fail "the integration suite may not mark anything skippable.
+for entry in "${SUITES[@]}"; do
+    read -r pkg dir _ _ <<< "$entry"
+    if grep -rlE "$marker" "$pkg/$dir" --include='*.dart' >/dev/null 2>&1; then
+        grep -rnE "$marker" "$pkg/$dir" --include='*.dart' | sed 's/^/  /'
+        fail "$pkg/$dir may not mark anything skippable.
        A suite that can skip itself reports success while checking nothing.
        If a case cannot run here, delete it and say so in STATE.md."
-fi
+    fi
 
-# `dart_test.yaml` can exclude tests by tag, from a file this grep does not read
-# and with no marker in any `*.dart` at all. There is no legitimate use for one
-# here, so its mere existence is the failure.
-if [ -e "$PKG/dart_test.yaml" ] || [ -e "$SUITE/dart_test.yaml" ]; then
-    fail "a dart_test.yaml can exclude tests invisibly. Delete it."
-fi
+    # `dart_test.yaml` can exclude tests by tag, from a file this grep does not
+    # read and with no marker in any `*.dart` at all. There is no legitimate
+    # use for one here, so its mere existence is the failure. `flutter_test.yaml`
+    # is the Flutter runner's equivalent and joins it for the same reason.
+    for config in "$pkg/dart_test.yaml" "$pkg/$dir/dart_test.yaml" \
+        "$pkg/flutter_test.yaml" "$pkg/$dir/flutter_test.yaml"; do
+        [ -e "$config" ] && fail "$config can exclude tests invisibly. Delete it."
+    done
+done
 
 # --- reaping ----------------------------------------------------------------
 #
@@ -135,30 +160,50 @@ fi
 #        `solo:` silently ran one test out of twenty while printing success.
 #        FLOOR is a committed ratchet: raise it when tests are added, never
 #        lower it to make a deletion pass.
-FLOOR=26
-
-echo "it: $count suite(s) against $BIN"
-out=$(cd "$PKG" && dart test -j 1 --reporter expanded integration_test 2>&1) || {
+total=0
+for entry in "${SUITES[@]}"; do
+    read -r pkg dir runner floor <<< "$entry"
+    echo "it: $pkg/$dir — $runner test, floor $floor, against $BIN"
+    set +e
+    out=$( (cd "$pkg" && "$runner" test -j 1 --reporter expanded "$dir") 2>&1 )
+    rc=$?
+    set -e
     printf '%s\n' "$out"
-    exit 1
-}
-printf '%s\n' "$out"
+    [ "$rc" -eq 0 ] || exit 1
 
-summary=$(printf '%s\n' "$out" | grep -E 'All tests passed!|Some tests failed' | tail -1)
-[ -n "$summary" ] || fail "dart test printed no summary line — it did not run.
+    summary=$(printf '%s\n' "$out" | grep -E 'All tests passed!|Some tests failed' | tail -1)
+    [ -n "$summary" ] || fail "$pkg/$dir: the runner printed no summary line — it did not run.
        Output above."
 
-if printf '%s' "$summary" | grep -qE '~[0-9]+'; then
-    fail "the suite reported SKIPPED tests: $summary
+    if printf '%s' "$summary" | grep -qE '~[0-9]+'; then
+        fail "$pkg/$dir reported SKIPPED tests: $summary
        A skipped integration test reports success while checking nothing.
        If a case cannot run here, delete it and say so in STATE.md."
-fi
+    fi
 
-ran=$(printf '%s' "$summary" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
-[ -n "$ran" ] || fail "could not read a test count from: $summary"
-if [ "$ran" -lt "$FLOOR" ]; then
-    fail "only $ran integration tests ran; the committed floor is $FLOOR.
-       Tests do not disappear by accident. Raise FLOOR in this file when you
-       add tests; lowering it to make a deletion pass is weakening the gate."
-fi
-echo "it: $ran tests, floor $FLOOR"
+    # THE SUITE MUST NOT BE THE UNIT SUITE WEARING ITS NAME. Measured at M3.0:
+    # `flutter test <dir>` over a directory with no `*_test.dart` runs the
+    # package's DEFAULT `test/` directory and prints "All tests passed!". The
+    # file count above catches the emptied-directory case; this catches the
+    # rest of that family, because the expanded reporter prefixes each test
+    # with the path it came from once more than one file is involved.
+    if printf '%s\n' "$out" | grep -qE "(^|[[:space:]])test/[A-Za-z0-9_/]+\.dart:"; then
+        printf '%s\n' "$out" | grep -E "(^|[[:space:]])test/[A-Za-z0-9_/]+\.dart:" | head -3 | sed 's/^/  /'
+        fail "$pkg/$dir ran tests from the package's unit directory.
+       The suite argument was ignored or widened, so this run measured the
+       unit suite while reporting the live one."
+    fi
+
+    ran=$(printf '%s' "$summary" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
+    [ -n "$ran" ] || fail "$pkg/$dir: could not read a test count from: $summary"
+    if [ "$ran" -lt "$floor" ]; then
+        fail "only $ran tests ran in $pkg/$dir; the committed floor is $floor.
+       Tests do not disappear by accident. Raise the floor in this file when
+       you add tests; lowering it to make a deletion pass is weakening the
+       gate."
+    fi
+    echo "it: $pkg/$dir — $ran tests, floor $floor"
+    total=$((total + ran))
+done
+
+echo "it: $total tests across ${#SUITES[@]} suite(s)"
