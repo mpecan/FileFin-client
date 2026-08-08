@@ -10,9 +10,10 @@ This is an **external boundary** (CLAUDE.md §8). We do not control this server.
 When upstream changes, the fixture and this document change together, and the
 version above moves with them.
 
-**Scope: user-facing routes only.** The server exposes roughly fifty
-`/api/admin/*` routes (imports, Plex/Jellyfin migration, optimizer control,
-user management, metadata matching). SPEC.md N1 and C4 exclude all of them —
+**Scope: user-facing routes only.** The server exposes **66** `/api/admin/*`
+routes (counted at this commit: `grep -cE 'mux\.Handle\("[A-Z]+ /api/admin'
+internal/server/server.go`) covering imports, Plex/Jellyfin migration, optimizer
+control, user management and metadata matching. SPEC.md N1 and C4 exclude all of them —
 they stay in the web UI, and the client is read-only against the library except
 for its own watch state. `tool/testserver/seed.sh` calls two admin routes to
 build a test library; nothing in `filefin_api` ever will.
@@ -42,8 +43,44 @@ process (SPEC.md L1). F3 re-authenticates and retries once, transparently. The
 one exception: a `401` from `/api/login` itself means bad credentials, and
 retrying it is an infinite loop.
 
+**There is no 404 and no 405 on the API surface.** `mux.Handle("/", s.spa())`
+(`server/server.go:352`) is registered as a catch-all **outside** the
+`if complete` block, and `spa()` (`server.go:380-403`) falls back to
+`index.html` with `200 text/html; charset=utf-8` for any path it cannot serve
+as a file. Verified live against v0.20.3:
+
+```
+GET /api/state                     200 application/json
+GET /api/bogus                     200 text/html; charset=utf-8
+GET /api/categories/               200 text/html; charset=utf-8   (trailing slash)
+GET /api/mediaX                    200 text/html; charset=utf-8
+GET /api/media/{id}/nope           200 text/html; charset=utf-8
+GET /api/login                     200 text/html; charset=utf-8   (method mismatch)
+PUT /api/media/{id}/favorite       200 text/html; charset=utf-8   (method mismatch)
+```
+
+So a typo'd path, a trailing slash from a `Uri` join, a method mismatch, and an
+endpoint upstream later removes **all present as success**, and surface as a
+JSON decode error rather than an HTTP one.
+
+**A non-JSON `Content-Type` on a JSON route is a transport failure, not a
+payload.** `filefin_api` checks the media type before decoding and reports it as
+"this is not a FileFin API response", never as a malformed model. This is also
+why SPEC.md F1 probes for `application/json` plus `needsSetup`/`version` rather
+than for a status code: `200` from `GET /api/state` is what *any* SPA host
+answers, and proves nothing.
+
 **No CORS headers are set anywhere.** Irrelevant to a native client; it is why
 SPEC.md N5 rules out Flutter Web.
+
+**Security headers are set on every response**, by `securityHeaders`
+(`server/server.go:367-377`), which wraps the whole mux: `Content-Security-Policy`
+(strict, no `unsafe-inline`; `server.go:360-362`), `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=()`. HSTS is
+deliberately omitted upstream (it belongs at the TLS edge). None of these
+constrains a native client, but `nosniff` is the reason the `Content-Type` check
+above is trustworthy: the server always declares a type and means it.
 
 **No pagination anywhere.** No listing endpoint takes a limit, offset, or
 cursor. A large library returns everything in one array (SPEC.md L2).
@@ -66,7 +103,7 @@ Status: `200` always.
 
 Fixture: `state.json` — `{"needsSetup":false,"version":"0.20.3"}`
 
-The setup token is deliberately **not** exposed here (`install.go:20-22`); it
+The setup token is deliberately **not** exposed here (`install.go:22-23`); it
 reaches a browser only through the URL the CLI prints. A client cannot drive
 first-run setup, and should not try.
 
@@ -96,10 +133,10 @@ Defined at `server/server.go:447-453`.
 |---|---|
 | `200` | credentials valid |
 | `400` | body is not the expected JSON |
-| `401` | wrong password, unknown account, or blocked account — **indistinguishable by design** (`auth.go:161-172` always runs exactly one bcrypt compare, against a dummy hash when the account does not exist, so the timing does not leak either) |
+| `401` | wrong password, unknown account, or blocked account — **indistinguishable by design** (`auth.go:157-169` always runs exactly one bcrypt compare, against a dummy hash when the account does not exist, so the timing does not leak either) |
 | `429` | rate limited, with a `Retry-After` header in whole seconds (`auth.go:148-150`) |
 
-Rate limits (`server/loginlimit.go:15-25`): 5 failures per account in 15
+Rate limits (const block `server/loginlimit.go:15-27`, thresholds at `:16-22`): 5 failures per account in 15
 minutes locks that account for 15 minutes; 20 failures per IP in 5 minutes
 locks that IP for 15 minutes. A successful login clears the account counter.
 Observed: eight consecutive wrong passwords gave `401 401 401 401 401 429 429
@@ -115,7 +152,8 @@ Fixture: `login.json`, and the 429 sequence in `error_shapes.txt`.
 ## `POST /api/logout`
 
 Handler `server/auth.go:189`. Deletes the session server-side and clears the
-cookie with `MaxAge=-1`. Status `204`, no body. Unauthenticated (a stale cookie
+cookie with Go's `MaxAge: -1` (`auth.go:195`), which goes on the wire as
+`Max-Age=0` — that is the value a client-side cookie jar sees. Status `204`, no body. Unauthenticated (a stale cookie
 logs out fine).
 
 No fixture — the response is empty and carries no shape.
@@ -237,7 +275,7 @@ than SPEC.md §3.2 lists**:
 | `director` | `director LIKE` |
 | `writer` | `writer LIKE` |
 | `year` | exact `year =`; a non-numeric `q` yields **no rows**, not an error |
-| `decade` | `year BETWEEN d AND d+9`, `q` may carry a trailing `s` (`1990s`) |
+| `decade` | `year BETWEEN d AND d+9` where `d = (n/10)*10` floored (`db/search.go:47`), `q` may carry a trailing `s` (`1990s`). `q=2015&field=decade` returns a 2019 item |
 
 Two consequences for the client:
 
@@ -337,7 +375,14 @@ supplies id, title, year, description, plot and files, and the rich blocks come
 back empty.
 
 Status `200`, `404` unknown id, `500` files could not be loaded, `503` cache
-unavailable. The `404` body is the plain text `not found`.
+unavailable.
+
+**Do not match on a 404 body string.** This is the ONE route whose 404 body is
+the plain text `not found` (`media.go:264`). Every other user-facing 404 —
+`poster` (`media.go:374`, `:388`), `progress` (`media.go:522`), and all of
+`playback.go` — goes through `http.NotFound`, whose body is `404 page not
+found`. A client keying off the body is wrong five times out of six; key off the
+status.
 
 Fixtures: `media_detail_directplay.json` (single file, `transcode:false`, one
 sidecar subtitle, all rich fields populated),
@@ -383,8 +428,10 @@ There is no query parameter, header, or user-agent that changes it — verified:
 | probed container + codecs are browser-native | `200`/`206` the source, via `http.ServeContent` — full seek |
 | needs transcoding, transcoding enabled | **`307`** → `Location: <this path>/hls/index.m3u8` (`playback.go:118`) |
 | needs transcoding, transcoding disabled | **`415`** `transcoding disabled` (`playback.go:115`) |
-| `{n}` not an integer | `400 bad file index` |
-| no such file index | `404` |
+| `{n}` not an integer | `400 bad file index` (`playback.go:100`) |
+| no such file index | `404 page not found` (`playback.go:109`, `:123`) |
+| the cache is unavailable | `503 cache unavailable` (`playback.go:103` -> `userPool`, `media.go:196`) |
+| the file exists but cannot be stat'd | `500 internal error` (`playback.go:127-131`) |
 
 `fileNeedsTranscode` judges by the **probed** container and codecs when the
 cache row has them, falling back to the filename extension otherwise. That is
@@ -481,7 +528,7 @@ Fixture: `subtitle.vtt`.
 
 ## Watch state
 
-Five mutating routes, all `204 No Content` on success and all writing
+Six mutating routes, all `204 No Content` on success and all writing
 `meta.json` in the media folder under a per-user key — filesystem truth, not
 cache, so the state survives a cache rebuild (`internal/state/state.go:1-11`).
 
@@ -501,7 +548,7 @@ reads it. `position` and `duration` are seconds.
 | `204` | applied |
 | `400` | malformed body, **or `file` out of range** (`media.go:531`) |
 | `404` | unknown media id |
-| `500` | the `meta.json` write failed |
+| `500` | the `meta.json` write failed, **or** the file list could not be loaded (`media.go:527`) |
 | `503` | cache unavailable |
 
 **The out-of-range case differs between layers, and both readings are right.**
@@ -536,17 +583,21 @@ list. A leftover pointer would bounce it straight back into `continue`.
 the asymmetry invisible at the call site, which is how the UI would come to
 disagree with the server.
 
-`POST` returns `400` on a malformed body; both return `404` on an unknown id.
+`POST` returns `400` on a malformed body; both return `404` on an unknown id,
+and both can return `503 cache unavailable` — every one of these routes resolves
+the folder through `folderFor` -> `userPool` (`media.go:382-385`).
 
 ### `POST /api/media/{id}/favorite`
 
 Handler `server/media.go:394`. Body `{"favorite": bool}`. `204`; `400`
-malformed; `404` unknown id.
+malformed; `404` unknown id; `503` cache unavailable (`folderFor` ->
+`userPool`, `media.go:382-385`).
 
 ### `POST /api/media/{id}/rating`
 
 Handler `server/media.go:417`. Body `{"rating": int}`. **1–10 valid, 0 clears**;
-anything outside `0..10` is `400 rating out of range` (`media.go:425`).
+anything outside `0..10` is `400 rating out of range` (`media.go:425`). Also
+`404` unknown id and `503` cache unavailable, via the same `folderFor` path.
 
 The rating is independent of the resume engine: `Apply` never touches it and
 clearing `watched` never clears it (`state/state.go:25-28`).
@@ -557,13 +608,14 @@ clearing `watched` never clears it (`state/state.go:25-28`).
 
 This is the specification `filefin_core`'s resume engine must match exactly. It
 is a transcription of `internal/state/engine.go` at v0.20.3, rule by rule, and
-`test/fixtures/resume_vectors.json` holds 333 input→output pairs captured from
+`test/fixtures/resume_vectors.json` holds 601 input→output pairs captured from
 these very functions as a differential oracle.
 
 ### Addressing
 
 The server addresses the pointer by a **ref string**, not an index
-(`state/state.go:14-18`, `Refs` at `state/state.go:17`):
+(`Refs`, `state/engine.go:17-31`; the `Pointer` it writes is
+`state/state.go:15-18`):
 
 | File | Ref |
 |---|---|
@@ -582,7 +634,7 @@ observationally equivalent to "no pointer" in the derived view.
    returns the state unchanged — `watched` included (`engine.go:57-59`).
 
 2. **Crossing.** `crossed = duration > 0 && position/duration >= 0.90`
-   (`engine.go:61`; the constant is `WatchedThreshold` at `state.go:7`).
+   (`engine.go:61`; the constant is `WatchedThreshold` at `engine.go:7`).
    `duration <= 0` is **never** crossed, whatever the position. Note `>=`, not
    `>`: exactly 0.90 crosses.
 
@@ -623,12 +675,27 @@ not a claim about the server.
 
 ### `View(state, refs)` — `engine.go:98-112`
 
+`View` resolves the pointer to an index ONCE, with
+`ptr = indexOf(refs, s.Progress.File)` (`engine.go:100-103`), and every row below
+reads from `ptr`, never from the pointer directly:
+
 | Field | Rule |
 |---|---|
 | `watched` | the folder flag verbatim |
-| `continueIndex` | the pointer's index, **0 when there is no pointer** |
-| `continueSeconds` | the pointer's seconds, 0 when there is no pointer |
-| `perFile[i]` | `watched || i < pointerIndex` |
+| `continueIndex` | `ptr` when `ptr >= 0`, otherwise **0** |
+| `continueSeconds` | the pointer's seconds when `ptr >= 0`, otherwise **0** |
+| `perFile[i]` | `watched || i < ptr` |
+
+**A pointer whose ref is not in `refs` reads identically to no pointer.**
+`indexOf` returns `-1` for an unknown ref (`engine.go:102`), and the `if ptr >= 0`
+guard at `engine.go:104-107` then leaves `ContinueIndex` and `ContinueSeconds` at
+**0 even though `Progress != nil`**, with every `perFile` false. This is not
+exotic — it is what a renamed or renumbered folder leaves behind between
+sessions — and it is the only case that separates a correct implementation from
+`continueSeconds = pointer?.seconds ?? 0`. `resume_vectors.json` carries 116
+stale-ref inputs, 18 of which pin `out.pointer.seconds != 0` against
+`view.continueSeconds == 0`. The wrong implementation passes every other
+vector, and passed all 333 of the vectors captured before this was noticed.
 
 `perFile` is what the detail response's `files[].watched` carries
 (`media.go:324-328`). Note that the file **at** the pointer is not marked
@@ -643,7 +710,11 @@ Listed so their absence is a decision rather than an oversight.
 
 | Route | Why not |
 |---|---|
-| `/api/admin/*` (~50 routes) | SPEC.md N1, C4 — admin stays in the web UI |
-| `POST /api/install`, `GET /api/install/browse` | first-run setup; the token never reaches a client (`install.go:20`) |
+| `/api/admin/*` (66 routes) | SPEC.md N1, C4 — admin stays in the web UI |
+| `POST /api/install`, `GET /api/install/browse` | first-run setup; the token never reaches a client (`install.go:22-23`) |
 | `/api/mdl/*`, `/api/mal/*`, `/api/profile/*` | MyDramaList / MyAnimeList sync, deferred (SPEC.md §11) |
-| `POST /api/media/{id}/tags` | writes the curated tag list; the client is read-only against library metadata (C4) |
+
+`POST /api/media/{id}/tags` used to be listed here. It does not exist: the real
+route is `POST /api/admin/media/{id}/tags` (`server.go:321`), behind
+`s.admin(...)`. Listing it implied a user-facing route we choose to skip, when
+tag writing is gated by the **server**, not by our policy.

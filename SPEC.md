@@ -99,7 +99,8 @@ architecture.
 
 `POST /api/login` with `{"username","password"}` sets an **HttpOnly**,
 `SameSite=Lax`, 7-day cookie `filefin_session` and returns
-`{user, admin, alias, mdlUsername, malUsername}` (`auth.go`, `server.go:456`).
+`{user, admin, alias, mdlUsername, malUsername}` (`auth.go`; the `authResult`
+struct is `server.go:447-453`, `authResultOf` that builds it is `:456`).
 Every route we use sits behind `s.auth(...)` and needs that cookie.
 
 **No CORS headers are set anywhere in the server** (verified: no `cors` or
@@ -131,7 +132,7 @@ session loss — that way lies an infinite retry loop.
 
 ### 3.3 Media detail
 
-`internal/server/media.go:57` — `{id, title, year, description, plot,
+`internal/server/media.go:56` — `{id, title, year, description, plot,
 hasPoster, files[], metadata[], ratings[], technical[], actors[], genres[],
 tags[], watched, favorite, rating, continueIndex, continueSeconds}`.
 
@@ -181,12 +182,13 @@ Subtitles: `GET .../file/{n}/sub/{k}` returns the k-th **sidecar** converted
 SRT→WebVTT per request. Embedded tracks are externalised at import time, not
 at play time — so what the server lists is all we can offer via the API.
 (libmpv can render embedded tracks itself on the direct-play path; whether to
-surface those too is deferred, §10.)
+surface those too is deferred, §11.)
 
 ### 3.5 Watch state
 
 `POST /api/media/{id}/progress` with `{file, position, duration, event}` →
-`204` (`media.go:505`). The rules (`docs/playback-state.md`) that
+`204` (handler `media.go:503`). The rules (`docs/server-api.md`, "Resume
+semantics" — transcribed rule by rule from `internal/state/engine.go`) that
 `filefin_core` must mirror so the UI never disagrees with the server:
 
 - the resume pointer **never regresses**
@@ -218,6 +220,19 @@ filesystem truth, not cache. It survives a server cache rebuild.
 
 - **F1.** Add a server by URL; probe `GET /api/state`; report clearly whether
   it is reachable, needs setup, or is not a FileFin server.
+
+  **The probe is a Content-Type and payload check, not a status check.** The
+  server registers an SPA catch-all outside its route table
+  (`server/server.go:352`), so an unmatched `/api/*` path answers
+  `200 text/html` with `index.html` — verified live at v0.20.3. There is no 404
+  and no 405 anywhere on the API surface. A `200` from `GET /api/state`
+  therefore proves nothing: any SPA host, any reverse proxy with a fallback,
+  and any unrelated web server answers the same way. F1 accepts a server only
+  when the response carries `Content-Type: application/json` **and** the body
+  decodes to an object with both `needsSetup` and `version`. Anything else —
+  including a `200` — is "not a FileFin server". `docs/server-api.md`
+  ("Conventions") records the catch-all and the general rule: a non-JSON
+  content type on a JSON route is a transport failure, never a payload.
 - **F2.** Log in; store both the session and the password in the platform
   secure store, so F3 can re-authenticate silently and indefinitely. Typing a
   password on a phone every time the server restarts is not acceptable given

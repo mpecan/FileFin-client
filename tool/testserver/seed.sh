@@ -11,7 +11,7 @@
 # A sidecar .srt rides along so the subtitle endpoint has something to convert.
 #
 # The show is deliberately TWO files and the film exactly ONE. That covers both
-# halves of the resume engine's addressing (internal/state/state.go Refs): a
+# halves of the resume engine's addressing (internal/state/engine.go:17 Refs): a
 # single-file folder's ref is the empty string with season/episode 0, a numbered
 # episode's is "SxE" with both non-zero. It is also the only way the captured
 # fixtures can show `continueIndex` moving off 0.
