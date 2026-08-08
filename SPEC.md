@@ -4,7 +4,10 @@ A mobile client for [FileFin](https://github.com/xuedi/FileFin), a
 filesystem-first self-hosted media server (Go backend, Svelte web UI, EUPL
 v1.2).
 
-**Status:** pre-M0. Nothing is built.
+**Status:** M0 complete, M1 next. The workspace, every quality gate, the git
+hooks and CI exist; `docs/server-api.md` records the contract and
+`test/fixtures/` holds captured real payloads. No client code is written yet —
+`STATE.md` is the milestone-by-milestone record.
 
 **Verified against:** FileFin `master` @ v0.20.3, source read 2026-08-08.
 Every claim in §3 cites the upstream file that proves it.

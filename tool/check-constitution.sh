@@ -87,7 +87,7 @@ check_dead_types() {
         name=$(echo "${decl#*:}" | awk '{print $3}')
         base=$(echo "${decl#*:}" | awk '{print $5}')
         grep -qx "$base" <<< "$sealed_names" || continue
-        others=$(printf '%s\n' $files | grep -vx "$file" || true)
+        others=$(printf '%s\n' $files | grep -Fvx "$file" || true)
         if [ -z "$others" ] || ! grep -qE "\b${name}[[:space:]]*\(" $others 2>/dev/null; then
             echo "$file: sealed variant '$name' is never constructed outside its own file"
         fi
