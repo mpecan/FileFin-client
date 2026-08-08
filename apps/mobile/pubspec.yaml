@@ -42,12 +42,25 @@ dependencies:
   # analyzer will not accept an `==`/`hashCode` override on a class it cannot
   # see is immutable — which the poster ImageProvider's cache key needs.
   meta: ^1.15.0
+  # `getApplicationSupportDirectory()` — the one directory SPEC.md §7's
+  # `settings.json` may live in. Called from exactly one line, in `main()`;
+  # everything downstream takes an injected `Directory`, so no other test in
+  # this package needs a platform channel.
+  path_provider: 2.1.5
 
 dev_dependencies:
   # The runner `just test`, `just coverage` and `just it` invoke for this
   # package. `flutter test`, not `dart test` — see tool/run-tests.sh.
   flutter_test:
     sdk: flutter
+  # `PathProviderPlatform.instance` is the seam that covers `main()`'s
+  # directory lookup headlessly. Without it that one line is uncoverable and
+  # `MAX_UNCOVERED=0` would have to rise for it.
+  path_provider_platform_interface: 2.1.2
+  # `PathProviderPlatform` extends `PlatformInterface`, whose constructor
+  # asserts on a verification token, so the fake needs `MockPlatformInterface`
+  # to be accepted as an implementation of it.
+  plugin_platform_interface: 2.1.8
 
 # `cupertino_icons` and `flutter_lints` were deleted from `flutter create`'s
 # output in the same commit that produced it. Nothing imports the first, and

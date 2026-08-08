@@ -31,10 +31,17 @@ class ErrorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = describeApiError(error);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+    // A ListView rather than a bare Column, and a test found the reason: a
+    // long detail overflowed by 28 pixels at 800x600. Every message here is a
+    // sentence or three, the panel is shown at whatever size the screen it
+    // replaces was, and a user with large text has less room still — so the
+    // content has to scroll rather than be clipped with a striped bar.
+    // `shrinkWrap` keeps it centred when it does fit.
+    return ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.all(24),
+      children: [
+        Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
@@ -59,7 +66,7 @@ class ErrorPanel extends StatelessWidget {
             ],
           ],
         ),
-      ),
+      ],
     );
   }
 }
