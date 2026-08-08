@@ -13,3 +13,5 @@ freezed: a build_runner builder, selected by the @freezed annotation rather than
 json_serializable: a build_runner builder, selected by @JsonSerializable / freezed's toJson
 coverage: provides the `format_coverage` binary `just coverage` runs to produce lcov
 mutation_test: provides the binary `just mutants` runs
+media_kit_libs_android_video: ships the prebuilt libmpv the ANDROID build links, consumed by Gradle through apps/mobile/.flutter-plugins-dependencies — there is no Dart symbol in it to import
+media_kit_libs_ios_video: ships the prebuilt libmpv the iOS build links, consumed by Xcode the same way

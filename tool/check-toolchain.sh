@@ -72,4 +72,50 @@ if [ -n "$(find apps -mindepth 2 -maxdepth 2 -name pubspec.yaml 2>/dev/null)" ];
     fi
 
     echo "toolchain: flutter $fversion (floor ${FLUTTER_MIN_MAJOR}.${FLUTTER_MIN_MINOR})"
+
+    # libmpv, from M4.5. `just check` needs it exactly as it needs Flutter, and
+    # this is where that stops being a surprise.
+    #
+    # `apps/mobile/test/playback/real_mpv_player_test.dart` drives a REAL mpv
+    # context headlessly — `media_kit`'s core is pure Dart over `dart:ffi` and
+    # only `media_kit_video` is a plugin, so a `Player` constructs under
+    # `flutter test` (measured, M4.0/E2). That suite FAILS when libmpv is
+    # absent rather than skipping, per CLAUDE.md, and without this check the
+    # failure arrives from inside a stream listener with no install command
+    # attached.
+    #
+    # The resolution order is `test/support/libmpv.dart`'s, and it is not the
+    # obvious one: `media_kit` 1.2.6's macOS default-name list is
+    # `['Mpv.framework/Mpv']` and nothing else, so a Homebrew install is
+    # invisible to it and the suite passes the path explicitly. Linux needs no
+    # help — the list carries `libmpv.so.2`, which is what Ubuntu's `libmpv2`
+    # package installs (measured in an ubuntu:24.04 container, M4.0/E8).
+    if [ -z "${LIBMPV_LIBRARY_PATH:-}" ]; then
+        libmpv_found=""
+        for candidate in \
+            "$(brew --prefix mpv 2>/dev/null)/lib/libmpv.dylib" \
+            /opt/homebrew/opt/mpv/lib/libmpv.dylib \
+            /usr/local/opt/mpv/lib/libmpv.dylib; do
+            if [ -f "$candidate" ]; then libmpv_found="$candidate"; break; fi
+        done
+        if [ -z "$libmpv_found" ] && command -v ldconfig >/dev/null 2>&1; then
+            if ldconfig -p 2>/dev/null | grep -q 'libmpv\.so\.2'; then
+                libmpv_found="$(ldconfig -p | grep -m1 'libmpv\.so\.2')"
+            fi
+        fi
+        [ -n "$libmpv_found" ] || fail "libmpv was not found, and apps/mobile's playback suite needs it.
+       'just test' drives a real mpv context headlessly and FAILS rather than
+       skipping when it is absent (CLAUDE.md: a suite that can excuse itself
+       reports success over nothing). Install it:
+         macOS:          brew install mpv
+         Debian/Ubuntu:  apt-get install -y libmpv2
+       Or export LIBMPV_LIBRARY_PATH pointing at the shared library."
+        echo "toolchain: libmpv ${libmpv_found}"
+    else
+        [ -f "$LIBMPV_LIBRARY_PATH" ] || fail "LIBMPV_LIBRARY_PATH is set to '$LIBMPV_LIBRARY_PATH', which is not a file.
+       An environment variable pointing at nothing is worse than an unset one:
+       media_kit would fall through to the platform default names and the
+       failure would name a framework nobody asked for."
+        echo "toolchain: libmpv $LIBMPV_LIBRARY_PATH (from LIBMPV_LIBRARY_PATH)"
+    fi
 fi

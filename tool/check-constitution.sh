@@ -421,11 +421,42 @@ check_secret_tostring() {
 # `poster_image_provider.dart`'s own doc comments explain *why* `Image.network`
 # cannot work here, and without the filter the file documenting the rule
 # becomes two violations of it.
+#
+# **`package:media_kit` is refused everywhere but two named files, and that is
+# the same rule rather than a new one.** libmpv opens its own socket from
+# NATIVE code, so every reason above applies to it and not one of the patterns
+# above can see it: there is no `HttpClient(` to grep for, the request is made
+# by C, and it succeeds. The three bypasses are real and each is answered in
+# code rather than by hope — the cookie jar (`playbackHeaders()` reads the live
+# cookie out and hands it over immediately before the open), F3 (that call is a
+# real authenticated round trip, so a dead session is renewed first) and F15
+# (it cannot be answered, which is what D10's refusal is for).
+#
+# Confining the import to two files is what makes those three answers
+# reviewable. `media_kit_playback_host.dart` translates our types into
+# media_kit's and `mpv_player.dart` wraps the `Player` itself; everything else
+# in the app talks to the `PlaybackHost` port and cannot reach libmpv at all.
+# The exclusion is built by FILTERING THE ARRAY rather than by `grep -v` on the
+# output, because a path filter on grep output matches a path appearing
+# anywhere in the line — including inside a string — and would exempt any file
+# that merely mentioned the adapter's name.
 check_app_no_raw_http() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources -path 'apps/*')
     if [ ${#files[@]} -eq 0 ]; then return 0; fi
     grep -nHE "package:dio/|package:http/|HttpClient\(|HttpOverrides|IOClient|NetworkImage|Image\.network|FadeInImage\.[a-zA-Z]*[Nn]etwork" "${files[@]}" \
+        | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(///|//|\*)" || true
+
+    local outside=()
+    for f in "${files[@]}"; do
+        case "$f" in
+            */lib/src/playback/mpv_player.dart) ;;
+            */lib/src/playback/media_kit_playback_host.dart) ;;
+            *) outside+=("$f") ;;
+        esac
+    done
+    if [ ${#outside[@]} -eq 0 ]; then return 0; fi
+    grep -nHE "package:media_kit" "${outside[@]}" \
         | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(///|//|\*)" || true
 }
 

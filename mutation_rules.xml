@@ -402,8 +402,128 @@
 
          RETIREMENT CONDITION: as `PosterKey`'s — the day this class stops
          needing a hand-written `hashCode`. The pattern is exact, so any change
-         to the expression stops matching and the mutants come back. -->
-    <regex pattern="int get hashCode => Object\.hash\(id, name, baseUrl, lastUser\);"/>
+         to the expression stops matching and the mutants come back.
+
+         **THAT CONDITION FIRED AT M4, AND HALF OF IT WAS WRONG — SO THE
+         EXCLUSION IS GONE.** `SavedServer` gained `wifiOnly` and
+         `allowUnverifiedPlayback`, so the expression is now a six-argument
+         `Object.hash(` broken over seven lines, and the pattern above matched
+         nothing. The mutants did **not** come back, though: measured with
+         `--dry -v` at M4, settings.dart reports **38 mutations with the stale
+         pattern and 38 without it**, because the builtin argument-swap rules
+         all require the call to close with `)\s*;` on the same statement text
+         they matched and a multi-line call does not give them that. So the
+         swap the exclusion existed for is not being generated at all now.
+
+         The line was deleted rather than updated to the new field list. An
+         exclusion that matches nothing is worse than none: it reads as a
+         decision the gate is still honouring, and the next person to widen it
+         starts from a premise that has not been true since M4. If a
+         single-line `Object.hash(...)` ever comes back to this class, so will
+         its two mutants, and the reasoning above is here to be re-applied. -->
+    <!-- `PlaybackPrefs.hashCode`'s argument order (M4). The third instance of
+         the case above and excluded on the same reasoning, restated rather
+         than delegated to "as PosterKey".
+
+         The builtin argument-swap rule produces the single adjacent swap
+         `Object.hash(meteredWarnBytes, progressIntervalSecs)`, and it survives
+         the whole suite because it cannot be killed. `==` compares both fields,
+         so equal prefs hold equal values and hash identically under either
+         order, and unequal ones hash differently under either order — the
+         entire `a == b implies a.hashCode == b.hashCode` contract is preserved
+         by every permutation. Both fields are `int`, so the swap merely
+         EXCHANGES the hashes of `(10, 30)` and `(30, 10)`; they stay distinct
+         and any `isNot` assertion passes either way. The only test that could
+         separate them is `expect(prefs.hashCode, Object.hash(a, b))`, which is
+         the implementation copied into the test file, and it would not even be
+         stable: `Object.hash` is seeded per process.
+
+         Field order in `==` IS observable and IS killed —
+         `settings_store_test` compares prefs differing in one field at a time.
+
+         **Cost measured with `--dry -v`, not assumed** — and the measurement
+         corrected a first draft of this very comment, which claimed one mutant
+         because that is what "the swap" suggests. It is **two**: 40 without
+         this line, 38 with it, and the `--dry -v` diff names the second one.
+         It is not a permutation. It is the builtin `&&`-negation rule matching
+         at line 205 (`other.progressIntervalSecs == progressIntervalSecs &&`)
+         and running past the end of the `==` expression into the excluded
+         statement, producing
+
+             other.progressIntervalSecs == progressIntervalSecs &&!(
+                   other.meteredWarnBytes == meteredWarnBytes;
+               @override
+               int get hashCode => Object.hash(progressIntervalSecs, meteredWarnBytes));
+
+         which does not compile. It was killed by the compiler rather than by an
+         assertion, so nothing is lost — but the `&&` at that position now has
+         no mutant at all, and `==`'s field order rests entirely on
+         `settings_store_test` comparing prefs that differ in one field at a
+         time. That is the third time this exact pair has appeared in this file,
+         which is why the shape is worth naming rather than rediscovering.
+
+         RETIREMENT CONDITION: as the two above — the day this class stops
+         needing a hand-written `hashCode`, which for `apps/mobile` means the
+         day it gains freezed. The pattern is exact, so any change to the
+         expression stops matching and the mutant comes back. -->
+    <regex pattern="int get hashCode => Object\.hash\(progressIntervalSecs, meteredWarnBytes\);"/>
+
+    <!-- `PlaybackTrackRef.hashCode`'s argument order (M4). The fourth instance,
+         and by now the shape is the point rather than the class: **every
+         hand-written two-or-more-argument `Object.hash` in this tree produces
+         an unkillable argument-swap mutant**, for the reason set out under
+         `PosterKey` above — `a == b implies a.hashCode == b.hashCode` holds
+         under every permutation of the same fields, unequal values stay
+         unequal under every permutation, and `Object.hash` is seeded per
+         process so there is no golden value to pin.
+
+         Here both fields are `String`, so the swap merely exchanges the hashes
+         of `('1', 'English')` and `('English', '1')`. `==` compares both and
+         its field order IS killed — `playback_host_test` compares refs
+         differing in one field at a time.
+
+         Cost measured with `--dry -v`: **8 mutations without this line, 6 with
+         it — two, not one.** A first draft of this comment said one, on the
+         reasoning that the `==` above is a single line and could not spill into
+         this statement. Wrong, and in exactly the way the `PosterKey` note
+         warns about: the `--dry -v` diff shows the second casualty is the
+         `&&`-negation at line 23 running into the excluded text —
+
+             other is PlaybackTrackRef && other.id == id &&!( other.label == label;
+
+         — which does not compile and was killed by the compiler rather than by
+         an assertion. Three of the four entries in this family now have this
+         same second casualty. Do not predict it; diff it.
+
+         RETIREMENT CONDITION: as the others — the day this class stops needing
+         a hand-written `hashCode`. -->
+    <regex pattern="int get hashCode => Object\.hash\(id, label\);"/>
+
+    <!-- `MpvPlayer.setProperty`'s PARAMETER NAMES, in an abstract declaration.
+         Not a call — a signature: `Future<void> setProperty(String name,
+         String value);`. The argument-swap rule rewrites it to
+         `setProperty(String value, String name)`, which is a rename of two
+         positional parameters of the SAME type on a method nobody calls by
+         name. Dart matches positional parameters by position, so every
+         implementation still overrides it, every call site still compiles, and
+         the program is byte-for-byte identical in behaviour. There is no input
+         that separates the two versions, so no test can.
+
+         `RealMpvPlayer.setProperty`'s BODY is a different matter and is
+         exercised: `real_mpv_player_test` sets `tls-verify` to `yes` and to
+         `no` and reads each back off a real mpv context, which is the property
+         D10 rests on.
+
+         Cost measured with `--dry -v`: **3 mutations without this line, 2
+         with**. Exactly one, and it is the swap.
+
+         RETIREMENT CONDITION: the day this port stops needing a generic
+         property setter. It exists for `tls-verify` and nothing else, and a
+         narrower `setVerifyTls({required bool verify})` would take one named
+         parameter, which this rule cannot match at all. That is the right
+         change; it is not this milestone's, because it moves the yes/no
+         conversion across three files and two fakes. -->
+    <regex pattern="Future&lt;void&gt; setProperty\(String name, String value\);"/>
 
     <!-- ++ and -- : the builtin rule rewrites them into each other via the
          arithmetic rules and produces mostly false positives on index maths.
