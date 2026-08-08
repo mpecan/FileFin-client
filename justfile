@@ -38,8 +38,10 @@ analyze:
 codegen-check:
     @bash tool/check-codegen.sh
 
-codegen:
-    dart run build_runner build --delete-conflicting-outputs
+# `just codegen` arrives at M1.4 with build_runner and the first @freezed model.
+# A recipe whose only command is `dart run` on a package nobody declares fails
+# with a resolver error rather than doing anything, and §1 says the tool arrives
+# with the milestone that needs it.
 
 # === tests ===
 test:

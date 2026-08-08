@@ -15,9 +15,13 @@ environment:
 # Listing a member that does not exist yet fails `dart pub get` outright.
 workspace: []
 
+# build_runner is deliberately ABSENT. It arrives at M1.4 with the first
+# @freezed model, together with the `just codegen` recipe and freezed /
+# json_serializable. At M0 nothing generates anything: `check-codegen.sh` scans
+# packages for a `build_runner:` declaration, finds none and short-circuits, so
+# the dependency was paying no rent (§1, §4). Its anti-vacuity guard still
+# holds — committed generated files with no builder to regenerate them fail.
 dev_dependencies:
-  # Drives freezed/json_serializable codegen; `just codegen-check` invokes it.
-  build_runner: ^2.4.13
   # `format_coverage` turns `dart test --coverage` output into the lcov file
   # `just coverage-check` reads.
   coverage: ^1.11.0
