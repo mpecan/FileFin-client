@@ -1,0 +1,13 @@
+# Dependencies exempt from §4's "has at least one import" rule, with the reason.
+#
+# These are consumed by configuration or by a gate recipe rather than by Dart
+# code, so no `import` will ever reference them. They still need a rent comment
+# in the pubspec — the allowlist waives the import, not the justification.
+#
+# Format: <package>: <what consumes it>
+# An entry with no consumer named is not an entry; delete the dependency instead.
+
+very_good_analysis: consumed by analysis_options.yaml's `include:`, which is what `just analyze` enforces
+build_runner: invoked as a command by `just codegen` / `just codegen-check`; drives freezed and json_serializable
+coverage: provides the `format_coverage` binary `just coverage` runs to produce lcov
+mutation_test: provides the binary `just mutants` runs

@@ -1,0 +1,8 @@
+# Constitutional debt baseline — see tool/check-constitution.sh
+# These counts may only ever decrease. Regenerate: just constitution-accept
+placeholders 0
+core_purity 0
+id_typedefs 0
+dead_types 0
+undocumented_endpoint 0
+secret_tostring 0
