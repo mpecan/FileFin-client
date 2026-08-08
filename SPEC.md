@@ -323,10 +323,11 @@ Media(streamUrl, httpHeaders: {'Cookie': 'filefin_session=$token'})
 No local proxy, no custom URI scheme, no CORS shim — the entire layer a
 webview client would need does not exist here.
 
-**Unverified assumption (R1):** that libmpv preserves the `Cookie` header
-across the `307` redirect to the HLS playlist, and onto segment requests. If
-it does not, the HLS path breaks while direct play works. This is spiked
-before M5 and asserted by an integration test, not assumed.
+**Verified (R1, 2026-08-08).** libmpv preserves the `Cookie` header across the
+`307` to the HLS playlist and onto segment requests — confirmed empirically
+against a real seeded server via FFmpeg's libavformat, the same HTTP/HLS stack
+libmpv embeds, with a negative control that failed as required (§8 R1). One
+`httpHeaders` map therefore covers both playback paths.
 
 ### 5.4 Playback decision — a guard, not a switch
 
@@ -394,8 +395,17 @@ cache/posters/     content-addressed, LRU-bounded
 Each gets a spike before the milestone that depends on it. Tracked in
 `docs/risks.md`; none is assumed resolved.
 
-- **R1 — Headers across redirect.** Does libmpv carry `Cookie` through the
-  `307` to HLS and onto segments? Blocks M5. *Spike in M0.*
+- **R1 — Headers across redirect. ✅ RETIRED 2026-08-08.** libmpv embeds
+  FFmpeg's libavformat for HTTP and HLS, so ffmpeg exercises the same code
+  path. Against a real seeded server, `ffmpeg -headers 'Cookie: …' -i
+  .../file/0` on an HEVC item followed the `307`, fetched the playlist and
+  segments, and decoded — exit 0. The negative control without the cookie
+  failed with `401 Unauthorized` (exit 8), so the test could fail and did.
+  Byte-level confirmation: playlist `200`, `seg0.ts` `200 video/mp2t`.
+
+  Conclusion: `Media(httpHeaders: {'Cookie': …})` is sufficient for both
+  playback paths. §5.3's assumption holds and M5 needs no alternative design.
+  Harness: `tool/spikes/r1_headers_across_redirect.sh`.
 - **R2 — iOS Picture-in-Picture.** iOS PiP is built around `AVPlayerLayer` /
   `AVSampleBufferDisplayLayer`; libmpv renders its own surface. PiP may be
   unavailable or need custom platform work. Affects F14. *Spike before M7.*
