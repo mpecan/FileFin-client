@@ -188,12 +188,28 @@ check_undocumented_endpoint() {
 # `// We deliberately do not write String toString() here.` satisfied §9 — a
 # rule answerable in prose is not a rule. Comment lines are skipped and the
 # match is anchored to the declaration shape.
+#
+# The modifier alternation must list EVERY modifier Dart allows before `class`,
+# because the pattern is what decides whether the class is looked at at all — a
+# missing keyword is not a weaker check, it is no check. Measured at M2:
+# `interface` and `mixin` were absent, so `abstract interface class TokenStore`
+# matched nothing and was exempt from §9 entirely while the byte-identical
+# `class TokenStore` was flagged. The secret-store port is an
+# `abstract interface class`, which is how this was found.
+#
+# Two shapes are still NOT covered, and that is a decision rather than an
+# oversight. A bare `mixin Foo` has no planned instance in this tree. An `enum`
+# is deliberately excluded: `SecretKind` is an enum whose name matches `Secret`
+# and whose default `toString` prints `SecretKind.session` — a key discriminator
+# carrying no secret at all — so including enums would force a meaningless
+# override onto correct code, which is how a gate teaches people to route around
+# it. Revisit if an enum ever holds a value rather than naming one.
 check_secret_tostring() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources)
     if [ ${#files[@]} -eq 0 ]; then return 0; fi
     awk '
-        /^[[:space:]]*(abstract[[:space:]]+|sealed[[:space:]]+|final[[:space:]]+|base[[:space:]]+)*class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/ {
+        /^[[:space:]]*(abstract[[:space:]]+|sealed[[:space:]]+|final[[:space:]]+|base[[:space:]]+|interface[[:space:]]+|mixin[[:space:]]+)*class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/ {
             for (i = 1; i <= NF; i++) if ($i == "class") { cname = $(i + 1); break }
             sub(/[<({].*/, "", cname)
             if (cname ~ /(Credential|Password|Secret|Session|Token)/) {

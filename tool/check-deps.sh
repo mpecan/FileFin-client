@@ -70,11 +70,18 @@ while IFS= read -r pubspec; do
     pkg_dir="$(dirname "$pubspec")"
     pkg_name="$(awk '/^name:/ { print $2; exit }' "$pubspec")"
 
-    # A package's own sources: its lib/, test/, bin/, tool/, example/. The
-    # workspace root deliberately has none, which is why all four of its
-    # tooling dev-dependencies live in the allowlist.
+    # A package's own sources: its lib/, test/, integration_test/, bin/, tool/,
+    # example/. The workspace root deliberately has none, which is why all four
+    # of its tooling dev-dependencies live in the allowlist.
+    #
+    # `integration_test` joined the list at M2 with `just it`. Without it an
+    # import in an integration suite was invisible to BOTH halves of this gate:
+    # a package imported only there looked unused, and — worse — an *undeclared*
+    # import there was never reported at all. Dart resolves an undeclared package
+    # anyway when a sibling workspace member pulls it in, which is exactly how
+    # one survives to break a clean checkout.
     srcs=()
-    for sub in lib test bin tool example; do
+    for sub in lib test integration_test bin tool example; do
         [ -d "$pkg_dir/$sub" ] && srcs+=("$pkg_dir/$sub")
     done
 
