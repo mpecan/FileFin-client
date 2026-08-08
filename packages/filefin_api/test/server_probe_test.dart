@@ -38,14 +38,14 @@ void main() {
         contentType: 'application/json',
       ),
     );
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<FileFinServer>());
     expect((result as FileFinServer).version, '0.20.3');
   });
 
   test('needsSetup:true is a different outcome, not a failure', () async {
     serveState(StubResponse.json({'needsSetup': true, 'version': '0.20.3'}));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<FileFinServerNeedsSetup>());
     expect((result as FileFinServerNeedsSetup).version, '0.20.3');
   });
@@ -55,7 +55,7 @@ void main() {
     // does for an unmatched path: `200 text/html` with index.html
     // (`server.go:352`, verified live at v0.20.3). A status check would call
     // this a success. F1 is a content-type-and-payload check for this reason.
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
     // Verbatim, not `contains`. The reason is what a user reads in the dialog
     // that refuses their address, and it is mutable source nothing else in
@@ -75,7 +75,7 @@ void main() {
     // probe accepts only a body carrying BOTH documented keys, and deleting
     // either half of that conjunction is what this test exists to catch.
     serveState(StubResponse.json({'version': '1'}));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
     expect(
       (result as NotAFileFinServer).reason,
@@ -86,7 +86,7 @@ void main() {
 
   test('JSON with needsSetup but no version is NOT FileFin', () async {
     serveState(StubResponse.json({'needsSetup': false}));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
     expect(
       (result as NotAFileFinServer).reason,
@@ -103,7 +103,7 @@ void main() {
         contentType: 'application/json; charset=utf-8',
       ),
     );
-    expect(await probeServer(dio: dio, urls: urls), isA<FileFinServer>());
+    expect(await probe(dio: dio, urls: urls), isA<FileFinServer>());
   });
 
   test('APPLICATION/JSON is the same media type', () async {
@@ -114,7 +114,7 @@ void main() {
         contentType: 'APPLICATION/JSON',
       ),
     );
-    expect(await probeServer(dio: dio, urls: urls), isA<FileFinServer>());
+    expect(await probe(dio: dio, urls: urls), isA<FileFinServer>());
   });
 
   test('an empty JSON object is missing BOTH keys, and says so', () async {
@@ -122,7 +122,7 @@ void main() {
     // body that fails all of it are different messages, and only this case
     // exercises the second.
     serveState(StubResponse.json(<String, Object?>{}));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(
       (result as NotAFileFinServer).reason,
       'the JSON at ${urls.state} is missing needsSetup and version, so it is '
@@ -132,7 +132,7 @@ void main() {
 
   test('a JSON array where an object belongs is NOT FileFin', () async {
     serveState(StubResponse.json([1, 2, 3]));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
   });
 
@@ -149,7 +149,7 @@ void main() {
     addTearDown(slow.close);
     stub.on(urls.state.path, (_) => null);
     return expectLater(
-      probeServer(dio: slow, urls: urls),
+      probe(dio: slow, urls: urls),
       completion(
         isA<ServerUnreachable>().having(
           (r) => r.cause,
@@ -172,7 +172,7 @@ void main() {
         contentType: 'application/json',
       ),
     );
-    expect(await probeServer(dio: dio, urls: urls), isA<NotAFileFinServer>());
+    expect(await probe(dio: dio, urls: urls), isA<NotAFileFinServer>());
   });
 
   test('a field of the wrong wire type is NOT FileFin, not a crash', () async {
@@ -181,7 +181,7 @@ void main() {
     // `_TypeError`. `decodeModel` is what stops a raw Dart `TypeError`
     // reaching a user whose server merely changed a field's type.
     serveState(StubResponse.json({'needsSetup': 'yes', 'version': '0.20.3'}));
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
     expect((result as NotAFileFinServer).reason, contains('could not read'));
   });
@@ -198,7 +198,7 @@ void main() {
         contentType: 'text/plain',
       ),
     );
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<NotAFileFinServer>());
     expect((result as NotAFileFinServer).reason, contains('502'));
   });
@@ -207,7 +207,7 @@ void main() {
     // The distinction matters to the user: "I cannot reach this address" and
     // "this address is something else" lead to different next actions.
     await stub.close();
-    final result = await probeServer(dio: dio, urls: urls);
+    final result = await probe(dio: dio, urls: urls);
     expect(result, isA<ServerUnreachable>());
     expect((result as ServerUnreachable).cause, isA<ConnectionFailed>());
   });
@@ -222,7 +222,7 @@ void main() {
         return null;
       });
       await expectLater(
-        probeServer(dio: dio, urls: urls, cancelToken: token),
+        probe(dio: dio, urls: urls, cancelToken: token),
         throwsA(isA<RequestCancelled>()),
       );
     },
@@ -236,7 +236,7 @@ void main() {
         contentType: 'application/json',
       ),
     );
-    await probeServer(dio: dio, urls: urls);
+    await probe(dio: dio, urls: urls);
     expect(stub.requests, hasLength(1));
     expect(stub.requests.single.method, 'GET');
     expect(stub.requests.single.path, '/api/state');

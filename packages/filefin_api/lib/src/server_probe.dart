@@ -34,7 +34,7 @@ const _versionKey = 'version';
 /// into a verdict would show "unreachable" for something the user did on
 /// purpose, and would leave a caller no way to tell its own cancellation from
 /// a real failure.
-Future<ProbeResult> probeServer({
+Future<ProbeResult> probe({
   required Dio dio,
   required FileFinUrls urls,
   CancelToken? cancelToken,

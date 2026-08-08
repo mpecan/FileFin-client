@@ -30,6 +30,37 @@ Map<String, Object?> jsonObject(
   return decoded;
 }
 
+/// Reads a **2xx** response as a JSON array of objects.
+///
+/// Every listing endpoint answers an array and none of them paginates
+/// (SPEC.md L2), so this is the shape half the client's calls return. A
+/// non-object element fails the whole response rather than being skipped:
+/// silently dropping a row is the failure G5 forbids, and the blast radius is
+/// recorded in STATE.md rather than hidden.
+List<Map<String, Object?>> jsonObjects(
+  Response<dynamic> response, {
+  required Uri requested,
+}) {
+  final decoded = _jsonBody(response, requested: requested);
+  if (decoded is! List<Object?>) {
+    throw MalformedResponse(
+      requested,
+      'expected a JSON array, got ${decoded.runtimeType}',
+    );
+  }
+  return [
+    for (final element in decoded)
+      if (element is Map<String, Object?>)
+        element
+      else
+        throw MalformedResponse(
+          requested,
+          'expected every array element to be an object, got '
+          '${element.runtimeType}',
+        ),
+  ];
+}
+
 /// Runs [fromJson] over server data, turning any decode failure into ours.
 ///
 /// The values come from a server we do not control (§8), so a type that does

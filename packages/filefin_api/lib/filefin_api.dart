@@ -18,6 +18,8 @@
 /// library and is dead by §5.
 library;
 
+export 'src/auth_interceptor.dart';
+export 'src/client.dart';
 export 'src/credentials.dart';
 export 'src/error_mapper.dart';
 export 'src/errors.dart';

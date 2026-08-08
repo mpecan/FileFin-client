@@ -364,6 +364,7 @@ void main() {
         CertificateNotTrusted() => 'unknown certificate',
         CertificatePinMismatch() => 'certificate changed',
         InvalidCredentials() => 'wrong password',
+        MalformedIdentifier() => 'bad id from the server',
       };
       expect(
         describe(

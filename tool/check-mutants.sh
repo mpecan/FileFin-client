@@ -87,7 +87,19 @@ for pkg in $packages; do
     [ -f "$pkg/pubspec.yaml" ] || fail "$pkg has changed lib sources but no pubspec.yaml"
     [ -d "$pkg/test" ] || fail "$pkg has changed lib sources but no test/ directory — a mutation run with no tests kills nothing"
 
-    targets="$(mktemp "${TMPDIR:-/tmp}/filefin-mutants-XXXXXX.xml")"
+    # A temp DIRECTORY with fixed filenames inside, not `mktemp` templates with
+    # a suffix. BSD/macOS mktemp only substitutes the `X`s when they end the
+    # template: given `filefin-mutants-XXXXXX.xml` it creates a file called
+    # exactly that, literally, and the NEXT run gets
+    # `mkstemp failed … File exists` and the gate cannot run at all.
+    #
+    # Normally the `rm -f` at the end of the loop hides it. An interrupted run
+    # does not reach that line, and from then on the gate is dead until someone
+    # deletes a file with six literal X's in its name — which is not a message
+    # anybody decodes quickly. Measured on macOS: the second `mktemp` with this
+    # template returns the literal path and rc 0, the third fails with rc 1.
+    tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/filefin-mutants-XXXXXX")"
+    targets="$tmpdir/targets.xml"
     {
         echo '<?xml version="1.0" encoding="UTF-8"?>'
         echo '<mutations version="1.1">'
@@ -102,7 +114,7 @@ for pkg in $packages; do
     n=$(grep -c '<file>' "$targets" || true)
     echo "mutants: $pkg — $n changed lib file(s) vs $BASE"
 
-    log="$(mktemp "${TMPDIR:-/tmp}/filefin-mutants-XXXXXX.log")"
+    log="$tmpdir/run.log"
     set +e
     # NO `-b`. It adds mutation_test's builtin EXCLUSIONS as well as its rules,
     # and one of those (`[\s]for[\s]*\(.*?\)[\s]*{` with dotAll) swallows
@@ -161,7 +173,7 @@ for pkg in $packages; do
         echo "       on a quiescent machine before hunting for a missing test."
         status=1
     fi
-    rm -f "$targets" "$log"
+    rm -rf "$tmpdir"
 done
 
 if [ "$status" -eq 0 ]; then
