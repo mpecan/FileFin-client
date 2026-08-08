@@ -43,7 +43,10 @@ process (SPEC.md L1). F3 re-authenticates and retries once, transparently. The
 one exception: a `401` from `/api/login` itself means bad credentials, and
 retrying it is an infinite loop.
 
-**There is no 404 and no 405 on the API surface.** `mux.Handle("/", s.spa())`
+**No path or method mismatch is ever answered with a 404 or a 405.** Read that
+as being about *routing* only — a handler that DID match still returns real
+404s for an unknown id or a missing file (`:380`, `:409`, `:435`, `:487` and
+after), which is a different thing and is documented route by route below. `mux.Handle("/", s.spa())`
 (`server/server.go:352`) is registered as a catch-all **outside** the
 `if complete` block, and `spa()` (`server.go:380-403`) falls back to
 `index.html` with `200 text/html; charset=utf-8` for any path it cannot serve

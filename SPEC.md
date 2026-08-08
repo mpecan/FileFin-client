@@ -194,9 +194,16 @@ semantics" — transcribed rule by rule from `internal/state/engine.go`) that
 
 - the resume pointer **never regresses**
 - crossing 90% of a file advances the pointer to the next file at 0s
-- crossing 90% of the *last* file sets the permanent `watched` flag **and
-  leaves the pointer index where it is** — the seconds do not advance on that
-  same report
+- crossing 90% of the *last* file sets the permanent `watched` flag, and the
+  pointer does **not** advance on that same report **when it already resolves
+  to that file** — the equal-index branch additionally requires `!crossed`
+  (`state/engine.go:81`), so the seconds stay where they were. When the pointer
+  is behind or absent, the `targetIdx > curIdx` arm runs instead
+  (`state/engine.go:79-80`) and writes `{last file, round(position)}`: index
+  **and** seconds move. Verified live — a fresh item
+  reporting 95 of 100 comes back with `seconds: 95`. An earlier draft of this
+  line stated the first half as though it were unconditional; it is not, and
+  `docs/server-api.md`'s "Resume semantics" has the rule stated correctly.
 - **the two un-watch operations differ, and the difference is deliberate**
   (`media.go:463` vs `:485`): `POST .../watched {"watched":false}` clears only
   the flag and **keeps** the pointer, so un-watching returns the item to
@@ -225,8 +232,10 @@ filesystem truth, not cache. It survives a server cache rebuild.
   **The probe is a Content-Type and payload check, not a status check.** The
   server registers an SPA catch-all outside its route table
   (`server/server.go:352`), so an unmatched `/api/*` path answers
-  `200 text/html` with `index.html` — verified live at v0.20.3. There is no 404
-  and no 405 anywhere on the API surface. A `200` from `GET /api/state`
+  `200 text/html` with `index.html` — verified live at v0.20.3. **No path or
+  method mismatch is answered with a 404 or a 405**; a handler that did match
+  still returns real 404s for an unknown id, which is a different thing. A
+  `200` from `GET /api/state`
   therefore proves nothing: any SPA host, any reverse proxy with a fallback,
   and any unrelated web server answers the same way. F1 accepts a server only
   when the response carries `Content-Type: application/json` **and** the body

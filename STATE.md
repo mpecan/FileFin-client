@@ -5,9 +5,19 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | | |
 |---|---|
 | **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
-| **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()` |
+| **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()`, then remediated against three adversarial reviews |
 | **Next** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, and `just it` |
 | **Exit criterion met** | `just check` exits 0 on a clean tree; **every** gate now has a both-directions proof on real code, none deferred |
+
+**The "clean tree" in that last row was not clean the first time it was claimed,
+and the claim is re-made here only because it has since been re-run.** Three
+untracked probe files (`zz_attack_test.dart`, `zz_probe2_test.dart`,
+`zz_probe_test.dart`) sat in `packages/filefin_core/test/` when M1 was declared
+done. `just test` runs them, and one wrote to a hard-coded absolute path under a
+scratch directory — it would have failed on any other machine. They are deleted.
+Re-verified without them and with the remediation applied: `just check` exit 0,
+coverage 100%, 174 of 174 mutants, `git status --porcelain
+--untracked-files=all` empty. No figure this file reports ever depended on them.
 
 ---
 
@@ -24,12 +34,21 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.7 | `lib/src/resume/` — `ResumePointer`, `WatchState`, `ProgressReport`, `WatchView`, and the engine: `applyProgress`, `deriveView`, `resolveIndex`, `setWatched`, `clearWatched`, `clearProgress`, `setFavorite`, `setRating` |
 | M1.8 | `lib/src/playback/decision.dart` — `NetworkType`, `PlaybackSettings`, the sealed `PlaybackDecision` hierarchy and `decide()` |
 | M1.9 | The barrel's final export list, and the four deferred gate proofs below |
+| M1.10 | Remediation of three adversarial reviews: a coverage-exemption race that let untested code through, a reachable URL defect, a mutation-gate blind spot inherited from the tool's own builtin exclusions, two undefended engine mutants, and four documentation claims that were false |
 
-**Numbers as measured, not as hoped:** `just check` exits 0. Coverage
-**100% (327/327 lines)**. **149 of 149** mutants killed across every lib source
-M1 added (`FILEFIN_MUTANTS_BASE=ca00dd9`, the last M0 commit). **758 tests**,
-of which 601 are captured resume vectors and 10 are property runs. `core_purity` 0, and the whole
-constitution baseline is still 0 across all six checks.
+**Numbers as measured, not as hoped**, after M1.10: `just check` exits 0 on a
+clean tree. Coverage **100% (331/331 lines)**. **174 of 174** mutants killed
+across every lib source M1 added (`FILEFIN_MUTANTS_BASE=ca00dd9`, the last M0
+commit), 0 timeouts. **769 tests**, of which 601 are captured resume vectors and
+10 are property runs. `core_purity` 0, and the whole constitution baseline is
+still 0 across all six checks.
+
+The mutant count **rose** from the 149 reported before remediation, and the rise
+is the finding rather than an improvement in the code. **+7** of it is
+`engine.dart` going 62 → 69 because the gate had stopped asking about two lines
+it should have been asking about (below); **+18** is new code in `urls.dart` and
+`watch_state.dart`. A number going up because the instrument was fixed is worth
+more than the same number holding.
 
 **M1.1 and M1.2 could not be separate commits.** A package with no lib source
 and no test cannot pass `just check`: `run-tests.sh` fails at zero test files
@@ -233,6 +252,42 @@ server-supplied playlist.
 the `=` for an empty value. Go's `url.ParseQuery` reads `q` as the key `q` with
 the value `""`, so the request is the same one — the test asserts what actually
 goes on the wire rather than normalising it away.
+
+### M1.10 — remediation of three adversarial reviews
+
+Three independent reviews (the resume engine against the Go source; the gates
+changed during M1, by the agent M1 was judging; the models, URLs and
+constitution). Every gate changed in response was re-proven in both directions
+on the real script, and the two that are nondeterministic were proven **20 times
+in each direction**, because one trial of a race proves nothing.
+
+| Finding | What was wrong | Fail input | Before | After |
+|---|---|---|---|---|
+| **B1** | `has_no_executable_code` (`run-coverage.sh`) was a three-stage pipeline under `set -euo pipefail`, negated with `!`. `grep -q` exits on its first match, so `sed` and `grep -v` upstream died of **SIGPIPE (141)**, `pipefail` made 141 the pipeline's status, and `!` inverted it into "no executable code". The louder the evidence of executable code, the likelier the file was exempted from the missing-record check — the exact G2 hole that check exists to close | end-to-end on the real gate: a **600-line** `lib/src/zzz_b1_probe.dart` (inside `file-size`'s 600 hard limit) whose line 1 is `int sneak(int a, int b) => a > b ? a : b;` and whose other 599 lines are `export`s; no test imports it. 20 runs | **5 of 20 exit 0**, the file printed in the "no executable code" list | **0 of 20.** Exit 1 naming the file, every run |
+| B1 — at the function | the same, on the function extracted verbatim from the script | a 2001-line file of the same shape, 20 trials | **20 of 20 wrongly EXEMPT** | **0 of 20**, and 0 of 20 at 601 and 3001 lines too |
+| B1 — the other direction | the exemption must still exempt | the two real files it exists for (`lib/filefin_core.dart`, `lib/src/ids.dart`), a 2001-line pure barrel, and a bare `library;` — 20 trials each | exempt | exempt, unchanged, 20 of 20 |
+| B1 — smuggling still refused | the five attempts the exemption was designed against | function in a barrel; extension type with a non-empty method body; top-level `final` with an initialiser; extension-type getter; const constructor doing work — 20 trials each | not exempt | not exempt, unchanged |
+| **B5** | `library[^;]*;` had no word boundary, so a *statement* beginning with those seven letters was excused | `libraryHandle bar = compute();`, 20 trials | **EXEMPT** | **not exempt**, 20 of 20. `library;` and `library foo.bar;` still exempt |
+| **B4** | the `for` exclusion was `[\s]for[\s]*\(.*?\)[\s]*{` with `dotAll`. A Dart **collection**-`for` has no `{` to stop at, so `.*?` ran to the next function's brace: **lines 128-171 of `engine.dart`, 1,959 characters**, never mutated | `engine.dart` under the gate | mutated lines ran …121, 122, then jumped to **172**. `i < pointerIndex` — which decides whether the file AT the pointer is marked watched — was never mutated. 62 mutations | **69 mutations**, lines 127 and 128 now included. 69 of 69 killed |
+| B4 — the fix the review proposed was not enough | tightening our copy of the pattern changed **nothing**, because `-b` re-adds mutation_test's builtin exclusions and the loose pattern is one of them. Exclusions are additive and cannot be subtracted | `engine.dart` dry-run under (a) the committed rules, (b) the tightened rules, (c) our loop exclusions deleted outright | **62, 62, 62 — byte-identical mutant lists** | `-b` dropped, builtin rules transcribed into `mutation_rules.xml`: **69** |
+| B4 — what was *not* recovered | stated so the 1,959 figure is not read as 1,959 characters of hidden risk | `engine.dart` dry-run with **zero** exclusions | 329 mutations, but none at all on `setWatched`/`clearWatched`/`clearProgress`/`setFavorite` — named arguments and boolean literals match no rule | so the recovered ground is exactly the two `perFile` lines, +7 mutants. That is where `i < pointerIndex` lives |
+| **B3** | `dart_lib_sources` excludes `*.g.dart`/`*.freezed.dart` **by filename**, so a hand-written file merely *named* that way is invisible to the ignore-comment guard, the missing-record check, `analyze`, `constitution`, `dupes`, `mutants`, `file-size` and `comments` — all at once | `lib/src/fake.g.dart` = `// coverage:ignore-file` + `int neverTested(...)`, **staged** | `codegen-check` RC **0**, never mentioned | RC **1**, `no generator header on line 1` |
+| B3 — header typed by hand | the header alone is forgeable, so a second fact is required | the same file carrying the real `// GENERATED CODE - DO NOT MODIFY BY HAND` line | RC 0 | RC **1**, `no …/fake.dart to be a part of` |
+| B3 — orphaned real output | generated output whose source was deleted | a genuine `media_detail.g.dart` copied to `orphan.g.dart` | RC 0 | RC **1**. Clean tree: RC **0** |
+| **C1** | `ApiPaths._seg` percent-encoded but did not reject `''`, `'.'`, `'..'`. `Uri` deletes dot segments unconditionally — from `%2E%2E` too — so no encoding could fix it, and `_resolve` discarded empty segments as well. `MediaId('')` is the models' **own declared default**, so any payload with a missing `id` produced it | `mediaDetail(MediaId(''))`, `mediaDetail(MediaId('..'))` | `https://h/api/media` and `https://h/api/` — different routes, both answered `200 text/html` by the SPA catch-all | `ArgumentError` naming the value. `..a`, `...`, `seg0.ts` and `index.m3u8` still build normally |
+| **A2** | `report.duration > 0` mutated to `!= 0` survived the entire suite: the only input that separates them is a **negative** position over a **negative** duration, which no vector and no property draw reached | mutate `> 0` → `!= 0`, run all tests | **764 tests pass** | **fails**, named: `rule 2 — crossing / a negative duration never crosses, even at a "90%" ratio` |
+| **A3** | `(x + 0.5).toInt()` mutated to `x.round()` survived, with the negative clamp left intact. Vectors use 1.4/1.5/1.6 and the generators draw tenths, so neither oracle can reach the one input that separates them | mutate to `x.round()`, run all tests | **764 tests pass** | **fails**, named: `rule 4 — … the positive side differs from .round() too, not just the clamp` (`0.49999999999999994` → 1, where `.round()` says 0) |
+| **C2** | `fromDetail` copied `rating` through unchecked, so a server serving `rating: 99` built a `WatchState` that this library's own `setRating` throws on | `WatchState.fromDetail(MediaDetail(rating: 99))` then `setRating(state, rating: state.rating)` | `RangeError` | `rating` reads as **0, unrated**; `setRating` returns normally. `MediaDetail.fromJson({'rating': 99})` still decodes 99 (§8 lives at the wire boundary) |
+
+Two mutants surfaced in the remediation's own new code and neither was excluded.
+The three in `urls.dart` were **inside the `ArgumentError` message string** —
+prose is mutable source and nothing else in the suite reads it — so the test now
+asserts that message verbatim, the same reasoning as `setRating`'s bounds. The
+one in `watch_state.dart` (`rating >= 0` → `rating > 0`) was **genuinely
+equivalent**, because the fallback is also 0; rather than add a third exclusion,
+the operator was removed — `rating.isNegative || rating > 10` has no boundary to
+get wrong. An exclusion is a piece of code the gate stops asking about; deleting
+the comparison is strictly better than silencing it.
 
 ### Coverage now honours `// coverage:ignore-file`, and hand-written source may not carry it
 
@@ -499,11 +554,52 @@ floor is set by the strictest constraint in the tree, not the loosest.
   pointer**, because the detail payload carries the derived view rather than the
   stored pointer and the server reports both as `0`/`0`. It reads `0`/`0` as
   absent, which is the reading that agrees with `Apply` for the stale-pointer
-  case. The cost is one case: crossing 90% of a single-file item whose pointer
-  genuinely sits at `(0, 0s)` predicts `seconds = round(position)` where the
-  server keeps `0`. The item is `watched` by then and has left every `continue`
-  row, so nothing reads the difference. Recorded because "nothing reads it" is
-  an argument, not a proof.
+  case. **This entry used to end "the item is `watched` by then and has left
+  every `continue` row, so nothing reads the difference." That was false, and
+  the code comment saying it has been replaced too.** The divergence does not
+  close itself. Live v0.20.3 transcript, single-file film: after
+  `{position: 95, duration: 100}` the client holds `95` and the server holds
+  `0`; after a rewind to `{position: 50}` the server moves to `50` and the
+  client **still holds 95**, because the pointer only ever moves forward and
+  nothing has exceeded it. Once the user rewinds, the optimistic value is simply
+  wrong, and `watched` does not hide it — `POST .../watched {"watched":false}`
+  keeps the pointer and puts the item back in `continue` carrying the stale
+  offset. **Known limitation for M4:** the progress reporter must re-read the
+  detail after a report that crosses 90% of a single-file item rather than trust
+  the prediction. The chosen reading is still the right one — it was settled by
+  enumerating 90 inputs against the real Go engine, and the two readings differ
+  on only 4 of them, all of this same shape — but it is a tie-break, not a
+  derivation.
+- **`WatchState.fromDetail` normalises a rating the server would refuse to
+  write.** The server validates `0..10` on write (`media.go:425`) and does
+  **not** clamp on read: verified live by editing `meta.json` to `rating: 99` —
+  `POST .../rating {"rating":99}` answered `400` while `GET .../media/<id>`
+  still served `99`. Copied through unchecked, that built a `WatchState` whose
+  own `setRating(state, rating: state.rating)` threw `RangeError`. The answer
+  chosen: the wire model keeps the raw value (§8 tolerance belongs at the wire
+  boundary), and `fromDetail` reads anything outside `0..10` as **0, unrated** —
+  upstream's own word for "no rating" (`state/state.go:29`). The invariant is
+  now stateable and tested: **every `WatchState` this package constructs is one
+  every mutator accepts.** The debt is that it is a normalisation, so a corrupt
+  `99` is shown as unrated rather than surfaced; clamping to `10` was rejected
+  because showing full marks for corrupt data is a worse lie than showing none.
+- **`ApiPaths` rejects a path parameter instead of escaping it, and `MediaId('')`
+  is reachable today.** `''`, `'.'` and `'..'` are not escapable — `Uri` deletes
+  dot segments unconditionally, including from `%2E%2E` — so `_seg` throws
+  `ArgumentError`. `MediaId('')` is the models' own declared default, which means
+  a payload with a missing or null `id` now throws at URL construction where it
+  previously produced a request against a **different route** that the SPA
+  catch-all answered `200 text/html`. That is the intended trade: a loud failure
+  naming the value beats a silent one that arrives later as a JSON decode error.
+  `filefin_api` (M2) is the first caller that will have to decide what to do with
+  the throw.
+- **`ApiPaths` is no longer exported from the barrel.** `grep` found no consumer
+  outside `urls.dart`, and the barrel's own doc sets the criterion: a symbol not
+  exported there has no consumer outside the library and is dead by §5. It is
+  `export 'src/urls.dart' hide ApiPaths;` now, and `urls_test.dart` imports
+  `src/urls.dart` directly to pin the route literals — which also makes the §8
+  `undocumented_endpoint` gate's dependency on their exact spelling visible in a
+  test. Unhide it the day `filefin_api` genuinely needs a bare path.
 - **A path parameter is percent-encoded by `ApiPaths` and decoded again by
   `_resolve`.** Two encodings meeting in the middle is more machinery than a
   `/`-free id needs, and it exists for `hlsSegment`, whose segment name comes
@@ -519,6 +615,49 @@ floor is set by the strictest constraint in the tree, not the loosest.
   directives, extension types, identity converters, annotations and field
   defaults, with no operator, literal or conditional for a mutant to alter.
   Verified by grep before overriding, and named in both commit messages.
+
+  **Said out loud, because the override hides it: the mutation gate gives ZERO
+  assurance for all nine wire models and for `json_converters.dart`.** At HEAD
+  the per-file mutant counts are 0 for `lib/filefin_core.dart`'s siblings
+  `ids.dart`, `json_converters.dart`, `search_field.dart` and every one of
+  `models/*.dart` — 0 mutations each, on every run, including the 174-mutation
+  run above. Nothing in them is an operator, a literal or a conditional, so
+  there is nothing to mutate; §3's second instrument simply does not reach them.
+  **Coverage is the only check on that code**, backed by the captured-payload
+  round-trips (§8) and `model_contract.dart`'s unknown-field injection. That is
+  a real gap, not a formality: it is where a decoder that silently drops a field
+  would live.
+- **A type change in a payload fails the whole payload, and that is within §8 as
+  written.** Measured by the M1.10 review, not re-measured here: 208 mutations
+  of the fixture values across all nine models, of which **124 throw
+  `_TypeError`** on a type change (`bool` → `1`, `int` → `"3"`, `List` → scalar,
+  `[null]`). §8 mandates unknown-field tolerance
+  and "nullable with a default", and **null-tolerance is complete** — all 84 null
+  substitutions decode to the documented default at every nesting level,
+  including inside list elements. So this is not a §8 violation. It is recorded
+  because the blast radius is worth knowing before M4 renders a list: a single
+  bad element (`files: [null]` with a non-nullable element type) fails the whole
+  response, and `json_converters.dart`'s comment — "a decoder that throws on an
+  unexpected value turns one odd item into a blank screen" — slightly over-claims
+  by invoking §8 for a tolerance the generated decoders do not provide above the
+  converter layer.
+- **`--delete-conflicting-outputs` was dropped from `check-codegen.sh`** in the
+  same edit that added the cache deletion, and went unrecorded until a review
+  noticed. Recorded now, with the reason: the flag lets the builder **delete** a
+  file it did not write in order to make its own build succeed, which is an
+  auto-fix inside a gate whose job is to notice a difference. Re-verified after
+  the cache deletion landed — a full rebuild over the committed output writes all
+  20 files with no conflict — so it bought nothing and could only have hidden
+  something. Not a loosening; it was simply undocumented, which is its own
+  finding.
+- **The mutation gate cannot distinguish a survivor from an interrupted run.** A
+  run killed by the 300s command timeout reported `1/62 undetected`, exit 1,
+  while two complete runs of the same tree reported 62/62 and 149/149. Failing
+  safe when interrupted is right, but a reader who takes "undetected" at face
+  value goes hunting for a missing assertion that does not exist.
+  `check-mutants.sh` now prints a NOTE saying so alongside the failure, and the
+  tool's own `Timeouts: N` line is the thing to read. Not fixed at the source —
+  that needs an upstream change.
 
 ### Deferred by decision, not oversight
 
@@ -608,6 +747,28 @@ at M1.2 as well.
   Repointed at `docs/server-api.md`'s "Resume semantics" section, which is where
   the rules actually live. Found while fixing F6; a citation to a missing file
   is the same class of defect as a citation to the wrong line.
+- **`SPEC.md` §3.5's last-file rule was over-general and is now corrected.** It
+  said crossing 90% of the last file "sets the permanent `watched` flag **and
+  leaves the pointer index where it is** — the seconds do not advance on that
+  same report", full stop. That holds only when the pointer **already resolves
+  to** the last file, because the equal-index branch additionally requires
+  `!crossed` (`state/engine.go:81`). When the pointer is behind or absent, the
+  `targetIdx > curIdx` arm runs (`:79-80`) and writes `{last file,
+  round(position)}` — index *and* seconds move. Verified live: a fresh item
+  reporting 95 of 100 comes back with `seconds: 95`. The Dart reproduced both
+  halves all along and `docs/server-api.md` stated it correctly; only SPEC.md
+  was wrong, which is the orchestrator's own error rather than the code's.
+- **`engine.dart`'s non-finite comment now says what Go actually produces.** It
+  said Dart's `.toInt()` throws "where Go's `int()` does not" without naming the
+  result. Measured on darwin/arm64 with go1.23: `+Inf` → `9223372036854775807`,
+  `NaN` → `0`, `-Inf` → `0` through the clamp. So the client's `0` for `NaN` and
+  `-Inf` agrees with Go by accident of the platform and `+Infinity` is the sole
+  deliberate difference — and none of it is reachable over the wire, because
+  Go's `encoding/json` refuses to marshal a non-finite float.
+- **`docs/server-api.md`'s "There is no 404 and no 405 on the API surface" read
+  as absolute** but meant "no *routing* 404"; the same document records real
+  404s for an unknown id at four places. Reworded there and in `SPEC.md` F1,
+  which carried the same sentence.
 - The review reported `SPEC.md:102` citing `server.go:456` for the `authResult`
   *shape*. Both readings are half right: the struct is `server.go:447-453` and
   `:456` is `authResultOf`, which builds it. The sentence now names both, since
