@@ -19,6 +19,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
 | M1.5 | `lib/src/search_field.dart` — the full `db/search.go` field vocabulary as an enum |
 | M1.6 | `lib/src/urls.dart` — `ApiPaths` (every route as one full literal) and `FileFinUrls` |
+| M1.8 | `lib/src/playback/decision.dart` — `NetworkType`, `PlaybackSettings`, the sealed `PlaybackDecision` hierarchy and `decide()` |
 | M1.7 | `lib/src/resume/` — `ResumePointer`, `WatchState`, `ProgressReport`, `WatchView`, and the engine: `applyProgress`, `deriveView`, `resolveIndex`, `setWatched`, `clearWatched`, `clearProgress`, `setFavorite`, `setRating` |
 | M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
 
