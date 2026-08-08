@@ -25,6 +25,35 @@
   </commands>
 
   <!--
+    ADDED RULES. `-b` keeps the builtin set; these are on top of it.
+
+    The builtin set mutates `<=` and `>=` (to `==` and to the strict form) but
+    has NO rule for a bare `<` or `>`. So a STRICT comparison is never weakened
+    to a non-strict one, and the off-by-one at a boundary — the single most
+    common comparison bug, and the one §3 cites mutation testing for — was
+    invisible to this gate. Measured at M1.9 on `decide()`: with every
+    equal-to-threshold assertion deleted from `decide_test.dart`, changing
+    `file.size > settings.meteredWarnBytes` to `>=` passed the suite, and
+    `just mutants` still reported 6 of 6 killed. It was not asking.
+
+    The patterns require whitespace on BOTH sides, which is what keeps them off
+    everything that is not a comparison: `List<bool>` and `Map<String, int>`
+    have no space before `>` or after `<`, `=>` has `=` immediately before the
+    `>`, and `<=` / `>=` have `=` immediately after. Verified against this
+    package's own sources before being added.
+
+    Never retires: the operators are not going away.
+  -->
+  <rules>
+    <regex pattern="(\s)&lt;(\s)" id="filefin.op.lt">
+      <mutation text="$1&lt;=$2"/>
+    </regex>
+    <regex pattern="(\s)&gt;(\s)" id="filefin.op.gt">
+      <mutation text="$1&gt;=$2"/>
+    </regex>
+  </rules>
+
+  <!--
     Exclusions. Each needs a reason and a retirement condition, because an
     exclusion is a piece of code the gate has stopped asking about.
   -->
@@ -53,6 +82,28 @@
          is the current mitigation and it costs 300s per such mutant. -->
     <regex pattern="[\s]for[\s]*\(.*?\)[\s]*{" dotAll="true"/>
     <regex pattern="[\s]while[\s]*\(.*?\)[\s]*{.*?}" dotAll="true"/>
+
+    <!-- The two genuinely equivalent mutants the `filefin.op.lt`/`.gt` rules
+         above produce, each excluded by its exact text rather than by line
+         number, so an edit elsewhere cannot silently widen the exclusion.
+
+         1. `if (x < 0) return 0;` in the resume engine's rounding. `<=` differs
+            only at x == 0, and there both branches produce 0 —
+            `(0.0 + 0.5).toInt()` is 0. Clamping AT zero is equivalent to
+            clamping BELOW zero for every possible input; no test can separate
+            them because no behaviour separates them.
+
+         2. `targetSeconds > state.pointer!.seconds` in applyProgress. `>=`
+            differs only when the two are equal, and in that case the branch
+            writes `ResumePointer(targetIndex, targetSeconds)` over a pointer
+            that already holds exactly those two values. WatchState compares by
+            value, so the state before and after are equal.
+
+         Both retire if the surrounding expression changes shape — the patterns
+         are exact, so they simply stop matching and the mutants come back.
+         Verified equivalent by hand at M1.9 before excluding, not assumed. -->
+    <regex pattern="if \(x &lt; 0\) return 0;"/>
+    <regex pattern="targetSeconds &gt; state\.pointer!\.seconds"/>
 
     <!-- ++ and -- : the builtin rule rewrites them into each other via the
          arithmetic rules and produces mostly false positives on index maths.

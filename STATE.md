@@ -17,11 +17,27 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.1 | `packages/filefin_core/` — pubspec (`resolution: workspace`), analysis options including the root, the `lib/filefin_core.dart` barrel, `test/support/fixtures.dart` |
 | M1.2 | `lib/src/ids.dart` — `MediaId`, `CategoryId`, `FileIndex`, `SubtitleIndex` as `extension type … implements Object` |
 | M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
+| M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
 | M1.5 | `lib/src/search_field.dart` — the full `db/search.go` field vocabulary as an enum |
 | M1.6 | `lib/src/urls.dart` — `ApiPaths` (every route as one full literal) and `FileFinUrls` |
-| M1.8 | `lib/src/playback/decision.dart` — `NetworkType`, `PlaybackSettings`, the sealed `PlaybackDecision` hierarchy and `decide()` |
 | M1.7 | `lib/src/resume/` — `ResumePointer`, `WatchState`, `ProgressReport`, `WatchView`, and the engine: `applyProgress`, `deriveView`, `resolveIndex`, `setWatched`, `clearWatched`, `clearProgress`, `setFavorite`, `setRating` |
-| M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
+| M1.8 | `lib/src/playback/decision.dart` — `NetworkType`, `PlaybackSettings`, the sealed `PlaybackDecision` hierarchy and `decide()` |
+| M1.9 | The barrel's final export list, and the four deferred gate proofs below |
+
+**Numbers as measured, not as hoped:** `just check` exits 0. Coverage
+**100% (327/327 lines)**. **149 of 149** mutants killed across every lib source
+M1 added (`FILEFIN_MUTANTS_BASE=ca00dd9`, the last M0 commit). **758 tests**,
+of which 601 are captured resume vectors and 10 are property runs. `core_purity` 0, and the whole
+constitution baseline is still 0 across all six checks.
+
+**M1.1 and M1.2 could not be separate commits.** A package with no lib source
+and no test cannot pass `just check`: `run-tests.sh` fails at zero test files
+and the coverage gate fails on an lcov with zero `DA:` records. M1.3 joined them
+for the same reason — a barrel and four extension types compile to no executable
+code at all, so the lcov was empty until the converters landed. M1.5 and M1.6
+are also one commit: separating them would have left `SearchField` with no
+consumer but its own test, a dead branch by §5 for exactly as long as it took
+to write the next commit.
 
 ### Two M0 gate scripts had to change for the first package to land
 
@@ -88,6 +104,65 @@ that then failed would leave the tree gutted.
 | one character changed in a committed `*.g.dart`, unstaged | 1 | **1** |
 | the same edit, **`git add`ed** | **0**, "generated output is up to date" | **1**, prints the diff and names §10 |
 | reverted | 0 | 0 |
+
+### M1.9 — the four deferred gate proofs, on real code
+
+Every row was executed against the real scripts on the real package.
+
+| Gate | Fail input | Exit | Clean | Exit |
+|---|---|---|---|---|
+| `test` — zero-test guard (deferred from M0.9) | moved all nine `*_test.dart` out of `packages/filefin_core/test/` | **1**, `has no *_test.dart files` | moved back, 9 files | 0 |
+| `codegen-check` (deferred from M0.9, done at M1.4) | one character changed in a committed `*.g.dart`, **staged** | **1** | reverted | 0 |
+| `coverage-check` on real code | `lib/src/floor_probe.dart` — 1 covered line plus 400 imported-but-never-called ones | **1**, `Coverage: 44% (328/730 lines) … below the 50% floor` | removed | 0, `Coverage: 100% (327/327 lines)` |
+| `mutants` on real code | every equal-to-threshold assertion deleted from `decide_test.dart` (the split-out boundary test and both `delta == 0` table rows), `FILEFIN_MUTANTS_BASE=HEAD~1` | **1**, 1 of 7 undetected | restored | 0, 7 of 7 killed |
+
+The coverage probe is worth naming precisely: it is a file a test **imports**,
+so it appears in the denominator. Untested code that nothing imports fails
+earlier and differently (the missing-record check, proven at M1.1), and the two
+are separate holes.
+
+### `just mutants` was not asking the boundary question at all
+
+Performing the M1.9 mutation proof found the gate weaker than the plan assumed,
+and the discovery is worth more than the proof was.
+
+The first attempt did what the plan said — delete the equal-to-threshold
+assertions from `decide_test.dart` — and `just mutants` still reported **6 of 6
+killed**. Checked by hand: with those assertions gone, changing
+`file.size > settings.meteredWarnBytes` to `>=` passed the whole suite. The hole
+was real; the gate simply never generated that mutant.
+
+`mutation_test` 1.7.1's builtin rules mutate `<=` and `>=` (to `==` and to the
+strict form) but have **no rule for a bare `<` or `>`**. A strict comparison was
+never weakened to a non-strict one, so the off-by-one at a boundary — the single
+most common comparison bug, and the one CLAUDE.md §3 cites mutation testing for
+— was invisible everywhere in the tree. The 6 mutants it did find on `decide()`
+were all condition negations.
+
+Two rules were added to `mutation_rules.xml`. They require whitespace on **both**
+sides, which is what keeps them off everything that is not a comparison:
+`List<bool>` and `Map<String, int>` have no space before `>` or after `<`, `=>`
+has `=` immediately before the `>`, and `<=`/`>=` have `=` immediately after.
+
+The rules found two survivors in the resume engine, and both are **genuinely
+equivalent** — verified by hand, not assumed:
+
+- `if (x < 0) return 0;` in the rounding. `<=` differs only at `x == 0`, and
+  there both branches produce 0, since `(0.0 + 0.5).toInt()` is 0.
+- `targetSeconds > state.pointer!.seconds` in `applyProgress`. `>=` differs only
+  when the two are equal, and then the branch writes a pointer holding exactly
+  the two values it already held. `WatchState` compares by value.
+
+Both are excluded by their **exact text** rather than by line number, so an edit
+elsewhere cannot silently widen the exclusion and a change of shape simply stops
+matching and brings the mutants back. Each carries its reason and retirement
+condition in `mutation_rules.xml`, per §3.
+
+| Input | Before the rule | After |
+|---|---|---|
+| `decide_test.dart` with every equal-to-threshold assertion removed | RC **0**, `6 of 6 killed` — over a real hole | RC **1**, 1 of 7 undetected |
+| the same file restored | 0 | 0, 7 of 7 killed |
+| every lib source M1 added (`FILEFIN_MUTANTS_BASE=ca00dd9`) | 151 mutants, 2 undetected (both equivalent) | **149 mutants, 0 undetected** |
 
 ### glados does not exist for Dart 3, so the property tests use kiri_check
 
@@ -225,7 +300,7 @@ codes were observed, not inferred.
 | `fmt-check` | a `.dart` with mangled whitespace | **1** | after `just fmt` | 0 |
 | `analyze` — `--fatal-warnings` | an unused local variable | **2** | removed | 0 |
 | `analyze` — `--fatal-infos` | `final x = 42;` → `prefer_const_declarations`, an **info**-severity lint only. Same file with `--fatal-warnings` alone exits **0**, with the recipe's `--fatal-infos` exits **1** | **1** | removed | 0 |
-| `codegen-check` | *deferred to M1.4* — see below | — | no build_runner package, no committed generated files | 0 |
+| `codegen-check` | *deferred to M1.4; done, and it found a hole — see the M1 section* | **1** | reverted | 0 |
 | `file-size` | 700-line `packages/_scratch/lib/big.dart` | **1** | removed | 0 |
 | `file-size` — generated exemption | the *same 700 lines* renamed `big.g.dart` | **0** (correct: exempt) | — | — |
 | `comments` | 60-line file, 30 `//` lines → reported 50% | **1** | removed | 0 |
@@ -259,7 +334,7 @@ codes were observed, not inferred.
 | `fixtures-accept` — key loss, overridden | same input with `FILEFIN_ACCEPT_FIXTURE_KEY_LOSS=1` | 0 | — | — |
 | `fixtures-verify` — vector grid | `jq '.vectors \|= .[0:50]'` **and** `accept` (the key set is unchanged, so the ratchet allows it) → `the vector grid did not run in full` | **1** | restored | 0 |
 | `fixtures-verify` — stale-ref vectors | dropped only the 18 vectors whose output pointer ref is absent from `refs`, then `accept` → `no vector has an output pointer whose ref is absent from refs` | **1** | restored | 0 |
-| `test` | *zero-test guard not yet exercisable on a real package* — see debt below | — | no Dart sources | 0 |
+| `test` — zero-test guard | *deferred to M1.9; done* — all nine `*_test.dart` moved out of `packages/filefin_core/test/` | **1** | moved back | 0 |
 | pre-commit hook — blocks | badly-formatted staged `.dart` | **1**, `BLOCKED by: fmt analyze` | — | — |
 | pre-commit hook — bypass is audible | same tree, `git commit --no-verify` | commit **succeeded (0)** *and* post-commit printed `WARNING: commit 2c16415 landed with failing gates` with the full gate log and the amend instruction | — | — |
 | pre-commit hook — clean | clean tree | 0, `all gates passed`, post-commit **silent** | — | — |
@@ -301,22 +376,18 @@ Stated here rather than left implied by silence.
 
 - **`codegen-check`** — **done at M1.4**, and the proof found a hole in the
   gate. See "codegen-check could not see a hand-edit that was staged" above.
-- **`coverage-check` on real code** — deferred to **M1.9** (A5). The gate is
-  proven synthetically above against hand-made lcov files with known ratios.
-  M1.9 must record the real figure and then push coverage below 50 and confirm
-  exit 1.
-- **`mutants` on real code** — deferred to **M1.9** (A5). Proven above against
-  a real (scratch) Dart package with a real weak test, which is stronger than a
-  synthetic fixture, but not yet against `filefin_core`. M1.9 must delete the
-  equal-to-threshold assertion in `decide_test.dart`, confirm a survivor, and
-  restore.
-- **`test` zero-test guard** — the guard is written and reads
-  `find … -name '*_test.dart' | grep -c .`, but there is no package to point it
-  at. Measured on the pinned SDK: `dart test` exits **79** ("No tests were
-  found") on an empty `test/` and **65** with no `test/` at all, so `dart test`
-  alone would not have gone vacuous. `flutter test` **does** exit 0, and joins
-  this script at M3 — that is what the guard is for. Prove it at M1.1 by
-  deleting the test file from `filefin_core` and confirming exit 1.
+- **`coverage-check` on real code** — **done at M1.9.** Real figure
+  100% (327/327); pushed to 44% and the floor failed. Table above.
+- **`mutants` on real code** — **done at M1.9**, and it found the gate was not
+  asking the boundary question at all. See the section above.
+- **`test` zero-test guard** — **done at M1.9.** Moving all nine `*_test.dart`
+  out of `packages/filefin_core/test/` gave exit **1**; putting them back gave
+  0. `dart test` alone would not have gone vacuous (it exits 79 on an empty
+  `test/` and 65 with none), but `flutter test` **does** exit 0 and joins this
+  script at M3 — that is what the guard is for.
+
+**Nothing is deferred out of M1.** Every gate in `just check` now has a
+both-directions proof on real code.
 
 ---
 
@@ -415,6 +486,39 @@ refuses to generate for a package below language version 3.8 — it *warns* and
 emits older-shaped output rather than failing, which is the worst of both. The
 floor is set by the strictest constraint in the tree, not the loosest.
 
+### M1 debt, said out loud
+
+- **`ProgressEvent` is not modelled**, against the plan's M1.7 list. `event` is
+  accepted by the handler and ignored by the engine — nothing in `state.Apply`
+  reads it — so a field no code reads is a dead branch (§5). It arrives at M4
+  with the progress reporter that sends it, by the same reasoning that deferred
+  `progressIntervalSecs` (A9). `ProgressReport` carries `file`, `position` and
+  `duration` only.
+- **`WatchState.fromDetail` cannot distinguish a real `(0, 0s)` pointer from no
+  pointer**, because the detail payload carries the derived view rather than the
+  stored pointer and the server reports both as `0`/`0`. It reads `0`/`0` as
+  absent, which is the reading that agrees with `Apply` for the stale-pointer
+  case. The cost is one case: crossing 90% of a single-file item whose pointer
+  genuinely sits at `(0, 0s)` predicts `seconds = round(position)` where the
+  server keeps `0`. The item is `watched` by then and has left every `continue`
+  row, so nothing reads the difference. Recorded because "nothing reads it" is
+  an argument, not a proof.
+- **A path parameter is percent-encoded by `ApiPaths` and decoded again by
+  `_resolve`.** Two encodings meeting in the middle is more machinery than a
+  `/`-free id needs, and it exists for `hlsSegment`, whose segment name comes
+  from a server-supplied playlist. If `ApiPaths` ever returns segment lists
+  instead of strings the round trip goes away — but so does
+  `undocumented_endpoint`'s ability to see the routes, which is why it does not.
+- **Two mutation exclusions were added.** Both are demonstrably equivalent
+  mutants (above), both are excluded by exact text, and both carry a retirement
+  condition. An exclusion is still a piece of code the gate has stopped asking
+  about.
+- **`FILEFIN_MUTANTS_ALLOW_ZERO=1` was used on two commits** — the package
+  skeleton and the wire models. Both diffs are declaration-only: export
+  directives, extension types, identity converters, annotations and field
+  defaults, with no operator, literal or conditional for a mutant to alter.
+  Verified by grep before overriding, and named in both commit messages.
+
 ### Deferred by decision, not oversight
 
 | Item | Decision | Where |
@@ -424,6 +528,7 @@ floor is set by the strictest constraint in the tree, not the loosest.
 | **A5** — `mutants` / `coverage-check` on real code | Created and proven in M0 (synthetically for coverage, against a real scratch package for mutants); re-proven against `filefin_core` at **M1.9**. | above |
 | **A9** — `progressIntervalSecs` | `PlaybackSettings` is `{wifiOnly, meteredWarnBytes}` only. The interval arrives at **M4** with the progress reporter; a settings field nobody reads is a dead branch (§5). | M4 |
 | **A10** — `RefuseReason` | `{offline, wifiOnlyOnMetered}` only. The 415 "transcoding disabled" message is knowable only *after* a request, so it is an M5 `filefin_api` concern, not a `decide()` branch. | M5 |
+| **glados** | Replaced by **kiri_check** 1.3.1. Every published glados version declares `sdk: >=2.12.0 <3.0.0` and cannot resolve on any Dart 3 SDK. Not a workaround — the package has never been updated for Dart 3. | M1.7 |
 | **A11** — `Tag` model | `GET /api/tags` is documented and captured, but **no model in M1** — no F-requirement consumes the vocabulary yet. | when a screen needs it |
 
 ### Fixture coverage gaps
