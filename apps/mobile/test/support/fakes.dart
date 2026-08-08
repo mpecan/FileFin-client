@@ -3,6 +3,31 @@ import 'dart:typed_data';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/network_status.dart';
+import 'package:filefin_mobile/src/playback/playback_host.dart';
+
+import 'fake_playback_host.dart';
+
+/// A `NetworkStatus` that answers whatever a test set, with no plugin.
+final class FakeNetworkStatus extends NetworkStatus {
+  /// Answers [answer] until a test changes it.
+  FakeNetworkStatus([this.answer = NetworkType.wifi]);
+
+  /// What the next sample returns.
+  NetworkType answer;
+
+  /// How many times it was sampled — F13 says exactly once, before playing.
+  int samples = 0;
+
+  @override
+  Future<NetworkType> current() async {
+    samples++;
+    return answer;
+  }
+}
+
+/// A playback host factory for a widget test: never libmpv, never a `Video`.
+PlaybackHost Function() fakeHostFactory() => FakePlaybackHost.new;
 
 /// A `LibraryApi` a widget test can make fail without opening a socket.
 ///
@@ -49,6 +74,39 @@ base class FakeLibraryApi extends LibraryApi {
 
   /// What `login()` answers with, or throws.
   Object? loginResult;
+
+  /// What `me()` answers with, or throws.
+  Object? meResult;
+
+  /// What `postProgress()` answers with, or throws. `null` is a 204.
+  Object? progressResult;
+
+  /// How long `postProgress()` takes before it answers.
+  ///
+  /// A server that stops answering is what the player's bounded final report
+  /// exists for: without the bound, closing the route would hang on a dead
+  /// server and trap the user on the player screen.
+  Duration? progressDelay;
+
+  /// What `subtitleText()` answers with, or throws.
+  Object? subtitleResult;
+
+  /// What `playbackHeaders()` answers with, or throws.
+  Object? playbackHeadersResult;
+
+  /// What `playbackTransport()` answers. Not a failure path — it does no I/O.
+  PlaybackTransport transport = PlaybackTransport.plainHttp;
+
+  /// The base every `fileUrl`/`subtitleUrl` is built from.
+  Uri base = Uri.parse('http://stub.invalid');
+
+  /// Every report handed to `postProgress`, in order.
+  ///
+  /// [calls] already records it as a string; this keeps the object, because a
+  /// reporter test has to assert the *event* and the position the server was
+  /// actually told, and re-parsing them out of a string would be a second
+  /// encoding to get wrong.
+  final List<ProgressReport> reports = [];
 
   /// Every call made, in order, as `method(arg)`.
   final List<String> calls = [];
@@ -118,6 +176,80 @@ base class FakeLibraryApi extends LibraryApi {
     'posterBytes(${id.value}, $size)',
     cancelToken,
   );
+
+  @override
+  Future<AuthResult> me({CancelToken? cancelToken}) async =>
+      _answer<AuthResult>(meResult, 'me', cancelToken);
+
+  @override
+  Future<void> postProgress(
+    MediaId id,
+    ProgressReport report, {
+    CancelToken? cancelToken,
+  }) async {
+    reports.add(report);
+    // Every argument is in the record. A reporter that posted the right
+    // position against the wrong FILE would write the resume pointer into the
+    // wrong episode, and a fake that only counted calls could not tell.
+    calls.add(
+      'postProgress(${id.value}, ${report.file.value}, ${report.position}, '
+      '${report.duration}, ${report.event.wire})',
+    );
+    tokens.add(cancelToken);
+    // NOT `_answer<void>`, and the reason is a trap worth naming: with `T`
+    // bound to `void`, `result is! T` is false for EVERY value, so the throw
+    // arm is unreachable and a fake set up to fail quietly succeeds. Measured:
+    // four `ProgressReporter` failure tests passed against a fake never threw.
+    final delay = progressDelay;
+    if (delay != null) await Future<void>.delayed(delay);
+    final failure = progressResult;
+    if (failure != null) {
+      // The field holds whatever the real API threw, which is an Exception.
+      // ignore: only_throw_errors
+      throw failure;
+    }
+  }
+
+  @override
+  Future<String> subtitleText(
+    MediaId id,
+    FileIndex file,
+    SubtitleIndex subtitle, {
+    CancelToken? cancelToken,
+  }) async => _answer<String>(
+    subtitleResult,
+    'subtitleText(${id.value}, ${file.value}, ${subtitle.value})',
+    cancelToken,
+  );
+
+  @override
+  Future<PlaybackSessionHeaders> playbackHeaders({
+    CancelToken? cancelToken,
+  }) async => _answer<PlaybackSessionHeaders>(
+    playbackHeadersResult,
+    'playbackHeaders',
+    cancelToken,
+  );
+
+  @override
+  Uri fileUrl(MediaId id, FileIndex file) {
+    calls.add('fileUrl(${id.value}, ${file.value})');
+    return base.replace(path: '/api/media/${id.value}/file/${file.value}');
+  }
+
+  @override
+  Uri subtitleUrl(MediaId id, FileIndex file, SubtitleIndex subtitle) {
+    calls.add('subtitleUrl(${id.value}, ${file.value}, ${subtitle.value})');
+    return base.replace(
+      path: '/api/media/${id.value}/file/${file.value}/sub/${subtitle.value}',
+    );
+  }
+
+  @override
+  PlaybackTransport playbackTransport() {
+    calls.add('playbackTransport');
+    return transport;
+  }
 
   @override
   void close() => closed = true;

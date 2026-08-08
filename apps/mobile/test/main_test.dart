@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/main.dart' as entrypoint;
 import 'package:filefin_mobile/src/app.dart';
+import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
+import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,7 +55,9 @@ void main() {
     // proves nothing about the wiring.
     File('${dir.path}/settings.json').writeAsStringSync(
       '{"servers":[{"id":"a","name":"Attic NAS", '
-      '"baseUrl":"http://nas.local","lastUser":"sam"}]}',
+      '"baseUrl":"http://nas.local","lastUser":"sam","wifiOnly":false,'
+      '"allowUnverifiedPlayback":false}],'
+      '"playback":{"progressIntervalSecs":30,"meteredWarnBytes":500000000}}',
     );
 
     await entrypoint.main();
@@ -84,5 +88,27 @@ void main() {
     );
     addTearDown(api.close);
     expect(api.server.value, 'x');
+  });
+  testWidgets('main() wires the REAL playback engine, not a stub', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('filefin-main-play-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final app = entrypoint.buildApp(dir) as FileFinScope;
+
+    expect(app.dependencies.network, isA<ConnectivityNetworkStatus>());
+    // The factory is INVOKED, not merely inspected: what is being pinned is
+    // that it builds a real `MediaKitPlaybackHost` over a real `RealMpvPlayer`.
+    // On a machine where libmpv resolves through media_kit's platform default
+    // names that returns a host; on macOS the default list is
+    // `Mpv.framework/Mpv` and nothing else (measured, M4.0/E2b), so it throws
+    // instead — and the throw names the framework, which is the same evidence.
+    try {
+      final host = app.dependencies.playbackHostFactory();
+      expect(host, isA<MediaKitPlaybackHost>());
+      await host.dispose();
+    } on Object catch (e) {
+      expect('$e', contains('Mpv'));
+    }
   });
 }

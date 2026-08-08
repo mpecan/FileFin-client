@@ -41,7 +41,12 @@ void main() {
           '${query.isEmpty ? '' : '?$query'}',
         );
         final response = request.response;
-        if (request.uri.path.endsWith('/poster')) {
+        if (request.uri.path.endsWith('/progress')) {
+          response.statusCode = 204;
+        } else if (request.uri.path.contains('/sub/')) {
+          response.headers.contentType = ContentType('text', 'vtt');
+          response.write('WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n');
+        } else if (request.uri.path.endsWith('/poster')) {
           response.headers.contentType = ContentType('image', 'jpeg');
           response.add([1, 2, 3]);
         } else {
@@ -144,6 +149,78 @@ void main() {
     expect(seen, isEmpty);
   });
 
+  test('me reaches GET /api/me', () async {
+    expect((await api.me()).user, 'sam');
+    expect(seen, ['GET /api/me']);
+  });
+
+  test('postProgress POSTs the report to the progress route', () async {
+    await api.postProgress(
+      const MediaId('e4285edb34d5'),
+      const ProgressReport(
+        file: FileIndex(1),
+        position: 12,
+        duration: 100,
+        event: ProgressEvent.seek,
+      ),
+    );
+
+    expect(seen, ['POST /api/media/e4285edb34d5/progress']);
+  });
+
+  test('subtitleText reaches the sidecar route and returns WebVTT', () async {
+    final text = await api.subtitleText(
+      const MediaId('e4285edb34d5'),
+      const FileIndex(0),
+      const SubtitleIndex(1),
+    );
+
+    expect(text, startsWith('WEBVTT'));
+    expect(seen, ['GET /api/media/e4285edb34d5/file/0/sub/1']);
+  });
+
+  test(
+    'playbackHeaders proves the session first, then hands the cookie over',
+    () async {
+      await api.login(const Credentials(username: 'sam', password: 'hunter2'));
+      seen.clear();
+
+      final headers = await api.playbackHeaders();
+
+      // The `me` is what makes F3 renew a dead session before libmpv — which
+      // cannot see a 401 — is handed a cookie.
+      expect(seen, ['GET /api/me']);
+      expect(headers.headers, {'Cookie': 'filefin_session=sess-1'});
+    },
+  );
+
+  test('fileUrl and subtitleUrl are absolute and correctly shaped', () {
+    expect(
+      api.fileUrl(const MediaId('abc'), const FileIndex(2)).path,
+      '/api/media/abc/file/2',
+    );
+    expect(
+      api
+          .subtitleUrl(
+            const MediaId('abc'),
+            const FileIndex(2),
+            const SubtitleIndex(3),
+          )
+          .path,
+      '/api/media/abc/file/2/sub/3',
+    );
+    // Built, not requested: handing libmpv a URL is not the same as fetching
+    // it, and nothing here should have touched the socket.
+    expect(seen, isEmpty);
+  });
+
+  test('playbackTransport reports what libmpv could verify', () {
+    // The stub server is plain http, so this is the plainHttp arm. The pinned
+    // and OS-trusted arms are `filefin_api`'s to prove — they depend on the
+    // pin, which lives there.
+    expect(api.playbackTransport(), PlaybackTransport.plainHttp);
+  });
+
   test('close releases the client', () async {
     api.close();
 
@@ -155,7 +232,7 @@ Object _bodyFor(String path) {
   if (path.endsWith('/api/state')) {
     return {'needsSetup': false, 'version': '0.20.3'};
   }
-  if (path.endsWith('/api/login')) {
+  if (path.endsWith('/api/login') || path.endsWith('/api/me')) {
     return {'user': 'sam', 'admin': false};
   }
   if (path.endsWith('/api/categories')) {

@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
+import 'package:filefin_mobile/src/playback/mpv_player.dart';
+import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
@@ -38,6 +41,10 @@ Widget buildApp(Directory support) {
   return FileFinScope(
     dependencies: AppDependencies(
       settings: SettingsStore(support),
+      network: ConnectivityNetworkStatus(),
+      // A NEW engine per player screen. libmpv holds a position and a loaded
+      // file, so two screens sharing one context would fight over both.
+      playbackHostFactory: () => MediaKitPlaybackHost(RealMpvPlayer()),
       apiFactory: (server) => FileFinLibraryApi(
         FileFinClient.forServer(
           server: server.id,

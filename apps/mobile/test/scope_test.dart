@@ -9,6 +9,8 @@ import 'support/fakes.dart';
 
 void main() {
   final deps = AppDependencies(
+    network: FakeNetworkStatus(),
+    playbackHostFactory: fakeHostFactory(),
     settings: SettingsStore(Directory.systemTemp),
     apiFactory: (_) => FakeLibraryApi(),
   );
@@ -63,6 +65,8 @@ void main() {
     final same = FileFinScope(dependencies: deps, child: child);
     final other = FileFinScope(
       dependencies: AppDependencies(
+        network: FakeNetworkStatus(),
+        playbackHostFactory: fakeHostFactory(),
         settings: deps.settings,
         apiFactory: deps.apiFactory,
       ),

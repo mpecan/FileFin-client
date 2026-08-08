@@ -1,4 +1,6 @@
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/network_status.dart';
+import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
@@ -16,8 +18,13 @@ import 'package:flutter/widgets.dart';
 /// asserting a non-nullable final field was not null and a test copying it.
 @immutable
 class AppDependencies {
-  /// Holds the settings store and the API factory.
-  const AppDependencies({required this.settings, required this.apiFactory});
+  /// Holds the settings store, the API factory and playback's two ports.
+  const AppDependencies({
+    required this.settings,
+    required this.apiFactory,
+    required this.network,
+    required this.playbackHostFactory,
+  });
 
   /// Where `settings.json` lives. Holds no secrets.
   final SettingsStore settings;
@@ -29,6 +36,17 @@ class AppDependencies {
   /// sharing any of the three between servers is how one server's session
   /// cookie reaches another.
   final LibraryApi Function(SavedServer server) apiFactory;
+
+  /// F13's connection sample, as a port so a widget test can set it.
+  final NetworkStatus network;
+
+  /// Builds a playback engine.
+  ///
+  /// **A factory, not an instance**, and for a sharper reason than the API
+  /// one: an mpv context holds a position and a loaded file, so two player
+  /// screens sharing one would fight over both. One host per screen, disposed
+  /// with it.
+  final PlaybackHost Function() playbackHostFactory;
 }
 
 /// Hands [AppDependencies] down the tree.

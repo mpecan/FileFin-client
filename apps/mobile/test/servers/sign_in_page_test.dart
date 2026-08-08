@@ -39,6 +39,8 @@ void main() {
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     FileFinScope(
       dependencies: AppDependencies(
+        network: FakeNetworkStatus(),
+        playbackHostFactory: fakeHostFactory(),
         settings: settings,
         apiFactory: (_) => api,
       ),
@@ -98,6 +100,8 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
+          network: FakeNetworkStatus(),
+          playbackHostFactory: fakeHostFactory(),
           settings: SettingsStore(Directory('${blocker.path}/settings')),
           apiFactory: (_) => api,
         ),
@@ -185,6 +189,8 @@ void main() {
       await tester.pumpWidget(
         FileFinScope(
           dependencies: AppDependencies(
+            network: FakeNetworkStatus(),
+            playbackHostFactory: fakeHostFactory(),
             settings: settings,
             apiFactory: (_) => slow,
           ),

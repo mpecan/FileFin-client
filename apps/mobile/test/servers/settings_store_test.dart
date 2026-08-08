@@ -154,8 +154,107 @@ void main() {
       expect(home.toString(), contains('Home NAS'));
       expect(
         AppSettings.empty.upsert(home).toString(),
-        'AppSettings(1 server(s))',
+        'AppSettings(1 server(s), PlaybackPrefs(every 30s, warn above '
+        '500000000 bytes))',
       );
     },
   );
+
+  group('M4 discards a pre-M4 settings.json, and here is the mechanism', () {
+    // C7, and it is a test rather than a paragraph because the consequence is
+    // invisible: §13 says our own formats change freely before release, so
+    // adding the `playback` block makes every file an earlier build wrote fail
+    // the strict decode — and `SettingsStore` turns that into empty settings.
+    // The user's saved server disappears. That is correct AND it happens, so
+    // it is asserted here and stated in STATE.md.
+    test('a file with no playback block reads as empty', () {
+      store.file
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'servers': [
+              {
+                'id': 'home',
+                'name': 'Home',
+                'baseUrl': 'http://nas.local',
+                'lastUser': 'sam',
+                'wifiOnly': false,
+                'allowUnverifiedPlayback': false,
+              },
+            ],
+          }),
+        );
+
+      expect(store.read().servers, isEmpty);
+    });
+
+    test('a server entry with no wifiOnly reads as empty too', () {
+      store.file
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'servers': [
+              {
+                'id': 'home',
+                'name': 'Home',
+                'baseUrl': 'http://nas.local',
+                'lastUser': 'sam',
+              },
+            ],
+            'playback': {
+              'progressIntervalSecs': 30,
+              'meteredWarnBytes': 500000000,
+            },
+          }),
+        );
+
+      expect(store.read().servers, isEmpty);
+    });
+
+    test('the M4 shape round-trips, defaults included', () {
+      final server = home.copyWith(
+        wifiOnly: true,
+        allowUnverifiedPlayback: true,
+      );
+      store.write(
+        AppSettings.empty
+            .upsert(server)
+            .withPlayback(
+              const PlaybackPrefs(
+                progressIntervalSecs: 15,
+                meteredWarnBytes: 42,
+              ),
+            ),
+      );
+
+      final read = store.read();
+
+      expect(read.servers.single.wifiOnly, isTrue);
+      expect(read.servers.single.allowUnverifiedPlayback, isTrue);
+      expect(read.playback.progressIntervalSecs, 15);
+      expect(read.playback.meteredWarnBytes, 42);
+    });
+
+    test("the defaults are upstream's interval and a 500 MB warning", () {
+      const prefs = PlaybackPrefs();
+      expect(prefs.progressIntervalSecs, 30);
+      expect(prefs.meteredWarnBytes, 500 * 1000 * 1000);
+      expect(prefs.copyWith(progressIntervalSecs: 60).progressIntervalSecs, 60);
+      expect(prefs.copyWith(meteredWarnBytes: 1).meteredWarnBytes, 1);
+      expect(prefs, const PlaybackPrefs());
+      expect(prefs.hashCode, const PlaybackPrefs().hashCode);
+      expect(prefs.toString(), contains('every 30s'));
+    });
+
+    test('a saved server defaults to refusing unverified playback (D10)', () {
+      expect(home.wifiOnly, isFalse);
+      expect(home.allowUnverifiedPlayback, isFalse);
+      expect(
+        SavedServer.fromTypedUrl(
+          Uri.parse('https://nas.local'),
+        ).allowUnverifiedPlayback,
+        isFalse,
+      );
+    });
+  });
 }

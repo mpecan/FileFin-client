@@ -56,6 +56,40 @@ abstract base class LibraryApi {
     CancelToken? cancelToken,
   });
 
+  /// `GET /api/me` — the current user; proves the session is alive.
+  ///
+  /// Playback needs it for a reason browsing does not: libmpv cannot see a
+  /// status code, so a mid-playback failure has to be classified by asking the
+  /// layer that can.
+  Future<AuthResult> me({CancelToken? cancelToken});
+
+  /// `POST /api/media/{id}/progress` — one playback report (F9).
+  Future<void> postProgress(
+    MediaId id,
+    ProgressReport report, {
+    CancelToken? cancelToken,
+  });
+
+  /// `GET .../file/{n}/sub/{k}` — one sidecar, as WebVTT text.
+  Future<String> subtitleText(
+    MediaId id,
+    FileIndex file,
+    SubtitleIndex subtitle, {
+    CancelToken? cancelToken,
+  });
+
+  /// The headers libmpv must carry, after proving the session is alive.
+  Future<PlaybackSessionHeaders> playbackHeaders({CancelToken? cancelToken});
+
+  /// The absolute URL libmpv should open for one file.
+  Uri fileUrl(MediaId id, FileIndex file);
+
+  /// The absolute URL of one sidecar subtitle.
+  Uri subtitleUrl(MediaId id, FileIndex file, SubtitleIndex subtitle);
+
+  /// What libmpv's own connection to this server would be able to verify (D10).
+  PlaybackTransport playbackTransport();
+
   /// Releases the sockets behind this API.
   void close();
 }
@@ -103,6 +137,39 @@ final class FileFinLibraryApi extends LibraryApi {
     PosterSize? size,
     CancelToken? cancelToken,
   }) => _client.posterBytes(id, size: size, cancelToken: cancelToken);
+
+  @override
+  Future<AuthResult> me({CancelToken? cancelToken}) =>
+      _client.me(cancelToken: cancelToken);
+
+  @override
+  Future<void> postProgress(
+    MediaId id,
+    ProgressReport report, {
+    CancelToken? cancelToken,
+  }) => _client.postProgress(id, report, cancelToken: cancelToken);
+
+  @override
+  Future<String> subtitleText(
+    MediaId id,
+    FileIndex file,
+    SubtitleIndex subtitle, {
+    CancelToken? cancelToken,
+  }) => _client.subtitleText(id, file, subtitle, cancelToken: cancelToken);
+
+  @override
+  Future<PlaybackSessionHeaders> playbackHeaders({CancelToken? cancelToken}) =>
+      _client.playbackHeaders(cancelToken: cancelToken);
+
+  @override
+  Uri fileUrl(MediaId id, FileIndex file) => _client.fileUrl(id, file);
+
+  @override
+  Uri subtitleUrl(MediaId id, FileIndex file, SubtitleIndex subtitle) =>
+      _client.subtitleUrl(id, file, subtitle);
+
+  @override
+  PlaybackTransport playbackTransport() => _client.playbackTransport();
 
   @override
   void close() => _client.close();
