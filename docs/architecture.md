@@ -462,6 +462,54 @@ Two facts measured at M3.0 before any of this was written: the shape really is
 `run-coverage.sh`'s refusal of that comment in hand-written lib source protects
 the app exactly as it protects the packages.
 
+## The playback seam (`PlaybackHost`, M4)
+
+`media_kit` 1.2.6's core is **pure Dart over `dart:ffi`** — only `media_kit_video`
+is a Flutter plugin — so a `Player` genuinely constructs under `flutter test`
+against a host libmpv. That single measurement (M4.0/E2) is what let playback be
+drawn as a port instead of as an untestable edge:
+
+```
+PlayerController   decides: resume, seek, progress, next file, 401 recovery
+      |            (every policy it consults is a pure function in filefin_core)
+      v
+PlaybackHost       OUR vocabulary: PlaybackRequest, PlaybackTracks,
+      |            SubtitleSource, PlaybackTrackRef. No media_kit type crosses.
+      v
+MediaKitPlaybackHost  translation only, over an injected MpvPlayer
+      v
+MpvPlayer / RealMpvPlayer   ~40 lines of delegation to one `Player`
+```
+
+Three consequences worth knowing before changing any of it.
+
+**The `media_kit` import is gated, not merely discouraged.** libmpv opens its own
+socket from native code, so it bypasses the cookie jar, F3's retry and F15's pin
+— all three reasons `app_no_raw_http` exists — and that gate's regex cannot see
+a native socket. `tool/check-constitution.sh` therefore refuses
+`package:media_kit` anywhere under `apps/*/lib` **except** `playback/mpv_player.dart`
+and `playback/media_kit_playback_host.dart`, by filtering the file array rather
+than grepping the output. Each of the three bypasses is answered in code:
+`playbackHeaders()` makes an authenticated call immediately before every open so
+the cookie handed over is a renewed one; sidecars are fetched through
+`LibraryApi` and passed as `SubtitleTrack.data` rather than as a URL; and F15's
+gap is D10, a per-server refusal (`docs/risks.md` R6).
+
+**`buildSurface()` is on the port for a measured reason.** `VideoController(player)`
+does not construct under `flutter test` — it awaits a platform channel
+`flutter_tester` does not host, and a probe that pumped a `Video` never returned
+and was killed at five minutes. Putting the surface behind the port means a fake
+host returns a coloured box and every screen test runs; the two uncoverable lines
+are confined to the thinnest file in the milestone, and they are what
+`MAX_UNCOVERED=2` names.
+
+**The progress interval is MEDIA time, not wall clock**, which is upstream's own
+design (`Math.abs(el.currentTime - lastMark) >= 30`). It is why F9 needs no
+clock, no `Timer` and no `fake_async`: the controller reports on every position
+tick and `decideReport` — a pure function — decides. A wall-clock timer would
+keep re-reporting a paused position, and would make the whole policy need a fake
+clock to test.
+
 ## Open questions
 
 - None. Q1 was the last one and is decided above.

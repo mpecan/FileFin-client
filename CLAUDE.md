@@ -340,6 +340,39 @@ and each will look like a client bug when it happens:
   normal, not exceptional — re-auth and retry once (see `filefin_api`).
 - No endpoint paginates. A large library returns everything in one array;
   lists must be virtualised.
+- **"Browser-native" is decided by the PROBED container and codecs — but only
+  once the probe agent has reached the row.** `fileNeedsTranscode`
+  (`internal/server/playback.go:78`, v0.20.3) reads
+  `if f.Container != "" && f.VideoCodec != ""` and otherwise falls back to
+  `transcode.NeedsTranscode(f.Ext)`, whose whole vocabulary is
+  `{.mp4, .webm, .m4v}`. **`tool/testserver/seed.sh` never probes** — it
+  rebuilds the cache and stops, so `media_files.container` is `''` for every
+  seeded row and `probe_tasks` is empty — which means *every verdict measured
+  against the seeded library is the extension fallback*. M4's first pass read
+  that fallback as the rule and amended SPEC §3.4; it was wrong, and the
+  correction cost a whole exit criterion. **Both arms are in
+  `tool/spikes/e5_mkv_direct_play.sh`:** one VP9/Opus `.mkv`, unprobed →
+  `transcode:true` and **307**; after `POST /api/admin/probe/scan` the row
+  carries `matroska,webm` / `vp9` / `opus` → `transcode:false` and **200 with
+  `Accept-Ranges`**. So an `.mkv` *does* direct-play. Before concluding
+  anything about this endpoint, look at the three format columns first.
+- **libmpv verifies NO certificate by default.** Measured with mpv 0.41.0
+  against this repo's own `server_a.crt`: default → the server logged
+  `"GET … 200"`; `--tls-verify=yes` → `error:0A000086 certificate verify failed`
+  and the server logged nothing. F15's pin lives in `filefin_api`'s socket;
+  libmpv opens its own from native code. D10 is the answer.
+- **The progress interval is MEDIA time, never wall clock.** Upstream compares
+  `Math.abs(el.currentTime - lastMark) >= 30`. A wall-clock timer keeps
+  re-reporting a paused position, and it makes F9 need a fake clock to test.
+- **`Media`'s `httpHeaders` are cached GLOBALLY by URI** (`media_native.dart`:
+  `httpHeaders ?? cache[uri]?.httpHeaders`). A second `Media` for the same URL
+  with no headers inherits the first one's — so a negative control that shares a
+  process with its positive is **vacuous**. Measured: an open with no cookie
+  "succeeded" in-process and failed correctly in a fresh one.
+- **`VideoController` does not construct under `flutter test`.** It awaits a
+  platform channel `flutter_tester` does not host: a probe that pumped a `Video`
+  never returned and was killed at five minutes. It is not slow, it does not
+  terminate.
 
 ## Commit conventions
 

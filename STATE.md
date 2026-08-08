@@ -8,7 +8,8 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()`, then remediated against three adversarial reviews |
 | **Done** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, F15's certificate pinning, and `just it` against a real `filefin` |
 | **Done** | **M3** — `apps/mobile`: the app shell, F1's add-server flow, F2's sign-in, and F4's category tree, virtualised poster grid and detail view; every gate's Flutter branch |
-| **Next** | **M4** — playback, direct path |
+| **Done** | **M4** — playback, the direct path: F7, F8, F9, F13, NF6, D10's TLS refusal, and the `PlaybackHost` seam that makes libmpv testable |
+| **Next** | **M5** — the HLS path and F12's messaging |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -35,6 +36,399 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M4 — what was built
+
+| Step | Deliverable |
+|---|---|
+| M4.0 | A measurement session, no commit. **Nine experiments; two answers reversed a plan premise and one reversed a documented server behaviour** |
+| M4.1 | `filefin_core`: `ProgressEvent`, `roundReportedSeconds`, `PlaybackTransport`, `RefuseReason.unverifiablePlaybackTls`, `progressIntervalSecs`, `playback/progress_policy.dart`, `playback/resume_choice.dart` |
+| M4.2 | `filefin_api`: `BadRequest`, `postProgress`, `subtitleText`, `playbackHeaders`, `fileUrl`, `subtitleUrl`, `playbackTransport`, and `PlaybackSessionHeaders` — named so `secret_tostring` watches it |
+| M4.3 | `app_no_raw_http` refuses `package:media_kit` outside two named adapter files, **landed before the first import**; `check-toolchain.sh` gained libmpv; CI installs `libmpv2` |
+| M4.4 | `PlaybackHost`, `NetworkStatus`, `PlaybackPrefs`, `SavedServer.wifiOnly`/`allowUnverifiedPlayback`, and `LibraryApi`'s seven new methods with an argument-aware fake for every one |
+| M4.5 | `mpv_player.dart` and `media_kit_playback_host.dart` — the only two files that may import media_kit — plus a libmpv-backed suite inside `just test` |
+| M4.6 | `ProgressReporter` (F9): no timer, no clock, `lastSent` advancing only on a successful POST |
+| M4.7 | `PlayerController` (F7, F8, F13, NF6, playback's half of F3) |
+| M4.8 | `PlayerPage`, `PlayerControls`, the metered prompt, the D10 banner, Play/Continue on the detail screen and tappable file rows, and `PlaybackSettingsSheet` — reached from the signed-in tree's app bar, and the only thing that makes `wifiOnly` and `allowUnverifiedPlayback` **writable** rather than only readable |
+| M4.9 | `integration_test/playback_test.dart` and `test_live/playback_live_test.dart` + `playback_no_cookie_test.dart`, both `run-integration.sh` floors raised and proven |
+| M4.10 | This section, six verification-backlog rows, and the SPEC/CLAUDE.md corrections the measurements forced — including E5's retraction |
+
+**Numbers as measured.** `dart analyze --fatal-infos --fatal-warnings .` clean;
+**1371 unit tests** — 358 in `apps/mobile`, 155 in `filefin_api`, 858 in
+`filefin_core`, up from 1124. Coverage **99% (2165/2167)**, with `MAX_UNCOVERED`
+**raised from 0 to 2 for the first time in this project** — see below, and see
+the head of `tool/coverage-gate.sh`, which names the two lines. `file-size` and
+`comments` both report **0 errors and 0 warnings**, unchanged; `dupes` is
+**0.74%** against a 5% threshold. The constitution baseline is still **0 across
+seven checks**. `just it` is **53 tests across two live suites**.
+
+**Mutation: 576 mutants in the M4 diff, all killed** — 327 in `apps/mobile`,
+110 in `filefin_api`, 139 in `filefin_core`, 0 timeouts. That number was reached
+in two passes and the first one is the interesting half.
+
+### The 17 surviving mutants, and what each cost
+
+The first complete run left **16 undetected in `apps/mobile` and 1 in
+`filefin_core`**. Seven were killed with assertions, six by changing the code so
+the mutant became killable, and four were excluded as genuinely equivalent.
+
+**Killed by assertions (7).**
+- `player_controls.dart` — the scrubber's three `max <= 0` guards, in both
+  directions. Writing the assertion found a **real bug**: `.clamp(0, max.toInt())`
+  ran *before* every guard, so a negative duration — which mpv reports for a
+  stream it has not finished reading — threw `ArgumentError: 0` out of `build`
+  and took the whole player screen with it. Three copies of the guard became one
+  `scrubbable` flag read twice, and the clamp now runs against the clamped max.
+- `player_controls.dart` — `index < 0` in the subtitle menu. `<=` makes the
+  **first** sidecar in every list silently turn subtitles off, and the two
+  existing subtitle tests tap `Slovenian` (index 1) and `Off` (-1), so both
+  still passed. The new test taps `English` (index 0).
+- `player_controller.dart` — two mutants that widen the NF6 lifecycle guard's
+  third disjunct to "anything that is not `hidden`", which would make a
+  `detached` app pause and report. The list of three states is now the contract,
+  asserted.
+- `playback_settings_sheet.dart` — `'Wi-Fi only'` → `'Wi+Fi only'`, the
+  arithmetic rule reaching inside a string literal. The four row labels are now
+  asserted by their exact words.
+- `progress_policy.dart` — `>= watchedThreshold` → `==`. Every single-file
+  `isTrue` case in the suite sat at exactly 90/100, so the boundary had only one
+  side. `==` is also the shape a real player spends its whole crossing in: mpv's
+  ticks land where they land and 90.0/100.0 exactly is the one value it will
+  almost never report.
+
+**Killed by changing the code (6).** `formatPosition` and `PlayButtons._clock`
+each carried two `% 60` literals, and Dart defines `a % b` to land in
+`[0, b.abs())` — so `% 60` and `% -60` are the same function for every input and
+the mutants were **unkillable by construction**. Routing both through one
+`const perMinute = 60` makes the same mutation rewrite the neighbouring `~/`,
+where the sign is very much observable: `Continue 2:05` becomes `Continue -2:05`
+and `3:07` becomes `57:07`. An equivalent mutant turned into a killable one beats
+an exclusion. `player_page.dart`'s survivor was the argument-swap rule matching a
+run of closing parentheses in `UnverifiedTlsBanner` and producing a
+**whitespace-only** rewrite; hoisting `Theme.of(context).colorScheme` into a
+local collapsed the `TextStyle(...)` onto one line and the match disappeared —
+at a cost of 3 mutants in that file (31 → 28), the other two being
+compiler-killed paren shuffles.
+
+**Excluded as genuinely equivalent (4), each measured with `--dry -v`.**
+- `PlaybackPrefs.hashCode` and `PlaybackTrackRef.hashCode` argument order — the
+  third and fourth instances of the case `PosterKey` documents. **Both cost two
+  mutants, not one**, and in both the second is an `&&`-negation from the `==`
+  above running into the excluded statement and failing to compile. A first
+  draft of each comment predicted one; the `--dry -v` diff corrected it. That is
+  now three of the four entries in this family with the same second casualty,
+  and `mutation_rules.xml` says so: do not predict it, diff it.
+- `MpvPlayer.setProperty(String name, String value)` — a **parameter rename** in
+  an abstract declaration, on two positional parameters of the same type. No
+  input separates the two versions. Cost measured at exactly 1. Its retirement
+  condition names the right fix — a narrower `setVerifyTls({required bool
+  verify})`, which the rule cannot match at all — and says why it is not this
+  milestone's.
+- One exclusion was **deleted**: `SavedServer.hashCode`'s. Its retirement
+  condition fired when M4 added `wifiOnly` and `allowUnverifiedPlayback`, so the
+  exact pattern stopped matching — but the mutants did not come back, because a
+  six-argument `Object.hash(` broken over seven lines gives the swap rules
+  nothing to match. Measured: settings.dart reports **38 mutations with the
+  stale pattern and 38 without it**. An exclusion matching nothing reads as a
+  decision still being honoured, so it went.
+
+### M4.0 — nine experiments, and three answers changed the design
+
+**E1 — does `flutter test` still work with `media_kit` in the pubspec? YES.**
+All three packages pass, and `run-coverage.sh`'s Flutter branch still sees
+`SF:lib/…` and rewrites it repo-relative.
+
+**E2 — does a `Player` construct headlessly? YES, and this is the answer the
+milestone turned on.** `media_kit` 1.2.6's core is pure Dart over `dart:ffi`;
+only `media_kit_video` is a plugin. Against Homebrew's libmpv (mpv 0.41.0), under
+`flutter test` with `NativePlayer.test = true`: the seeded MP4 opened by
+`file://`, `duration` arrived as `0:00:03`, `position` passed 1 s,
+`state.tracks.audio` carried a real `aac` entry beside mpv's synthetic
+`auto`/`no`, and `completed` fired. **So `mpv_player.dart` did not become
+uncovered debt.** `MAX_UNCOVERED` still had to rise, by **2** — see E-video.
+
+**E2b — `libmpv:` and `LIBMPV_LIBRARY_PATH` both work, and the platform defaults
+do not.** `media_kit`'s macOS default-name list is `['Mpv.framework/Mpv']` and
+nothing else, so with neither set the probe failed with *"Cannot find
+Mpv.framework/Mpv"*. `test/support/libmpv.dart` resolves explicitly and **fails
+rather than skipping**.
+
+**E3 — HTTP with a cookie: YES. The negative control initially FAILED TO FAIL,
+and that is the most useful thing this session found.** With the cookie, duration
+arrived. Without it, in the same process, duration **also** arrived — because
+`Media`'s constructor is `httpHeaders ?? cache[uri]?.httpHeaders` over a
+**global static cache keyed by URI**, so the second `Media` inherited the first's
+cookie. Re-run in a fresh process it failed correctly:
+`Failed to open http://127.0.0.1:8099/api/media/…/file/0`. A negative control
+sharing a process with its positive is vacuous here; CLAUDE.md now says so.
+
+**E4 — `SubtitleTrack.data` renders: YES.** The server's own `text/vtt` body,
+fetched through `dart:io` with the cookie, handed straight to
+`SubtitleTrack.data`, produced the cue `Hello fixture` on `stream.subtitle`.
+That is why `SubtitleSource` carries **text rather than a URL**: the sidecar
+route is authenticated, so fetching it through `LibraryApi` keeps the cookie jar,
+F3 and F15, where a `sub-add` would use libmpv's own unverified HTTP.
+
+**E5 — does the server call a VP9/Opus MKV browser-native? YES, once the row has
+been probed. The first answer recorded here was NO, and it was wrong.**
+
+The original E5 seeded a VP9+Opus Matroska into a scratch library, saw
+`transcode: true` and a **307**, saw a `.webm` copy of the same stream answer
+**200**, concluded that "browser-native is decided by file extension", amended
+SPEC §3.4 and §10, and declared M4's exit criterion unsatisfiable. Every
+observation in that paragraph is real. The conclusion drawn from them is not.
+
+`fileNeedsTranscode` (`internal/server/playback.go:78-83`, v0.20.3) reads:
+
+```go
+if f.Container != "" && f.VideoCodec != "" {
+    return !transcode.DirectPlayable(f.Container, f.VideoCodec, f.AudioCodec)
+}
+return transcode.NeedsTranscode(f.Ext)
+```
+
+The extension branch is the **fallback for a row the probe agent has not
+reached**, and `tool/testserver/seed.sh` never probes: it rebuilds the cache and
+stops. Measured directly in the cache SQLite —
+
+```
+sqlite> select idx, ext, quote(container), quote(video_codec), quote(audio_codec)
+   ...>   from media_files;
+0|.mkv|''|''|''
+sqlite> select count(*) from probe_tasks;
+0
+```
+
+— every seeded row has empty format columns and no probe task has ever existed.
+So the whole five-row table below was the extension fallback, five times, and
+none of it was ever the probed branch.
+
+`tool/spikes/e5_mkv_direct_play.sh` is the correction, and it runs **both arms
+over the same file** so the control is structural rather than remembered:
+
+| Arm | `media_files.container / video_codec / audio_codec` | `transcode` | `GET file/0` |
+|---|---|---|---|
+| unprobed (what the seed leaves) | `'' / '' / ''` | true | **307** → `…/hls/index.m3u8` |
+| after `POST /api/admin/probe/scan` | `'matroska,webm' / 'vp9' / 'opus'` | false | **200**, `Accept-Ranges: bytes`, `Content-Type: video/x-matroska` |
+
+`DirectPlayable` (`internal/transcode/transcode.go:84`) crosses
+`mkvFamily = {matroska, webm}` with `webmVideo = {vp8, vp9, av1}` and
+`webmAudio = {opus, vorbis, ""}`, so a probed VP9/Opus Matroska is direct-play
+**whatever the file is called**. SPEC §3.4 was right as written; §10's M4 row
+and the CLAUDE.md "playback truths" bullet have both been corrected, and the
+retracted claim is named in each rather than quietly deleted.
+
+**What this does and does not change in the client.** Nothing in the code:
+`decide()` already reads the server's own `transcode` flag and was explicitly
+forbidden from reimplementing `DirectPlayable`, so the client is correct under
+either branch. What it changes is the exit criterion, which is met.
+
+**The MKV item was still not added to the shared seed, and the reason is churn
+rather than doubt.** `seed.sh`'s library is asserted on by name and by count in
+six places — `browse_test.dart`'s `tree.map(...) == ['Films','Shows']` and
+`categoryMedia(films).single`, `browse_live_test.dart`'s two equivalents, the
+captured category fixtures and their SHA-256 manifest. A third item plus a probe
+scan would rewrite all of them to prove a server behaviour that the spike
+already proves in both directions, and no client code branches on it. The seeded
+library is therefore deliberately left **unprobed**, which is also the harder
+case for the client: it is the branch that produces a 307 on an MKV.
+
+**E6 — libmpv verifies no certificate, and `tls-verify` is both settable and
+load-bearing.** At the CLI, against this repository's own committed
+`server_a.crt`: default → rc 0 and the Python TLS server logged
+`"GET /movie.mp4 HTTP/1.1" 200`; `--tls-verify=yes` → rc 2,
+`error:0A000086:SSL routines::certificate verify failed`, and the server's log
+line count **did not move**. Through `media_kit`: `setProperty('tls-verify','yes')`
+then reading it back gives `yes`; opening the same self-signed URL with it on is
+`REFUSED` and with it off `PLAYED duration=0:00:03`. **This is D10's entire
+basis.**
+
+**E7 — `ConnectivityPlatform.instance` substitutes headlessly: YES**, the same
+seam `PathProviderPlatform` gave M3. It also produced a correction nobody asked
+for: the enum has **eight** values, not the seven C4 listed — `satellite` was
+added since. `networkTypeOf` maps all eight and a test asserts the count, so the
+next addition is a red test rather than a silent fall-through.
+
+**E8 — CI's `ubuntu-latest` gets a loadable libmpv: YES.** Measured in an
+`ubuntu:24.04` container (what `ubuntu-latest` is): `apt-get install -y libmpv2`
+succeeded, installed `/lib/<arch>/libmpv.so.2`, and `dlopen("libmpv.so.2")`
+succeeded — which is the **second** entry in `media_kit`'s Linux default-name
+list, so no path needs to be passed. `libmpv.so` and `libmpv.so.1` both failed to
+open and are not needed. **Caveat, stated rather than hidden:** the container was
+aarch64 (the local podman machine) and GitHub's runner is x86_64. The package
+name and the loader behaviour are architecture-independent; the first real CI run
+is what confirms it, and it fails loudly if not. **The plan's "scratch CI run"
+was impossible — this repository has no git remote at all.**
+
+**E9 — `just dupes` still passes**: 7 exact clones, 183 lines, **0.79%**, against
+a 5% threshold.
+
+**E-video — an experiment the plan did not list, and it is the one that raised
+the ratchet.** `VideoController(player)` **does not construct** under
+`flutter test`: it awaits a platform channel `flutter_tester` does not host. A
+probe that built one and pumped a `Video` never returned and was killed at five
+minutes. It is not slow — it does not terminate. `buildSurface` therefore lives
+on `MpvPlayer` rather than in the translation layer, which confines the
+uncoverable expression to **two lines** in the thinnest file in the milestone.
+
+### The gates, and what had to change
+
+- **`app_no_raw_http` refuses `package:media_kit` under `apps/*/lib` except
+  `playback/mpv_player.dart` and `playback/media_kit_playback_host.dart`.** The
+  exclusion filters the **file array**, never `grep -v` on the output — a path
+  filter on output matches a path appearing anywhere in the line, so any file
+  merely *mentioning* the adapter's name would have been exempt. Proven in four
+  directions, including a third file under the same directory.
+- **`check-toolchain.sh` checks libmpv**, guarded on an `apps/*` package
+  existing, and refuses a `LIBMPV_LIBRARY_PATH` that points at nothing —
+  an environment variable pointing at a missing file is worse than an unset one,
+  because media_kit then falls through to platform defaults and the error names
+  a framework nobody asked for.
+- **`ci.yml` installs `libmpv2` before resolving**, with E8's measurement as the
+  reason and `libmpv-dev` explicitly ruled out.
+- **`tool/coverage-gate.sh`'s `MAX_UNCOVERED` rose from 0 to 2**, for the first
+  time in this project. The file names the two lines, the measurement that
+  forced them, and the backlog row that retires them.
+
+### Deviations from the plan, with the reason
+
+- **`buildSurface()` is on `MpvPlayer`, not in `MediaKitPlaybackHost`.** The plan
+  put it in the host as "the only platform-channel call in the file". Moving it
+  one layer down keeps the uncoverable expression out of the file that holds
+  every translation decision, and that file is now fully covered.
+- **The VP9/Opus item was dropped, and then the reason for dropping it turned
+  out to be wrong.** The ratified fallback was "if it 307s, drop the item and
+  record the measurement" — the item did 307, so it was dropped. What the first
+  pass then recorded was a *rule* ("the extension decides") that the measurement
+  did not support: the seeded cache rows are unprobed, so the 307 was the
+  documented extension fallback. See E5 above. The item stays out of the seed on
+  a different and narrower reason — fixture churn, named there — and
+  `tool/spikes/e5_mkv_direct_play.sh` carries both arms instead.
+- **`AudioTrack`'s positional arguments are `(id, title, language)`**, read off
+  `media_kit`'s `track.dart:152` — not the order the names suggest. The first
+  implementation put the label in `language`, and only an assertion on the
+  *fields* (rather than on a call count) caught it.
+- **`FakeLibraryApi.postProgress` does not go through `_answer<void>`.** With `T`
+  bound to `void`, `result is! T` is false for every value, so the throw arm is
+  unreachable — measured: four `ProgressReporter` failure tests passed against a
+  fake that never threw. That is a fake that cannot fail, which is the
+  gate-that-cannot-fail wearing test clothes.
+
+### The concurrency hazard bit again, and it was caught by the discipline
+
+A `just check` was interrupted by a command timeout, and it left a live mutant on
+disk: `if (title != null && title.isNotEmpty)` rewritten to
+`if (title != null || title.isNotEmpty)` in `media_kit_playback_host.dart`. It
+was found by running `dart analyze` immediately afterwards, per CLAUDE.md — it
+surfaced as an `unchecked_use_of_nullable_value` **error**, not as a test failure.
+Separately, `git checkout --` on an **intent-to-add** path truncated
+`network_status.dart` to zero bytes, exactly as STATE.md's M3 note warns; `cp` is
+the undo, and the file was rewritten.
+
+### Debt this milestone knowingly accepts
+
+- **`MAX_UNCOVERED` is 2, raised from 0.** Both lines are `RealMpvPlayer.buildSurface`'s
+  `VideoController`, which does not construct headlessly. Backlog row 16.
+- **`just check` now requires libmpv**, exactly as it requires Flutter.
+  `toolchain-check` refuses first so the failure names the cause.
+- **The headless player suite runs against Homebrew's libmpv, not the shipped
+  Android/iOS builds.** Backlog rows 18 and 20.
+- **F15 does not extend to playback**, and that is measured rather than assumed
+  (E6). D10 makes it a per-server choice defaulting to refuse, with a persistent
+  banner rather than a dismissible dialog.
+- **A mid-playback session loss is detected indirectly** — mpv surfaces no status
+  code, so a non-401 failure costs one wasted `me()` round trip.
+- **F13 samples the network once, at start.** A switch to cellular mid-film is
+  not handled.
+- **A metered Wi-Fi hotspot is classified unmetered.** `connectivity_plus`
+  reports a transport, not a cost. Backlog row 21.
+- **No gapless next-file advance.** We open each file ourselves so that "which
+  file is playing" — the key every progress report carries — has one source of
+  truth.
+- **Embedded subtitles stay deferred; embedded AUDIO is used**, because the API
+  lists no audio tracks at all and nothing else can satisfy F7.
+- **Any pre-M4 `settings.json` is discarded** by the new strict `playback` block.
+  §13 says that is correct; it still happens to a developer with a saved server,
+  and `settings_store_test.dart` asserts it rather than leaving it to be
+  discovered.
+- **A failed progress report is not queued or retried on a timer.** The next
+  trigger carries a newer position.
+
+### M4.9 — the live suites, written last
+
+`packages/filefin_api/integration_test/playback_test.dart` (12 tests) and
+`apps/mobile/test_live/playback_live_test.dart` (6) plus
+`playback_no_cookie_test.dart` (2). `just it` is **53 tests across two suites**,
+and both floors were raised — `packages/filefin_api/integration_test` 26 → 38,
+`apps/mobile/test_live` 7 → 15 — with the raise proven in both directions by
+deleting one test from each suite and watching the gate refuse (37 < 38, then
+14 < 15).
+
+**The differential check is the reason the API suite exists.** Every report is
+posted to the live server, the detail re-read, and the server's own
+`continueIndex`/`continueSeconds`/`watched` compared against what
+`applyProgress` + `deriveView` predicted from the state the server *had*. The
+601 captured vectors prove the transcription against `internal/state` run
+directly; this proves the HTTP route in front of it stores what the engine
+returns. Proven able to fail: perturbing **only the prediction side**
+(`.copyWith(continueSeconds: 99)`) turned four of the four differential tests
+red with `continueSeconds: the server and applyProgress disagree`, and left the
+eight non-differential tests green.
+
+Both arms of the last-file asymmetry are asserted on the **show**, not the film,
+and that is forced rather than chosen: `FixtureRun._decorrelateWatched` makes
+the single-file film `watched: true` in every copy, which would make "2.9/3.0
+sets watched" vacuous. The show is two unwatched files, so crossing file 0
+(non-last) advances the pointer to file 1 at 0 seconds with `watched` unmoved,
+and crossing file 1 (last) sets `watched` and leaves the pointer where it is.
+There is no client method for un-watching an item — `watched` is M6 — so this is
+the only shape available.
+
+**The app's live suite is the milestone's real proof**: a real cookie from
+`playbackHeaders()`, a real `MediaKitPlaybackHost` over `RealMpvPlayer` with
+`NativePlayer.test = true`, opening the seeded MP4 over HTTP. Duration ≈ 3 s,
+an audio track with mpv's synthetic `auto`/`no` dropped, position past 1 s, a
+seek to 2 s landing, `completed` firing, and the sidecar — fetched through
+`LibraryApi` and handed to `SubtitleTrack.data` — rendering the cue
+`Hello fixture`.
+
+**The negative control is a SEPARATE FILE, and that is E3's finding made
+structural.** `Media`'s constructor is `httpHeaders ?? cache[uri]?.httpHeaders`
+over a global static cache keyed by URI, so a cookie-less open in the same
+process inherits the previous cookie and the control passes for the wrong
+reason. `flutter test` gives each file its own `flutter_tester` process, and the
+control additionally opens a distinguished URI (a query parameter `playback.go`
+never reads). Measured: it waits out the full 15 s without a duration and mpv
+reports the failure on its error stream — which is all mpv can report, since it
+surfaces no status code.
+
+### What M4 did NOT finish, stated plainly
+
+- **The MKV item is still not in the seed.** E5's correction proves an `.mkv`
+  direct-plays once probed, but proving it in `just it` means a third seeded
+  item plus a probe scan, which rewrites six name-and-count assertions and the
+  captured category fixtures. `tool/spikes/e5_mkv_direct_play.sh` carries the
+  measurement instead. The reason is churn, not doubt.
+- **The live suites' widget half is still the M3 gap.** A request initiated
+  inside a `testWidgets` body registers its timers in that body's `FakeAsync`
+  zone and never completes, so `playback_live_test.dart` drives the host from
+  plain `test()` bodies. Nothing here proves `PlayerPage` issuing the call
+  itself; that is `docs/verification-backlog.md`'s row, not a claim rounded up.
+- **The settings sheet writes `settings.json` and nothing re-reads it mid-session
+  except the two places that need it.** `app.dart` keeps the changed
+  `SavedServer` in its own state and the player route reads
+  `settings.read().playback` at push time, so a sheet opened *from* the player
+  screen would not exist — it is on the tree screen only. A player already
+  running does not pick up a changed interval until the next open. Stated
+  rather than discovered.
+- **`MpvPlayer.setProperty` is still a generic string property setter** used for
+  exactly one property. `mutation_rules.xml` carries its exclusion and names the
+  replacement (`setVerifyTls({required bool verify})`), which would delete the
+  exclusion with it. Deferred because it moves the yes/no conversion across
+  three files and two fakes, which is not a change to make on the way out of a
+  milestone.
 
 ---
 

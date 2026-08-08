@@ -532,7 +532,7 @@ Each gets a spike before the milestone that depends on it. Tracked in
 | **M1** | `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` | property tests green; purity gate passes |
 | **M2** | `filefin_api`: login, secure-store session+password, F3 retry, browse endpoints, **TLS pinning (F15)** | `just check` exits 0 **and** `just it` exits 0 on a machine with the binary: the integration suite survives a mid-test server restart; a self-signed server connects only after explicit accept, and a changed fingerprint blocks. **The TLS half is met against a Dart `HttpServer.bindSecure`, not against `filefin`** — the binary has no TLS listener at all (§8 R5) |
 | **M3** | App shell + browsing UI: tree, virtualised grid, detail (F4) | 5000-item category scrolls at 60fps (NF2) — **met by proxy, and the proxy is named.** 60fps cannot be measured headlessly: `flutter test` runs `flutter_tester` under a fake clock with no vsync and no rasterizer, and `flutter_tools` demands a connected device for anything under `integration_test/` (both measured at M3.0/M3.7). What IS gated is the property 60fps rests on — a bounded live-tile count at the top, middle and end of a 5000-item grid; poster requests far below the item count and never above the tiles ever built; the listing fetched exactly once; a scrolled-away tile cancelling. A build+layout wall-clock number is printed and deliberately NOT gated. Real frame timing is `docs/verification-backlog.md` row 1 |
-| **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | an MKV/HEVC file plays via direct bytes where the server allows |
+| **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | **Met, and the criterion's "where the server allows" turned out to be load-bearing.** An MKV plays via direct bytes exactly when the cache row has been probed: `fileNeedsTranscode` (`internal/server/playback.go:78`) consults the probed container and codecs only under `f.Container != "" && f.VideoCodec != ""` and otherwise falls back to `transcode.NeedsTranscode(f.Ext)`, whose direct-play set is `{.mp4, .webm, .m4v}`. `tool/testserver/seed.sh` rebuilds the cache and never probes, so every seeded row has empty format columns and every verdict taken from the seeded library is that fallback. `tool/spikes/e5_mkv_direct_play.sh` runs both arms over one VP9/Opus `.mkv`: unprobed → `transcode:true`, **307 to HLS**; after `POST /api/admin/probe/scan` fills the row with `matroska,webm` / `vp9` / `opus` → `transcode:false`, **200 with `Accept-Ranges: bytes`** and `Content-Type: video/x-matroska`. §3.4 is therefore correct as written. **An earlier draft of this row said the criterion was unsatisfiable and that the extension decides — that was arm 1 read as the rule, and it is corrected here rather than quietly dropped.** The gated half is the seeded H.264 MP4, which plays end to end under `just it` with resume, progress reporting, subtitle and audio selection and the cellular guard; the MKV half is the spike, because seeding a permanently probed item churns the category fixtures for no new client behaviour (STATE.md's M4 section says so) |
 | **M5** | HLS path + F12 messaging | a transcoded file plays; a 415 explains itself |
 | **M6** | Search, home rows, favourite/rating/watched (F5, F6, F10) | |
 | **M7** | Multi-server + secure storage (F11); background audio, lock screen, PiP (F14) after R2/R3 | |
@@ -543,7 +543,13 @@ Each gets a spike before the milestone that depends on it. Tracked in
 ## 11. Deferred
 
 - Offline downloads and a download queue.
-- Embedded subtitle/audio tracks libmpv can see but the API does not list.
+- Embedded **subtitle** tracks libmpv can see but the API does not list.
+  **Embedded AUDIO is no longer deferred — it is used, because nothing else can
+  satisfy F7.** `fileInfo` carries `subtitles[]` and no audio array at all
+  (§3.3), so libmpv's own track list is the only possible source for
+  audio-track selection. `PlaybackHost.tracks` therefore reports audio and
+  nothing else, and `MediaKitPlaybackHost` drops mpv's synthetic `auto`/`no`
+  pseudo-entries so a two-track file does not read as four.
 - Chromecast / AirPlay.
 - Any admin surface (N1).
 - Desktop (N3), Flutter Web (N5).
@@ -586,6 +592,7 @@ be reversed *here first*, then in the sections it touches.
 | D6 | Trust-on-first-use with certificate pinning | Self-hosted servers commonly use self-signed or private-CA certs | F15, M2 |
 | D7 | Android 8 / iOS 15 floor | Within `media_kit` support, modern PiP and media-session APIs, small CI matrix | C5 |
 | D8 | Direct APK + TestFlight/sideload; no app store | Removes store review from the release path, and defuses the mpv GPL blocker | C6, R4 |
+| D10 | **TLS playback is a per-server choice that DEFAULTS TO REFUSE** | libmpv verifies no certificate by default — measured both directions at M4.0 (`docs/risks.md` R6) — so F15's pin does not reach the playback socket. `plainHttp` plays, `osTrustedTls` plays with `tls-verify=yes`, `pinnedTls` is refused unless `SavedServer.allowUnverifiedPlayback` is on, and when it is on a **persistent banner** names exactly what is unprotected: the session cookie may reach a peer whose certificate was never checked | F15, §5.3, `decide()`, M4 |
 | D9 | App state is a hand-written `ChangeNotifier` plus one generic `AsyncController<T>`, `AsyncView<T>` and `InheritedWidget`. No state-management package | M3's real screens are three, each one fetch, one cancel-on-dispose, one error render. A framework's rent at that size is unpaid surface (§1, §5) — and, less obviously, it would SHRINK what `just mutants` reaches, because framework-internal branching is never in our diff. Retirement condition at M7 in `docs/architecture.md` | §6, M3 |
 
 ### Still open

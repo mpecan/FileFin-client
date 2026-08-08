@@ -207,3 +207,38 @@ F-Droid. Both change the question from "which licence" to "who compiles it".
 
 R5 is not in that table on purpose. It is not retired: one arm of it is
 enforced without being exercised, and saying so is worth more than a tick.
+
+## R6 — libmpv verifies no certificate, so F15 does not reach playback
+
+**Measured at M4.0, both directions, against this repository's own committed
+self-signed certificate** (`packages/filefin_api/test/support/certs/server_a.crt`,
+served by a Python `ssl` server on `127.0.0.1:8443`), with mpv 0.41.0:
+
+```
+$ mpv --vo=null --ao=null --no-config --frames=1 https://127.0.0.1:8443/movie.mp4
+rc=0        server log: 127.0.0.1 - - [...] "GET /movie.mp4 HTTP/1.1" 200
+
+$ mpv --vo=null --ao=null --no-config --frames=1 --tls-verify=yes \
+      https://127.0.0.1:8443/movie.mp4
+rc=2        [ffmpeg] tls: error:0A000086:SSL routines::certificate verify failed
+            server log: unchanged — the request never arrived
+```
+
+Through `media_kit`, in the same shape:
+`setProperty('tls-verify', 'yes')` then opening that URL is **refused**;
+with `'no'` the same open **plays** (`duration=0:00:03`).
+
+So the property is settable, load-bearing and **off by default**. F15 pins the
+certificate on `filefin_api`'s socket; libmpv opens its own from native code and
+has no pin to consult.
+
+**What was done about it: D10** (SPEC §13). `decide()` takes a
+`PlaybackTransport` and refuses `pinnedTls` unless a **per-server** override says
+otherwise, and the override carries a persistent banner rather than a
+dismissible dialog, because what is given up is ongoing. `plainHttp` plays (F1
+already warns in words); `osTrustedTls` plays with `tls-verify=yes`.
+
+**Not retired.** Two things are unverified and both have backlog rows: whether
+the *shipped* Android and iOS libmpv builds behave the same way (row 20), and
+whether the cookie reaches them at all (row 18). Every measurement above used
+Homebrew's build.

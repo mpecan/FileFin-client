@@ -434,6 +434,15 @@ back empty.
 Status `200`, `404` unknown id, `500` files could not be loaded, `503` cache
 unavailable.
 
+**`400` on the write routes is `BadRequest`, added at M4.** Two shapes, both
+captured live at v0.20.3 into `test/fixtures/error_shapes.txt`:
+`POST .../progress` with a `file` outside `files[]` answers
+`400 bad file index` (`media.go:511`), and `POST .../rating` outside 1..10
+answers `400 rating out of range` (`media.go:425`). It is deliberately **not**
+retryable — a progress reporter that retried one would post the same rejected
+body on every tick — which is why it is its own variant rather than
+`ServerFailure`.
+
 **Do not match on a 404 body string.** This is the ONE route whose 404 body is
 the plain text `not found` (`media.go:264`). Every other user-facing 404 —
 `poster` (`media.go:374`, `:388`), `progress` (`media.go:522`), and all of
@@ -517,6 +526,32 @@ There is no query parameter, header, or user-agent that changes it — verified:
 `fileNeedsTranscode` judges by the **probed** container and codecs when the
 cache row has them, falling back to the filename extension otherwise. That is
 why a `.avi`-named H.264/MP4 direct-plays: the extension is not the decision.
+
+```go
+func fileNeedsTranscode(f db.MediaFile) bool {          // playback.go:78-83
+    if f.Container != "" && f.VideoCodec != "" {
+        return !transcode.DirectPlayable(f.Container, f.VideoCodec, f.AudioCodec)
+    }
+    return transcode.NeedsTranscode(f.Ext)
+}
+```
+
+**Which branch you are in is a property of the ROW, not of the file**, and it is
+the single easiest thing to measure wrongly here. The fallback's whole
+vocabulary is `directPlay = {.mp4, .webm, .m4v}` (`transcode.go:42`); the
+authority is `DirectPlayable`, whose `mkvFamily = {matroska, webm}` crossed with
+`webmVideo = {vp8, vp9, av1}` and `webmAudio = {opus, vorbis, ""}` says a
+VP9/Opus Matroska is direct-playable whatever the file is called
+(`transcode.go:84`).
+
+**`tool/testserver/seed.sh` never probes.** It rebuilds the cache and stops, so
+`media_files.container`, `.video_codec` and `.audio_codec` are `''` for every
+seeded row and `probe_tasks` is empty — *every* verdict any suite takes from the
+seeded library is the extension fallback. The probe agent is queued by
+`POST /api/admin/probe/scan` (`probe.go:37`) and by nothing the seed does.
+`tool/spikes/e5_mkv_direct_play.sh` runs both arms over one VP9/Opus `.mkv`:
+unprobed → `transcode:true` and `307`; probed (`matroska,webm` / `vp9` / `opus`)
+→ `transcode:false` and `200` with `Accept-Ranges: bytes`. Measured at v0.20.3.
 
 The `transcode` flag in the detail payload is this same verdict, computed by
 the same function and told to us in advance. **`decide()` must use it and must
@@ -708,6 +743,33 @@ The client works in indices, because that is what `fileInfo.index` and
 `continueIndex` give it. The mapping holds for a stable file list, which is the
 only list a single detail response describes. Note that `(0, 0s)` is
 observationally equivalent to "no pointer" in the derived view.
+
+**The client rule for that ambiguity is upstream's own, observed rather than
+invented** (recorded at M4, closing the hole M1 left):
+
+```js
+hasResume = !watched && (continueIndex > 0 || continueSeconds > 0)
+```
+— `web/src/lib/app.svelte.js:423`. And `playFile(idx)` seeks **only** when
+`idx == continueIndex` (`:864`), so picking a file other than the pointer's
+starts it at the beginning. `filefin_core`'s `offerResume` and `startSecondsFor`
+implement exactly that, which is why `(0, 0)` is never offered as a resume
+position: the two readings are indistinguishable on the wire, so neither is
+guessed.
+
+### The `event` field
+
+`POST .../progress` carries `{file, position, duration, event}` and **the engine
+never reads `event`** — nothing in `state.Apply` touches it. Upstream's player
+sends four values: `checkpoint`, `pause`, `ended`, `stop`
+(`web/src/views/library/Player.svelte`). This client sends those four plus
+`seek`, which is safe in the strongest sense available: no value of a field the
+server ignores can change what it stores.
+
+The same file is where the **reporting interval** comes from:
+`if (Math.abs(el.currentTime - lastMark) >= 30)`. That is **30 seconds of media
+time, not wall clock** — so nothing reports while playback is paused, and the
+rule is testable with no clock at all.
 
 ### `Apply(state, refs, fileIndex, position, duration)` — `engine.go:56-85`
 
