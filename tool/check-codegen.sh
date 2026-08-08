@@ -15,7 +15,15 @@ cd "$(repo_root)"
 # then nothing regenerates them, `git diff` is trivially empty, and the gate
 # would pass while guarding nothing.
 
-generated=$(git ls-files -- '*.g.dart' '*.freezed.dart' | grep -c . || true)
+# Tracked AND untracked. `git ls-files` alone missed generated output a builder
+# had just produced but nobody had committed, so the anti-vacuity check below
+# read "nothing to verify" over exactly the files §10 exists to police.
+generated=$(
+    {
+        git ls-files -- '*.g.dart' '*.freezed.dart'
+        git ls-files --others --exclude-standard -- '*.g.dart' '*.freezed.dart'
+    } | sort -u | grep -c . || true
+)
 
 codegen_pkgs=()
 while IFS= read -r pubspec; do
@@ -40,7 +48,7 @@ done
 if ! git diff --exit-code -- '*.g.dart' '*.freezed.dart'; then
     fail "regenerating changed committed output (§10).
        Either generated code was hand-edited, or a model changed without
-       rerunning 'just codegen'. Commit the regenerated files."
+       rerunning the builder (M1.4's `just codegen`). Commit the regenerated files."
 fi
 
 # Untracked generated output means a new builder produced a file nobody

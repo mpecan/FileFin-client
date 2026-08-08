@@ -14,11 +14,13 @@ cd "$(repo_root)"
 # belt-and-braces; at M3 it is the only thing standing between us and a suite
 # that reports success over nothing.
 #
-# The empty-tree branch is gated on `dart_sources` being completely empty, so
-# it cannot survive the arrival of the first package unnoticed.
+# The empty-tree branch is gated on there being no package at all, so it cannot
+# survive the arrival of the first one. It used to key on `dart_sources` being
+# empty, which excludes generated files — a package whose only Dart was
+# `*.g.dart` made this branch reachable again. See `no_dart_packages`.
 
-if [ -z "$(dart_sources)" ]; then
-    echo "test: no Dart sources in the tree yet — nothing to run (M0 only)"
+if no_dart_packages; then
+    echo "test: no Dart package in the tree yet — nothing to run (M0 only)"
     exit 0
 fi
 
@@ -35,7 +37,7 @@ while IFS= read -r pubspec; do
 done < <(find packages apps -mindepth 2 -maxdepth 2 -name pubspec.yaml 2>/dev/null | sort)
 
 if [ "$ran" -eq 0 ]; then
-    fail "there are Dart sources but no package under packages/ or apps/ — nothing was tested"
+    fail "a package exists under packages/ or apps/ but nothing was tested"
 fi
 
 echo "test: $ran package(s) passed"

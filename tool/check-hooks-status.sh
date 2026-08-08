@@ -7,19 +7,46 @@ cd "$(repo_root)"
 # An uninstalled hook gates nothing and stays silent about it. `check` fails
 # rather than warns here, because "warned once, six milestones ago" is
 # indistinguishable from "installed" by the time it matters (CLAUDE.md §12).
+#
+# "Installed" means the symlink `just install-hooks` writes, resolving to this
+# repo's tool/hooks/<name>. Testing only -e/-x accepted ANY executable file,
+# so a two-line `exit 0` stub — or a stale copy from before the hook changed —
+# passed the gate that exists to prove the gate runs. A copy is rejected too:
+# it is a snapshot that silently stops tracking tool/hooks/.
 
-missing=()
+# Absolute, symlink-resolved path of $1. `readlink -f` is GNU-only and
+# `realpath` is not on every BSD userland, so this walks the links itself.
+resolve() {
+    (
+        cd "$(dirname "$1")" || return 1
+        local p; p="$(basename "$1")"
+        while [ -L "$p" ]; do
+            local t; t="$(readlink "$p")"
+            cd "$(dirname "$t")" || return 1
+            p="$(basename "$t")"
+        done
+        echo "$(pwd -P)/$p"
+    )
+}
+
+problems=()
 for hook in pre-commit post-commit; do
-    if [ ! -e ".git/hooks/$hook" ]; then
-        missing+=("$hook")
-    elif [ ! -x ".git/hooks/$hook" ]; then
-        missing+=("$hook (present but not executable)")
+    installed=".git/hooks/$hook"
+    source_hook="tool/hooks/$hook"
+    if [ ! -e "$installed" ]; then
+        problems+=("$hook (not installed)")
+    elif [ ! -x "$installed" ]; then
+        problems+=("$hook (present but not executable)")
+    elif [ ! -L "$installed" ]; then
+        problems+=("$hook (a plain file, not a symlink to $source_hook)")
+    elif [ "$(resolve "$installed")" != "$(resolve "$source_hook")" ]; then
+        problems+=("$hook (points at $(resolve "$installed"), not $source_hook)")
     fi
 done
 
-if [ ${#missing[@]} -gt 0 ]; then
-    fail "git hooks not installed: ${missing[*]}
+if [ ${#problems[@]} -gt 0 ]; then
+    fail "git hooks are not the repo's hooks: ${problems[*]}
        Run 'just install-hooks'. Until then nothing stops a red commit."
 fi
 
-echo "hooks: pre-commit + post-commit installed and executable"
+echo "hooks: pre-commit + post-commit are symlinks to tool/hooks/ and executable"

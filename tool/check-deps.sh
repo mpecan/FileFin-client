@@ -43,14 +43,18 @@ declared_deps() {
     ' "$1"
 }
 
-# True when the line above the dependency pays rent — a `#` comment. The
-# comment must sit immediately above; a comment three lines up is attached to
-# something else.
+# True when the line above the dependency pays rent — a `#` comment that says
+# something. The comment must sit immediately above; a comment three lines up is
+# attached to something else.
+#
+# The `[^[:space:]#]` is the point: a bare `#`, or a row of `###`, satisfied the
+# old `^[[:space:]]*#` and paid no rent at all. §4 asks for a one-line reason,
+# and an empty comment is not one.
 has_rent_comment() {
     # `exit` inside a rule still runs END, so END must not override the status
     # — an `END { exit 1 }` here made every dependency look uncommented.
     awk -v n="$2" '
-        FNR == n - 1 { ok = ($0 ~ /^[[:space:]]*#/); exit }
+        FNR == n - 1 { ok = ($0 ~ /^[[:space:]]*#+[[:space:]]*[^[:space:]#]/); exit }
         END { exit ok ? 0 : 1 }
     ' "$1"
 }

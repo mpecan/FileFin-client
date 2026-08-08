@@ -19,13 +19,19 @@ cd "$(repo_root)"
 # than skipping it — a skipped duplication check that reports success is the
 # gate-that-cannot-fail problem wearing a different hat.
 
-JSCPD_VERSION="${FILEFIN_JSCPD_VERSION:-4.0.5}"
-THRESHOLD="${FILEFIN_DUPES_THRESHOLD:-5}"
+# Every number here is a literal on purpose. The version and the threshold were
+# once overridable through FILEFIN_JSCPD_VERSION / FILEFIN_DUPES_THRESHOLD,
+# which nothing set and nothing documented — a lever that silently raises the
+# threshold contradicts both "pinned 4.0.5" and "ratchets down, never up"
+# (docs/architecture.md). Lowering the threshold is a deliberate edit here,
+# reviewed in the diff, not an environment variable.
+JSCPD_VERSION=4.0.5
+THRESHOLD=5
 MIN_LINES=15
 MIN_TOKENS=50
 
-if [ -z "$(dart_sources)" ]; then
-    echo "dupes: no Dart sources in the tree yet — nothing to compare (M0 only)"
+if no_dart_packages; then
+    echo "dupes: no Dart package in the tree yet — nothing to compare (M0 only)"
     exit 0
 fi
 
