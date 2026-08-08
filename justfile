@@ -12,10 +12,20 @@ default:
 # runs dependencies sequentially, which is what keeps that true.
 check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments constitution dupes deps fixtures-verify test coverage-check mutants
 
-# `just it` (integration tests against a real server) joins here at M2. It does
-# not exist yet: there is no integration suite, and a recipe over zero tests
-# reports success — the gate-that-cannot-fail problem (CLAUDE.md).
-check-all: check
+# `check` plus the integration suite. LOCAL ONLY, and deliberately so: `it`
+# needs a real `filefin` binary and CI has none, so putting it in `check` would
+# make CI permanently red. CI keeps running `just check`; M2's definition of
+# done is "`just check` exits 0 AND `just it` exits 0 on a machine with the
+# binary". STATE.md records the split.
+check-all: check it
+
+# === integration tests against a real server ===
+# FAILS when the binary is absent rather than skipping — a skipped integration
+# suite that reports success is the gate-that-cannot-fail problem wearing a
+# different hat (CLAUDE.md). It also fails on zero test files and on any
+# skippable test, and auto-seeds only the one precondition that is recoverable.
+it:
+    @bash tool/run-integration.sh
 
 # === toolchain ===
 toolchain-check:
