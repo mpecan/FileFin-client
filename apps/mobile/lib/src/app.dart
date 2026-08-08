@@ -1,3 +1,6 @@
+import 'package:filefin_mobile/src/browse/category_grid_page.dart';
+import 'package:filefin_mobile/src/browse/category_tree_page.dart';
+import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
@@ -88,10 +91,33 @@ class _HomeRouteState extends State<HomeRoute> {
   Widget build(BuildContext context) {
     final saved = FileFinScope.of(context).settings.read().servers;
     final server = _server;
-    if (_api != null && server != null) {
-      return Scaffold(
-        appBar: AppBar(title: Text(server.name)),
-        body: Center(child: Text('Signed in to ${server.name}')),
+    final api = _api;
+    if (api != null && server != null) {
+      return CategoryTreePage(
+        api: api,
+        title: server.name,
+        // Sign-out on a SessionExpired is a state change here rather than a
+        // route push: the tree, the grid and the detail page can all be the
+        // screen that discovers the session is gone, and every one of them
+        // must land on the same place.
+        onSignIn: () => setState(() {
+          _api?.close();
+          _api = null;
+          _server = null;
+        }),
+        onOpen: (category) => Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => CategoryGridPage(
+              api: api,
+              category: category,
+              onOpen: (item) => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => MediaDetailPage(api: api, item: item),
+                ),
+              ),
+            ),
+          ),
+        ),
       );
     }
     return NoServerPage(

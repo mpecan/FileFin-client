@@ -101,15 +101,18 @@ void main() {
     expect(find.text('Sign in'), findsNothing);
   });
 
-  testWidgets('add a server, sign in, and land on the signed-in screen', (
+  testWidgets('add a server, sign in, and land on the library', (
     tester,
   ) async {
     // The whole M3.5 flow through the real widgets, with only the socket
-    // faked. Nothing else in this suite proves the three screens are actually
-    // wired to each other rather than each correct on its own.
+    // faked. Nothing else in this suite proves the screens are actually wired
+    // to each other rather than each correct on its own.
     api
       ..probeResult = const FileFinServer('0.20.3')
-      ..loginResult = const AuthResult(user: 'sam');
+      ..loginResult = const AuthResult(user: 'sam')
+      ..categoriesResult = const [
+        Category(id: CategoryId(1), leaf: 'Films', name: 'Films'),
+      ];
     await tester.pumpWidget(shell());
 
     await tester.tap(find.text('Add a server'));
@@ -124,7 +127,8 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Signed in to 192.168.1.10'), findsOneWidget);
+    expect(find.text('192.168.1.10'), findsOneWidget);
+    expect(find.text('Films'), findsOneWidget);
   });
 
   testWidgets('a saved-but-signed-out server signs in without re-adding', (
@@ -143,7 +147,9 @@ void main() {
         ),
       ),
     );
-    api.loginResult = const AuthResult(user: 'sam');
+    api
+      ..loginResult = const AuthResult(user: 'sam')
+      ..categoriesResult = const <Category>[];
     await tester.pumpWidget(shell());
 
     expect(find.text('Signed out'), findsOneWidget);
@@ -153,6 +159,119 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Signed in to Attic NAS'), findsOneWidget);
+    expect(find.text('Attic NAS'), findsOneWidget);
+    expect(find.textContaining('no categories yet'), findsOneWidget);
+  });
+
+  testWidgets('signed in, the app lands on the category tree', (tester) async {
+    api
+      ..probeResult = const FileFinServer('0.20.3')
+      ..loginResult = const AuthResult(user: 'sam')
+      ..categoriesResult = const [
+        Category(id: CategoryId(1), leaf: 'Films', name: 'Films', media: 2),
+      ];
+    SettingsStore(dir).write(
+      AppSettings.empty.upsert(
+        SavedServer(
+          id: const ServerId('http://nas.local'),
+          name: 'Attic NAS',
+          baseUrl: Uri.parse('http://nas.local'),
+          lastUser: 'sam',
+        ),
+      ),
+    );
+    await tester.pumpWidget(shell());
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'hunter2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Attic NAS'), findsOneWidget);
+    expect(find.text('Films'), findsOneWidget);
+  });
+
+  testWidgets('tree to grid to detail, and back out again', (tester) async {
+    // The three browsing screens wired to each other, which nothing in
+    // test/browse/ can prove: each of those suites builds one screen on its
+    // own.
+    api
+      ..loginResult = const AuthResult(user: 'sam')
+      ..categoriesResult = const [
+        Category(id: CategoryId(1), leaf: 'Films', name: 'Films', media: 1),
+      ]
+      ..categoryMediaResult = const [
+        MediaSummary(id: MediaId('e4285edb34d5'), title: 'Direct Play Movie'),
+      ]
+      ..mediaDetailResult = const MediaDetail(
+        id: MediaId('e4285edb34d5'),
+        title: 'Direct Play Movie',
+        year: 2020,
+      );
+    SettingsStore(dir).write(
+      AppSettings.empty.upsert(
+        SavedServer(
+          id: const ServerId('http://nas.local'),
+          name: 'Attic NAS',
+          baseUrl: Uri.parse('http://nas.local'),
+          lastUser: 'sam',
+        ),
+      ),
+    );
+    await tester.pumpWidget(shell());
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'hunter2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Films'));
+    await tester.pumpAndSettle();
+    expect(find.text('Direct Play Movie'), findsWidgets);
+
+    await tester.tap(find.text('Direct Play Movie').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2020'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Attic NAS'), findsOneWidget);
+  });
+
+  testWidgets('a SessionExpired anywhere in browsing returns to sign-in', (
+    tester,
+  ) async {
+    // F3 has already retried by then, so this is the one 401 that is not
+    // routine. It is a state change rather than a route push because any of
+    // the three screens can be the one that discovers it.
+    api
+      ..loginResult = const AuthResult(user: 'sam')
+      ..categoriesResult = SessionExpired(Uri.parse('http://nas.local/api'));
+    SettingsStore(dir).write(
+      AppSettings.empty.upsert(
+        SavedServer(
+          id: const ServerId('http://nas.local'),
+          name: 'Attic NAS',
+          baseUrl: Uri.parse('http://nas.local'),
+          lastUser: 'sam',
+        ),
+      ),
+    );
+    await tester.pumpWidget(shell());
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'hunter2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Please sign in again'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Signed out'), findsOneWidget);
   });
 }
