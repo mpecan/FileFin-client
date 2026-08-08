@@ -20,3 +20,7 @@ library;
 
 export 'src/error_mapper.dart';
 export 'src/errors.dart';
+export 'src/json_response.dart';
+export 'src/probe_result.dart';
+export 'src/server_probe.dart';
+export 'src/transport.dart';

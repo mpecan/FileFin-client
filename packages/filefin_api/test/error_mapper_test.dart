@@ -300,6 +300,21 @@ void main() {
         ServerFailure(500, 'boom', requested).toString(),
         'ServerFailure: 500 from $url: boom',
       );
+      expect(
+        NotAFileFinServerResponse(requested, 'text/html').toString(),
+        'NotAFileFinServerResponse: $url answered text/html, '
+        'not application/json',
+      );
+      expect(
+        NotAFileFinServerResponse(requested, null).toString(),
+        'NotAFileFinServerResponse: $url answered no content type, '
+        'not application/json',
+      );
+      expect(
+        MalformedResponse(requested, 'files[0] is null').toString(),
+        'MalformedResponse: $url sent JSON we could not read: '
+        'files[0] is null',
+      );
     });
 
     test('redactUserInfo leaves a URL without userInfo untouched', () {
@@ -340,6 +355,8 @@ void main() {
         CacheUnavailable() => 'busy',
         RateLimited() => 'slow down',
         ServerFailure() => 'server error',
+        NotAFileFinServerResponse() => 'not a FileFin server',
+        MalformedResponse() => 'unreadable',
       };
       expect(
         describe(

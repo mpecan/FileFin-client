@@ -212,6 +212,59 @@ final class RateLimited extends FileFinApiException {
       '${retryAfter.inSeconds}s (Retry-After: ${rawRetryAfter ?? 'absent'})';
 }
 
+/// A 2xx whose `Content-Type` is not `application/json` — F1's mechanism.
+///
+/// This server registers an SPA catch-all **outside** its route table
+/// (`server.go:352`), so an unmatched `/api/*` path — a typo, a trailing
+/// slash from a `Uri` join, a method mismatch, an endpoint upstream removed —
+/// answers `200 text/html` with `index.html`. Verified live at v0.20.3. **No
+/// path or method mismatch is ever answered with a 404 or a 405.**
+///
+/// So a `200` proves nothing: any SPA host, any reverse proxy with a fallback
+/// and any unrelated web server answers the same way. The content type is the
+/// only thing that separates them, which is why F1 is a
+/// content-type-and-payload check rather than a status check, and why this
+/// variant exists instead of a decode error arriving from somewhere else
+/// entirely.
+final class NotAFileFinServerResponse extends FileFinApiException {
+  /// [requested] answered 2xx with [contentType], which is not JSON.
+  const NotAFileFinServerResponse(this.requested, this.contentType);
+
+  /// The URL that was being requested.
+  final Uri requested;
+
+  /// The `Content-Type` that arrived, or null when the response carried none.
+  final String? contentType;
+
+  @override
+  String toString() =>
+      'NotAFileFinServerResponse: ${redactUserInfo(requested)} answered '
+      '${contentType ?? 'no content type'}, not application/json';
+}
+
+/// JSON arrived and decoded, but was not the shape the model needs.
+///
+/// Separate from `NotAFileFinServerResponse` because the two mean opposite
+/// things: that one says "this is not the server you think it is", this one
+/// says "this IS the server and it sent something we cannot read" — a version
+/// skew, or a field whose type changed. §8 makes us tolerant of *added*
+/// fields; it cannot make us tolerant of a `String` where an `int` belongs.
+final class MalformedResponse extends FileFinApiException {
+  /// [requested] answered JSON that [problem] describes the trouble with.
+  const MalformedResponse(this.requested, this.problem);
+
+  /// The URL that was being requested.
+  final Uri requested;
+
+  /// What went wrong, in the words of whatever noticed.
+  final String problem;
+
+  @override
+  String toString() =>
+      'MalformedResponse: ${redactUserInfo(requested)} sent JSON we could not '
+      'read: $problem';
+}
+
 /// Any other non-2xx status, kept so the hierarchy stays total.
 ///
 /// A status this package has no opinion about must still arrive as one of our

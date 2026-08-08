@@ -22,6 +22,12 @@ dependencies:
   # resolution on every machine to give the same answer twice.
   dio: 5.11.0
 
+  # The wire models, the extension-type IDs and `FileFinUrls` — the one place a
+  # route literal exists in this tree (§8's `undocumented_endpoint` reads them
+  # straight out of its source). A path dependency, not a version: they move
+  # together and there is nothing to publish.
+  filefin_core:
+    path: ../filefin_core
 dev_dependencies:
   # The test runner `just test` and `just coverage` invoke.
   test: ^1.25.0
