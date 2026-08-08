@@ -212,6 +212,30 @@ final class RateLimited extends FileFinApiException {
       '${retryAfter.inSeconds}s (Retry-After: ${rawRetryAfter ?? 'absent'})';
 }
 
+/// `POST /api/login` said no: wrong password, unknown account, or locked.
+///
+/// **The three are indistinguishable by design** (`auth.go:157-169`): the
+/// server always runs exactly one bcrypt compare, against a dummy hash when the
+/// account does not exist, so neither the body nor the timing tells them apart.
+/// A client that guessed between them would be inventing information.
+///
+/// It is deliberately not `SessionExpired`. A 401 from `/api/login` is the one
+/// place where a 401 does **not** mean L1, and re-authenticating in response to
+/// it is an infinite loop against a limiter that locks the account after five
+/// tries.
+final class InvalidCredentials extends FileFinApiException {
+  /// [requested] rejected the username and password it was given.
+  const InvalidCredentials(this.requested);
+
+  /// The login URL that refused.
+  final Uri requested;
+
+  @override
+  String toString() =>
+      'InvalidCredentials: ${redactUserInfo(requested)} rejected that username '
+      'and password';
+}
+
 /// The server's certificate is not trusted and nothing is pinned (F15).
 ///
 /// **The trust-on-first-use prompt, not a failure to report.** Self-signed and

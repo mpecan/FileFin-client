@@ -1,0 +1,245 @@
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio/dio.dart';
+import 'package:filefin_api/src/credentials.dart';
+import 'package:filefin_api/src/error_mapper.dart';
+import 'package:filefin_api/src/errors.dart';
+import 'package:filefin_api/src/json_response.dart';
+import 'package:filefin_api/src/secret_store.dart';
+import 'package:filefin_api/src/tls/certificate_pinner.dart';
+import 'package:filefin_core/filefin_core.dart';
+
+/// The session cookie's name (`auth.go:18`, set at `auth.go:177`).
+const sessionCookieName = 'filefin_session';
+
+/// Owns one server's session: logging in, restoring, and silently renewing.
+///
+/// **It runs on its own `Dio`.** `authDio` shares the cookie jar and the pinned
+/// adapter with the main client but carries **no `AuthInterceptor`**, which is
+/// what makes recursion through login structurally impossible rather than
+/// merely guarded: a 401 from `/api/login` cannot reach the retry logic because
+/// the retry logic is not on this chain. There is deliberately no "is this the
+/// login path?" branch anywhere — it would be unreachable, and §5 and
+/// `dead_types` exist to stop unreachable branches being written.
+///
+/// `now` is injected so the rate-limit block is testable without sleeping. §3
+/// requires it of `filefin_core`; it is worth just as much here, where the
+/// alternative is a test that waits fifteen minutes or one that proves nothing.
+class SessionManager {
+  /// Builds a manager for one server.
+  ///
+  /// [username] is the account name a cold start already knows, from
+  /// `settings.json`'s `servers[].lastUser` (SPEC.md §7). It is not a secret
+  /// and does not belong in the secure store, but re-authenticating needs it,
+  /// so a manager constructed without one can restore a stored session and
+  /// cannot silently renew it.
+  SessionManager({
+    required this.authDio,
+    required this.urls,
+    required this.jar,
+    required this.secrets,
+    required this.server,
+    String? username,
+    this.pinner,
+    DateTime Function() now = DateTime.now,
+  }) : _username = username,
+       _now = now;
+
+  /// The `Dio` used for `/api/login`, `/api/logout` and `/api/me`.
+  final Dio authDio;
+
+  /// This server's URLs.
+  final FileFinUrls urls;
+
+  /// The jar shared with the main client, so a fresh cookie reaches its
+  /// requests without anything copying it across.
+  final CookieJar jar;
+
+  /// Where the password and session live (§9).
+  final SecretStore secrets;
+
+  /// Which saved server this is.
+  final ServerId server;
+
+  /// The pinner, so a TLS refusal during login names the fingerprint (F15).
+  final CertificatePinner? pinner;
+
+  final DateTime Function() _now;
+
+  String? _username;
+  int _generation = 0;
+  DateTime? _blockedUntil;
+  String? _rawRetryAfter;
+  Future<void>? _inFlight;
+
+  /// Increments on every successful login.
+  ///
+  /// Half of the concurrency guard: a request stamps the generation it was
+  /// issued under, and a 401 arriving after someone else has already logged in
+  /// carries a stale one and is answered without a second login. With a
+  /// five-failure account limiter in front of `/api/login`, a pointless extra
+  /// attempt is not cosmetic.
+  int get generation => _generation;
+
+  /// Logs in and stores both the password and the session (F2).
+  ///
+  /// A `401` here is **bad credentials, not a session loss** — this is the one
+  /// route where that is true, and it is why the mapping is done here rather
+  /// than in `mapDioException`, which has no way to know which route it is
+  /// looking at.
+  Future<AuthResult> login(Credentials credentials) async {
+    _refuseWhileBlocked();
+    final url = urls.login;
+    final AuthResult result;
+    try {
+      final response = await authDio.postUri<dynamic>(
+        url,
+        data: credentials.toJson(),
+      );
+      result = decodeModel(
+        jsonObject(response, requested: url),
+        AuthResult.fromJson,
+        requested: url,
+      );
+    } on DioException catch (e) {
+      throw _loginFailure(e, url);
+    }
+    final session = await _sessionCookie();
+    if (session == null) {
+      // Storing the password against a session that does not exist would make
+      // every later call 401 into a re-auth that logs in and stores nothing
+      // again — a loop that looks like a server fault.
+      throw MalformedResponse(
+        url,
+        'the login succeeded but set no $sessionCookieName cookie',
+      );
+    }
+    await secrets.write(server, SecretKind.password, credentials.password);
+    await secrets.write(server, SecretKind.session, session);
+    _username = credentials.username;
+    _blockedUntil = null;
+    _generation++;
+    return result;
+  }
+
+  /// Validates a stored session without sending a password.
+  ///
+  /// Seeds the jar from the secure store and asks `GET /api/me`. A 401 here is
+  /// the ordinary L1 path — the server restarted and forgot the session — and
+  /// arrives as `SessionExpired` for the caller to answer with [login] or
+  /// [reauthenticate].
+  Future<AuthResult> restore() async {
+    final stored = await secrets.read(server, SecretKind.session);
+    if (stored == null) throw SessionExpired(urls.me);
+    await jar.saveFromResponse(urls.base, [
+      Cookie(sessionCookieName, stored)..path = '/',
+    ]);
+    final url = urls.me;
+    try {
+      final response = await authDio.getUri<dynamic>(url);
+      return decodeModel(
+        jsonObject(response, requested: url),
+        AuthResult.fromJson,
+        requested: url,
+      );
+    } on DioException catch (e) {
+      throw mapDioException(e, requested: url, pinner: pinner);
+    }
+  }
+
+  /// Renews the session silently, at most once per generation (F3).
+  ///
+  /// [seenGeneration] is what the failing request was stamped with. Two guards,
+  /// and **both are needed** because they answer different questions:
+  ///
+  /// - the generation returns immediately when someone else has already logged
+  ///   in since this request was issued, which is the common shape after a
+  ///   server restart 401s everything at once;
+  /// - the in-flight future makes N callers that *do* need a login share one,
+  ///   rather than racing into N attempts against a five-failure limiter.
+  ///
+  /// Without the future the concurrent count is 2..9; without the generation it
+  /// is 9. `session_test.dart` fires eight and asserts exactly one.
+  Future<void> reauthenticate({required int seenGeneration}) {
+    if (_generation != seenGeneration) return Future<void>.value();
+    return _inFlight ??= _renew().whenComplete(() => _inFlight = null);
+  }
+
+  /// Ends the session server-side and forgets this account's secrets.
+  ///
+  /// The certificate pin is deliberately kept: it is about the *server's*
+  /// identity rather than the user's, and clearing it would re-prompt for
+  /// trust-on-first-use on every sign-out — which trains a user to click
+  /// through the one dialog F15 exists for.
+  Future<void> logout() async {
+    final url = urls.logout;
+    try {
+      await authDio.postUri<dynamic>(url);
+    } on DioException catch (e) {
+      throw mapDioException(e, requested: url, pinner: pinner);
+    } finally {
+      // Local sign-out happens whether or not the server answered. Someone who
+      // taps "sign out" while the server is down must still end up signed out;
+      // keeping the password because a request failed would mean the app
+      // silently signs itself back in at the next 401.
+      //
+      // `auth.go:195` writes Go's `MaxAge: -1`, which reaches the wire as
+      // `Max-Age=0`, and cookie_jar 4.0.9 does honour that — measured, not
+      // assumed. This clears the jar anyway, because the failure path above
+      // never receives that header at all.
+      await jar.delete(urls.base);
+      await secrets.delete(server, SecretKind.session);
+      await secrets.delete(server, SecretKind.password);
+      _username = null;
+      _blockedUntil = null;
+    }
+  }
+
+  Future<void> _renew() async {
+    _refuseWhileBlocked();
+    final username = _username;
+    final password = await secrets.read(server, SecretKind.password);
+    if (username == null || password == null) {
+      // F2's promise is silent re-auth; without the password there is nothing
+      // silent to do, and guessing is not an option. The caller prompts.
+      throw SessionExpired(urls.login);
+    }
+    await login(Credentials(username: username, password: password));
+  }
+
+  /// Throws without touching the network while a 429 block is in force.
+  void _refuseWhileBlocked() {
+    final until = _blockedUntil;
+    if (until == null) return;
+    final remaining = until.difference(_now());
+    if (remaining.isNegative || remaining == Duration.zero) return;
+    throw RateLimited(remaining, urls.login, rawRetryAfter: _rawRetryAfter);
+  }
+
+  FileFinApiException _loginFailure(DioException error, Uri url) {
+    final mapped = mapDioException(error, requested: url, pinner: pinner);
+    if (mapped is SessionExpired) return InvalidCredentials(url);
+    if (mapped is RateLimited) {
+      _blockedUntil = _now().add(mapped.retryAfter);
+      _rawRetryAfter = mapped.rawRetryAfter;
+    }
+    return mapped;
+  }
+
+  Future<String?> _sessionCookie() async {
+    final cookies = await jar.loadForRequest(urls.base);
+    for (final cookie in cookies) {
+      if (cookie.name == sessionCookieName) return cookie.value;
+    }
+    return null;
+  }
+
+  /// Prints no password, no session value and no username (§9, NF4).
+  ///
+  /// `secret_tostring` flags this class because its name matches `Session`,
+  /// and an explicit non-leaking override is the right answer to that rather
+  /// than a rename: it genuinely holds a session, and a future field on it
+  /// would be exactly the kind that must not print.
+  @override
+  String toString() =>
+      'SessionManager(${server.value}, generation $_generation, <redacted>)';
+}

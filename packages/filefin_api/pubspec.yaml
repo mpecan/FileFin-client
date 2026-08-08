@@ -21,12 +21,21 @@ resolution: workspace
 # `just mutants` and `just codegen-check` need identical resolution on every
 # machine to answer the same way twice. STATE.md flags the wording conflict.
 dependencies:
+  # `DefaultCookieJar`, named directly so the jar stays IN MEMORY. Its sibling
+  # `PersistCookieJar` writes the session cookie to a plain file, and a session
+  # cookie is a credential — §9 forbids that. Session persistence goes through
+  # `SecretStore` instead.
+  cookie_jar: 4.0.9
   # SHA-256 over a certificate's DER, for F15's fingerprint. `dart:io` hands us
   # the DER and no digest to run over it.
   crypto: 3.0.7
   # SPEC.md §6's HTTP client. Its interceptor chain is where F3 lives and its
   # IOHttpClientAdapter is where F15 hooks into TLS.
   dio: 5.11.0
+  # The interceptor that carries `filefin_session` between requests. Without it
+  # every call after login is a 401, and F3's retry would loop forever fixing a
+  # session it then failed to send.
+  dio_cookie_manager: 3.5.0
   # The wire models, the extension-type IDs and `FileFinUrls` — the one place a
   # route literal exists in this tree (§8's `undocumented_endpoint` reads them
   # straight out of its source). A path dependency, not a version: they move

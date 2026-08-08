@@ -311,6 +311,10 @@ void main() {
         'not application/json',
       );
       expect(
+        InvalidCredentials(requested).toString(),
+        'InvalidCredentials: $url rejected that username and password',
+      );
+      expect(
         MalformedResponse(requested, 'files[0] is null').toString(),
         'MalformedResponse: $url sent JSON we could not read: '
         'files[0] is null',
@@ -359,6 +363,7 @@ void main() {
         MalformedResponse() => 'unreadable',
         CertificateNotTrusted() => 'unknown certificate',
         CertificatePinMismatch() => 'certificate changed',
+        InvalidCredentials() => 'wrong password',
       };
       expect(
         describe(

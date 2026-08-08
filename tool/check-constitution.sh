@@ -213,7 +213,21 @@ check_secret_tostring() {
             for (i = 1; i <= NF; i++) if ($i == "class") { cname = $(i + 1); break }
             sub(/[<({].*/, "", cname)
             if (cname ~ /(Credential|Password|Secret|Session|Token)/) {
-                inclass = 1; depth = 0; seen = 0; start = FNR; watched = cname
+                inclass = 1; seen = 0; start = FNR; watched = cname
+                # The class body brace count STARTS on this line. It used to
+                # start at 0 here, because `next` skipped the counting below and
+                # the class-opening `{` was therefore never counted — so the
+                # first member line holding a balanced `{...}` looked like the
+                # class closing, and everything after it was invisible.
+                #
+                # Measured on real M2 code: `class Credentials {` was declared
+                # closed at `const Credentials({required this.username, ...});`
+                # on line 13, so the `toString()` on line 38 was never seen and
+                # all three secret-bearing classes were reported as violations
+                # while every one of them overrode it. A gate that cries wolf
+                # teaches people to rename the class, which is precisely the
+                # answer §9 does not want.
+                depth = gsub(/{/, "{") - gsub(/}/, "}")
             }
             next
         }
