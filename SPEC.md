@@ -188,8 +188,17 @@ surface those too is deferred, §10.)
 
 - the resume pointer **never regresses**
 - crossing 90% of a file advances the pointer to the next file at 0s
-- crossing 90% of the *last* file sets the permanent `watched` flag
-- clearing watched also clears the pointer
+- crossing 90% of the *last* file sets the permanent `watched` flag **and
+  leaves the pointer index where it is** — the seconds do not advance on that
+  same report
+- **the two un-watch operations differ, and the difference is deliberate**
+  (`media.go:463` vs `:485`): `POST .../watched {"watched":false}` clears only
+  the flag and **keeps** the pointer, so un-watching returns the item to
+  *continue where you left off*; `DELETE .../watched` clears the flag **and**
+  nils the pointer, so the item leaves every home row. The core exposes these
+  as two functions, never one with a boolean.
+- an out-of-range file index leaves state **entirely** unchanged, `watched`
+  included
 
 Also `DELETE .../progress`, `POST|DELETE .../watched`,
 `POST .../favorite` (`{favorite}`), `POST .../rating` (`{rating}`, 1–10, 0

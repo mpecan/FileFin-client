@@ -63,10 +63,15 @@ lives in `apps/mobile`.
 *Enforced by: `just constitution` (core_purity) — scans imports and pubspec.*
 
 **§7 — Extension types for IDs.** `MediaId`, `CategoryId`, `FileIndex`,
-`ServerId` are Dart `extension type`s over their primitive, never `typedef`s.
-A `CategoryId` must not compile where a `MediaId` is expected — the server
-uses opaque strings for both and will 404 rather than tell you which you got
-wrong.
+`SubtitleIndex`, `ServerId` are Dart `extension type`s over their primitive,
+never `typedef`s. They wrap **different** primitives — `MediaId` is a 12-char
+hex string (`import.go:354`), `CategoryId` is an `int64`
+(`library.go:29`) — so the compiler cannot catch a mix-up for you once either
+decays to its representation, and the server answers a wrong one with a 404
+rather than an explanation.
+
+Declare them `implements Object`, never `implements String`/`int`: the latter
+forwards assignability to the primitive and defeats the entire rule.
 *Enforced by: `just constitution` (id_typedefs).*
 
 **§8 — The server contract is observed, not assumed.** Every endpoint we call
