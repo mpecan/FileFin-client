@@ -94,7 +94,16 @@ abstract class MetaPair with _$MetaPair {
 ///
 /// [continueIndex] and [continueSeconds] are the **derived** resume view, not
 /// the stored pointer: a pointer whose ref no longer matches any file reads
-/// here as `0`/`0`. `WatchState.fromDetail` records what that costs.
+/// here as `0`/`0` — and so does a real pointer at the very start of a
+/// single-file item. `WatchState.fromDetail` reads `0`/`0` as "no pointer",
+/// which is right for the first case and wrong for the second, and the error
+/// it leaves **persists** until this payload is fetched again. Re-read the
+/// detail after a report that crosses 90% of a single-file item;
+/// `WatchState.fromDetail` sets out why and what it costs.
+///
+/// [rating] is passed through exactly as the server sent it, including values
+/// the server's own write path would reject — it clamps on write, not on read
+/// (`media.go:425`). `WatchState.fromDetail` is where that is normalised.
 @freezed
 abstract class MediaDetail with _$MediaDetail {
   /// The full detail payload, every field defaulted (§8).

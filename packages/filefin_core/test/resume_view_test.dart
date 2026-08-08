@@ -99,6 +99,43 @@ void main() {
       },
     );
 
+    test('every state it builds is one setRating would accept', () {
+      // The server rejects a write outside 0-10 but does NOT clamp on read:
+      // verified live at v0.20.3 by editing meta.json to `rating: 99` —
+      // `POST .../rating {"rating":99}` answered 400 while `GET .../media/<id>`
+      // still served `"rating": 99`. Copied through unchecked, that builds a
+      // WatchState whose own `setRating(state, rating: state.rating)` throws.
+      // Out of range is read as 0, upstream's own value for "unrated".
+      for (final entry in {
+        0: 0,
+        1: 1,
+        5: 5,
+        10: 10,
+        -1: 0,
+        11: 0,
+        99: 0,
+      }.entries) {
+        final state = WatchState.fromDetail(
+          MediaDetail(rating: entry.key),
+        );
+        expect(state.rating, entry.value, reason: 'server sent ${entry.key}');
+        expect(
+          () => setRating(state, rating: state.rating),
+          returnsNormally,
+          reason: 'server sent ${entry.key}',
+        );
+      }
+    });
+
+    test('the wire model still carries the raw value, tolerantly (§8)', () {
+      // §8 tolerance belongs at the wire boundary; the normalisation belongs in
+      // WatchState. Asserting both keeps them from drifting into each other.
+      expect(
+        MediaDetail.fromJson(const {'rating': 99}).rating,
+        99,
+      );
+    });
+
     test('the derived view round-trips back to what the payload carried', () {
       final detail = MediaDetail.fromJson(
         loadFixture('media_detail_multifile_advanced'),

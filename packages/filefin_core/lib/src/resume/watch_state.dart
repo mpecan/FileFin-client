@@ -51,14 +51,39 @@ abstract class WatchState with _$WatchState {
   /// thing: an unresolvable pointer is reported as `0`/`0`, indistinguishable
   /// from no pointer at all.
   ///
-  /// So `0`/`0` is read here as **no pointer**, and that choice is the one that
-  /// matches `Apply`. A stale pointer resolves to index -1 upstream, which is
-  /// what an absent pointer resolves to; modelling it as a pointer at index 0
-  /// would disagree with the server on every subsequent report. The cost is the
-  /// one case where a real pointer genuinely sits at `(0, 0s)`: crossing 90%
-  /// of a single-file item would then predict `seconds = round(position)`
-  /// where the server keeps `0`. The item is `watched` by then and has left
-  /// every `continue` row, so nothing reads the difference.
+  /// So `0`/`0` is read here as **no pointer**. This is a tie-break, not a
+  /// derivation: the two readings differ on exactly one class of input — a
+  /// report that crosses 90% of an item with `fileCount == 1` — and everywhere
+  /// else they agree. This one was chosen because a fresh or a stale pointer is
+  /// the likelier ground truth behind `0`/`0`, and a stale pointer resolves to
+  /// index -1 upstream, which is what an absent pointer resolves to.
+  ///
+  /// **The residual divergence persists; it does not close itself.** On a
+  /// single-file item whose pointer genuinely sits at `(0, 0s)`, a crossing
+  /// report makes this client predict `seconds = round(position)` where the
+  /// server keeps `0` — and because the pointer only ever moves forward, the
+  /// client stays ahead until a later report *exceeds* its own value.
+  /// Transcribed from a live v0.20.3 session on a single-file film: after
+  /// `{position: 95, duration: 100}` the client holds 95 and the server holds
+  /// 0; after a rewind to `{position: 50}` the server moves to 50 and the
+  /// client still holds 95. Once the user rewinds, the optimistic value is
+  /// simply wrong, and `watched` being set does not hide it — un-watching
+  /// returns the item to the `continue` row with that stale offset.
+  ///
+  /// A consumer must therefore **re-read the detail** after a crossing report
+  /// on a single-file item rather than trust the prediction. M4's progress
+  /// reporter is the first consumer this binds; STATE.md carries it as a known
+  /// limitation.
+  ///
+  /// [MediaDetail.rating] is **not** clamped by the server on read — only on
+  /// write — so a hand-edited `meta.json` can serve `rating: 99` while
+  /// `POST .../rating {"rating": 99}` answers `400 rating out of range`.
+  /// Copying it through unchecked would build a `WatchState` that this
+  /// library's own `setRating` refuses, so anything outside `0..10` is read as
+  /// **0, unrated** — upstream's own word for "no rating"
+  /// (`state/state.go:29`). The wire model keeps the raw value; §8 tolerance
+  /// belongs there, and the invariant that every state we construct is one
+  /// every mutator accepts belongs here.
   factory WatchState.fromDetail(MediaDetail detail) => WatchState(
     pointer: detail.continueIndex == 0 && detail.continueSeconds == 0
         ? null
@@ -68,7 +93,13 @@ abstract class WatchState with _$WatchState {
           ),
     watched: detail.watched,
     favorite: detail.favorite,
-    rating: detail.rating,
+    // `isNegative` rather than `>= 0`, and that is not a style choice. With the
+    // fallback also being 0, `rating >= 0` and `rating > 0` produce the same
+    // answer for every input — the mutation gate reported it as a survivor and
+    // it is genuinely equivalent, so the operator was removed rather than
+    // excluded. An exclusion is a piece of code the gate stops asking about; a
+    // predicate with no boundary to get wrong is better.
+    rating: detail.rating.isNegative || detail.rating > 10 ? 0 : detail.rating,
   );
 }
 
