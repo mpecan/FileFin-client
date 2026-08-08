@@ -47,8 +47,19 @@ while IFS= read -r pubspec; do
     [ -f "$pkg_config" ] || fail "no package_config.json for $pkg_dir — run 'dart pub get'"
     echo "coverage: $pkg_dir"
     (cd "$pkg_dir" && dart test --coverage="../../$OUT/raw/$(basename "$pkg_dir")")
+    # --check-ignore honours `// coverage:ignore-file`, which freezed writes on
+    # line 2 of everything it generates. Without it the denominator is mostly
+    # freezed's pattern-matching helpers (`when`, `maybeMap`, `whenOrNull`) —
+    # code we never call and never will — and the figure reports 53% while every
+    # line we wrote is covered. That is a broken instrument in the OTHER
+    # direction from G2: the noise floor swamps a real regression.
+    #
+    # json_serializable does NOT write that comment, so the `.g.dart` decode
+    # bodies stay in the denominator, which is right — they are the tolerant
+    # decoding §8 is about. The hole this opens is closed immediately below.
     dart run coverage:format_coverage \
         --lcov \
+        --check-ignore \
         --in="$OUT/raw/$(basename "$pkg_dir")" \
         --out="$OUT/$(basename "$pkg_dir").lcov" \
         --packages="$pkg_config" \
@@ -58,6 +69,25 @@ done < <(find packages apps -mindepth 2 -maxdepth 2 -name pubspec.yaml 2>/dev/nu
 
 if [ "$measured" -eq 0 ]; then
     fail "there are Dart sources but no package has a test/ directory — coverage would be vacuous"
+fi
+
+# `--check-ignore` above is only safe because of this. `// coverage:ignore-file`
+# and `// coverage:ignore-line` delete lines from the denominator, so in
+# hand-written source they are a one-comment opt-out of §3 — the exact shape of
+# "do not weaken a gate to make it pass". Generated files may carry them
+# (freezed writes one); ours may not, and `dart_lib_sources` already excludes
+# *.g.dart and *.freezed.dart, so this loop sees only what we wrote.
+ignoring=()
+while IFS= read -r src; do
+    [ -n "$src" ] || continue
+    grep -qE '//[[:space:]]*coverage:ignore' "$src" && ignoring+=("$src")
+done < <(dart_lib_sources)
+
+if [ ${#ignoring[@]} -gt 0 ]; then
+    printf '  %s\n' "${ignoring[@]}"
+    fail "${#ignoring[@]} hand-written lib source(s) carry a 'coverage:ignore' comment.
+       That deletes lines from the coverage denominator, which is an opt-out of
+       the §3 floor written as a comment. Only generated files may carry it."
 fi
 
 cat "$OUT"/*.lcov > "$LCOV"

@@ -8,5 +8,8 @@
 # An entry with no consumer named is not an entry; delete the dependency instead.
 
 very_good_analysis: consumed by analysis_options.yaml's `include:`, which is what `just analyze` enforces
+build_runner: provides the binary `just codegen` and `just codegen-check` run to regenerate *.g.dart / *.freezed.dart
+freezed: a build_runner builder, selected by the @freezed annotation rather than by an import
+json_serializable: a build_runner builder, selected by @JsonSerializable / freezed's toJson
 coverage: provides the `format_coverage` binary `just coverage` runs to produce lcov
 mutation_test: provides the binary `just mutants` runs

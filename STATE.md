@@ -17,6 +17,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.1 | `packages/filefin_core/` — pubspec (`resolution: workspace`), analysis options including the root, the `lib/filefin_core.dart` barrel, `test/support/fixtures.dart` |
 | M1.2 | `lib/src/ids.dart` — `MediaId`, `CategoryId`, `FileIndex`, `SubtitleIndex` as `extension type … implements Object` |
 | M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
+| M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
 
 ### Two M0 gate scripts had to change for the first package to land
 
@@ -54,6 +55,60 @@ Proven both ways on the real script:
 | `lib/src/never_imported.dart` — one function, nothing imports it | **1**, names the file |
 | `lib/src/sneaky.dart` — a `library;` + `export` barrel with a single `int sneak() => 1;` smuggled in | **1**, names the file |
 | the clean tree (barrel + `ids.dart` exempt, `json_converters.dart` covered) | 0 |
+
+### `codegen-check` could not see a hand-edit that was staged
+
+This is the deferred M1.4 proof, and performing it found the gate had a hole.
+
+The plan's proof was "hand-edit one character in a committed `*.g.dart` → exit 1
+→ revert → exit 0". That passed — but only because `git diff` compares the
+worktree against the index, so an **unstaged** edit is caught by git alone and
+build_runner never has to notice anything.
+
+`git add` the same edit and the gate went green over it. build_runner is
+incremental: it hashes its own outputs and, on unchanged inputs, reports
+`30 skipped, wrote 0 outputs` without looking at what is on disk. So nothing
+regenerated, `git diff` had nothing to compare, and the gate printed "generated
+output is up to date" about output nobody generated. §10 is precisely the rule
+that "someone edited generated output" must not survive, and the shape it does
+not survive as is a commit — which is always staged.
+
+`check-codegen.sh` now deletes `$pkg/.dart_tool/build` before building, forcing
+a full rebuild (~10s per package). Only the **cache** is removed, never the
+generated files: `build_runner clean` deletes them from the worktree, so a build
+that then failed would leave the tree gutted.
+
+| Input | Before | After |
+|---|---|---|
+| clean tree | 0 | 0 |
+| one character changed in a committed `*.g.dart`, unstaged | 1 | **1** |
+| the same edit, **`git add`ed** | **0**, "generated output is up to date" | **1**, prints the diff and names §10 |
+| reverted | 0 | 0 |
+
+### Coverage now honours `// coverage:ignore-file`, and hand-written source may not carry it
+
+freezed writes `// coverage:ignore-file` on line 2 of everything it generates,
+and `format_coverage --check-ignore` respects it. Without that flag the
+denominator was 793 lines of which 591 were freezed's pattern-matching helpers
+(`when`, `maybeMap`, `whenOrNull`) — code with no caller and no prospect of one
+— and the gate reported **53%** while every line we wrote was covered. That is a
+broken instrument in the opposite direction from finding G2: the noise floor
+swamps a real regression, so the gate could not detect one.
+
+With the flag the figure is **100% (202/202)**. json_serializable does *not*
+write that comment, so the `.g.dart` decode bodies — the tolerant decoding §8 is
+actually about — stay in the denominator.
+
+The flag opens one hole and it is closed in the same commit: a
+`// coverage:ignore` comment in **hand-written** source would be a one-line
+opt-out of the §3 floor. `run-coverage.sh` now fails on any such comment in a
+non-generated lib source.
+
+| Fail input | Exit |
+|---|---|
+| `// coverage:ignore-file` appended to `lib/src/json_converters.dart` | **1**, names the file |
+| an 8-line untested function added to `lib/src/models/server_state.dart` | figure fell 100% → **96%**, so real code still counts |
+| clean tree | 0, `Coverage: 100% (202/202 lines)` |
 
 ---
 
@@ -171,12 +226,8 @@ it does.
 
 Stated here rather than left implied by silence.
 
-- **`codegen-check`** — deferred to **M1.4**. There is no `build_runner`
-  package and no committed `*.g.dart`, so the "regenerate then `git diff
-  --exit-code`" path has nothing to run. The proof to perform at M1.4:
-  hand-edit one character in a committed `*.g.dart` → exit 1 → revert → exit 0.
-  What *is* proven now is the anti-vacuity guard: the script fails if generated
-  files are committed while no package declares `build_runner`.
+- **`codegen-check`** — **done at M1.4**, and the proof found a hole in the
+  gate. See "codegen-check could not see a hand-edit that was staged" above.
 - **`coverage-check` on real code** — deferred to **M1.9** (A5). The gate is
   proven synthetically above against hand-made lcov files with known ratios.
   M1.9 must record the real figure and then push coverage below 50 and confirm
@@ -264,7 +315,7 @@ Two gate limits are known and not closed:
   suggested including them; this is a considered deviation, not an omission.
   `final`, `base`, `interface` and bare `class` are all covered.
 
-### `build_runner` was removed rather than justified
+### `build_runner` was removed rather than justified — and has now returned
 
 Finding F3: `tool/dep-allowlist.txt` claimed it was "invoked by `just codegen` /
 `just codegen-check`", but `check-codegen.sh` scans `packages/*` and `apps/*`
@@ -272,10 +323,24 @@ for a `build_runner:` declaration, found none — it was declared in the *root*
 pubspec — and short-circuited. `just codegen` had no builders and no caller. So
 it was a dependency no milestone needed yet, which is §1.
 
-It is gone from `pubspec.yaml`, from the allowlist, and `just codegen` is gone
-with it; all three return at **M1.4** with the first `@freezed` model.
-`codegen-check`'s anti-vacuity guard is unaffected and still proven: committed
-generated files with no declared builder fail.
+It was gone from `pubspec.yaml`, from the allowlist, and `just codegen` with
+it. All three returned at **M1.4** with the first `@freezed` models, alongside
+`freezed` and `json_serializable`, each with a rent comment and an allowlist
+entry naming the recipe that consumes it. `codegen-check`'s anti-vacuity guard
+is unaffected and still proven: committed generated files with no declared
+builder fail.
+
+`build_runner` is the one codegen package NOT pinned exactly, against the plan's
+instruction. It cannot be: freezed 3.2.5 caps `analyzer` below 11 and
+build_runner 2.16 requires 13, so the resolver has to pick the newest pair that
+agrees (2.15.1 today). The committed `pubspec.lock` is what makes the outcome
+reproducible, and the rent comment says so.
+
+The SDK floor moved **3.6 → 3.8** at the same time, in the root pubspec, in
+`filefin_core`'s, and in `tool/check-toolchain.sh`. json_serializable 6.14
+refuses to generate for a package below language version 3.8 — it *warns* and
+emits older-shaped output rather than failing, which is the worst of both. The
+floor is set by the strictest constraint in the tree, not the loosest.
 
 ### Deferred by decision, not oversight
 

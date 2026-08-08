@@ -1,0 +1,13 @@
+# Codegen options for `just codegen` / `just codegen-check`.
+#
+# explicit_to_json is NOT the json_serializable default, and the default is
+# wrong for every model here. Without it a nested object is emitted as the
+# object itself rather than as a Map, so `MediaDetail.toJson()` produces a map
+# whose `files` entry holds `_FileInfo` instances — it looks fine until someone
+# encodes it or decodes it back, which is where the round-trip test caught it.
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true

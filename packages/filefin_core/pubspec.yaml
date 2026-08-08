@@ -7,13 +7,17 @@ publish_to: none
 version: 0.1.0
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.8.0
 
 # Resolved against the workspace root's single lockfile, so `codegen-check` and
 # `mutants` see the same package versions on every machine.
 resolution: workspace
 
 dependencies:
+  # The @freezed annotation on every wire model. Pure Dart — it pulls in no
+  # Flutter, which is what lets §6 hold. Pinned exactly: freezed's own pubspec
+  # pins its annotation package, and generated output must be reproducible.
+  freezed_annotation: 3.1.0
   # @JsonKey / @JsonSerializable and the JsonConverter base class the four ID
   # converters extend. Pinned exactly: json_serializable's output must be
   # byte-identical across machines or `just codegen-check` fails on a diff
@@ -21,5 +25,16 @@ dependencies:
   json_annotation: 4.12.0
 
 dev_dependencies:
+  # Runs the two builders below; `just codegen-check` invokes it per package.
+  # Caret rather than pinned: freezed 3.2.5 caps `analyzer` below 11, which
+  # rules out build_runner 2.16. pubspec.lock is what pins the outcome.
+  build_runner: ^2.4.0
+  # Generates ==, hashCode, copyWith and toJson/fromJson wiring for the wire
+  # models. Pinned exactly for the same reason as its annotation package.
+  freezed: 3.2.5
+  # Generates the tolerant fromJson/toJson bodies. Pinned exactly: a patch
+  # release that reformats its output turns `codegen-check` into a diff nobody
+  # made.
+  json_serializable: 6.14.1
   # The test runner `just test` and `just coverage` invoke.
   test: ^1.25.0

@@ -11,3 +11,9 @@ library;
 
 export 'src/ids.dart';
 export 'src/json_converters.dart';
+export 'src/models/auth_result.dart';
+export 'src/models/category.dart';
+export 'src/models/home_rows.dart';
+export 'src/models/media_detail.dart';
+export 'src/models/media_summary.dart';
+export 'src/models/server_state.dart';

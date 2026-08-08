@@ -42,7 +42,20 @@ fi
 
 for pkg in "${codegen_pkgs[@]}"; do
     echo "codegen: $pkg"
-    (cd "$pkg" && dart run build_runner build --delete-conflicting-outputs)
+    # The build cache is deleted first, and that is the whole difference between
+    # this gate working and not working. build_runner is incremental: it hashes
+    # its own outputs, and on an unchanged input it reports "30 skipped, wrote 0
+    # outputs" WITHOUT looking at what is on disk. Measured: hand-edit one key in
+    # a committed `*.g.dart`, `git add` it, run this gate — build_runner skipped,
+    # `git diff` had nothing to compare against, and the gate reported "generated
+    # output is up to date" over output nobody generated. That is §10 failing
+    # silently at exactly the moment it exists for.
+    #
+    # Only the cache is removed, never the generated files: `build_runner clean`
+    # deletes them from the worktree, so a build that then fails leaves the tree
+    # gutted. Costs ~10s per package for a full rebuild.
+    rm -rf "$pkg/.dart_tool/build"
+    (cd "$pkg" && dart run build_runner build)
 done
 
 if ! git diff --exit-code -- '*.g.dart' '*.freezed.dart'; then

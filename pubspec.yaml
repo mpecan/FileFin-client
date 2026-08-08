@@ -6,23 +6,25 @@ description: >-
 publish_to: none
 
 environment:
-  # 3.6 is the floor for pub workspaces (`workspace:`); the toolchain gate
-  # enforces the same number so a too-old SDK fails loudly rather than
-  # producing a confusing resolution error.
-  sdk: ^3.6.0
+  # 3.8 is the floor: pub workspaces need 3.6, but json_serializable 6.14
+  # requires a 3.8 language version and only warns when it does not get one.
+  # The toolchain gate enforces the same number so a too-old SDK fails loudly
+  # rather than producing a confusing resolution error.
+  sdk: ^3.8.0
 
 # Members join here as they are created. Listing a member that does not exist
 # yet fails `dart pub get` outright, so a member and its directory land together.
 workspace:
   - packages/filefin_core
 
-# build_runner is deliberately ABSENT. It arrives at M1.4 with the first
-# @freezed model, together with the `just codegen` recipe and freezed /
-# json_serializable. At M0 nothing generates anything: `check-codegen.sh` scans
-# packages for a `build_runner:` declaration, finds none and short-circuits, so
-# the dependency was paying no rent (§1, §4). Its anti-vacuity guard still
-# holds — committed generated files with no builder to regenerate them fail.
 dev_dependencies:
+  # Drives codegen from the workspace root, so `just codegen` is one command
+  # rather than one per member. It was removed at M0 for paying no rent and
+  # returns here with the first @freezed model that needs it (§1, §4). Caret,
+  # not pinned: freezed 3.2.5 caps `analyzer` below 11 and build_runner 2.16
+  # requires 13, so the resolver has to pick the newest pair that agrees. The
+  # committed pubspec.lock is what makes the result reproducible.
+  build_runner: ^2.4.0
   # `format_coverage` turns `dart test --coverage` output into the lcov file
   # `just coverage-check` reads.
   coverage: ^1.11.0

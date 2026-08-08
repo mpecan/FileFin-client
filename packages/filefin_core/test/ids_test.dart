@@ -14,7 +14,9 @@ void main() {
     test('wraps its hex string and compares by value', () {
       expect(const MediaId('e4285edb34d5'), const MediaId('e4285edb34d5'));
       expect(
-          const MediaId('e4285edb34d5'), isNot(const MediaId('919ac9caad25')));
+        const MediaId('e4285edb34d5'),
+        isNot(const MediaId('919ac9caad25')),
+      );
       expect(const MediaId('e4285edb34d5').value, 'e4285edb34d5');
     });
 
@@ -24,14 +26,16 @@ void main() {
       expect(seen, hasLength(1));
       expect(seen[const MediaId('a')], 2);
       expect(
-          distinct(
-              [const MediaId('a'), const MediaId('a'), const MediaId('b')]),
-          2);
+        distinct([const MediaId('a'), const MediaId('a'), const MediaId('b')]),
+        2,
+      );
     });
 
     test('prints its representation', () {
       expect(
-          const MediaId('e4285edb34d5').toString(), contains('e4285edb34d5'));
+        const MediaId('e4285edb34d5').toString(),
+        contains('e4285edb34d5'),
+      );
     });
   });
 

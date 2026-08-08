@@ -4,8 +4,10 @@ import 'fixtures.dart';
 
 void main() {
   test('repoRoot finds the directory holding the justfile', () {
-    expect(repoRoot().listSync().map((e) => e.path.split('/').last),
-        contains('justfile'));
+    expect(
+      repoRoot().listSync().map((e) => e.path.split('/').last),
+      contains('justfile'),
+    );
   });
 
   test('loadFixture decodes a captured object payload', () {

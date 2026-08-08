@@ -33,7 +33,9 @@ void main() {
     // only compiles for a const constructor. A non-const converter fails at
     // codegen time with a message that does not name this cause.
     expect(const MediaIdConverter(), isA<Object>());
-    expect(identical(const FileIndexConverter(), const FileIndexConverter()),
-        isTrue);
+    expect(
+      identical(const FileIndexConverter(), const FileIndexConverter()),
+      isTrue,
+    );
   });
 }

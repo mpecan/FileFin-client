@@ -7,11 +7,15 @@ set -euo pipefail
 # because every gate downstream of it would otherwise fail with a confusing
 # message about something else — or, worse, "skip" and report success.
 #
-# 3.6 is the floor: pub workspaces (`workspace:` in the root pubspec) need it,
-# and so does the `resolution: workspace` line each member carries.
+# 3.8 is the floor, and it is set by the STRICTEST constraint in the tree, not
+# by the loosest. Pub workspaces need 3.6, but json_serializable 6.14 refuses to
+# generate for a package whose language version is below 3.8 — it warns and
+# emits older-shaped output rather than failing, which is the worst of both. The
+# floor moves with whatever actually binds; grep the pubspecs for `sdk:` before
+# changing it.
 
 MIN_MAJOR=3
-MIN_MINOR=6
+MIN_MINOR=8
 
 command -v dart >/dev/null 2>&1 || fail "dart is not on PATH.
        Install the Flutter SDK and add its bin/ to PATH, e.g.
