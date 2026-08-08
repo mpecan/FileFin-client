@@ -126,6 +126,19 @@ check_id_typedefs() {
 # be constructed at all, so "never constructed" is not a violation for them, it
 # is the definition. Flagging them would be a false positive on every
 # intermediate node of a nested hierarchy.
+#
+# TYPE PARAMETERS ARE OPTIONAL EVERYWHERE, and they were not until M3.4. The
+# declaration pattern required `class Name extends Base` with a space before
+# `extends`, so `final class EmptyBox<T> extends Box<T>` matched NOTHING and a
+# generic sealed hierarchy was exempt from §5 in its entirety. Measured before
+# the fix on a probe: the generic form exited 0, the byte-identical
+# non-generic form exited 1. M3 introduces the tree's first generic sealed
+# hierarchy (`UiState<T>`), so the gate would have stopped covering the rule
+# exactly when the rule started to matter — the same shape as the `interface`/
+# `mixin` modifiers that were missing at M2.
+#
+# The construction search carries the same allowance: `UiData<int>(…)` is a
+# construction and `\bUiData[[:space:]]*\(` does not match it.
 check_dead_types() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_sources)
@@ -144,11 +157,12 @@ check_dead_types() {
         for g in "${files[@]}"; do
             [ "$g" = "$file" ] || others+=("$g")
         done
-        if [ ${#others[@]} -eq 0 ] || ! grep -qE "\b${name}[[:space:]]*\(" "${others[@]}" 2>/dev/null; then
+        if [ ${#others[@]} -eq 0 ] \
+            || ! grep -qE "\b${name}(<.*>)?[[:space:]]*\(" "${others[@]}" 2>/dev/null; then
             echo "$file: sealed variant '$name' is never constructed outside its own file"
         fi
     done < <(awk '
-        match($0, /^[[:space:]]*((final|base|interface)[[:space:]]+)?class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+extends[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/) {
+        match($0, /^[[:space:]]*((final|base|interface)[[:space:]]+)?class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*(<[^>]*>)?[[:space:]]+extends[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/) {
             decl = substr($0, RSTART, RLENGTH)
             n = split(decl, w, /[[:space:]]+/)
             cname = ""; bname = ""
@@ -156,6 +170,10 @@ check_dead_types() {
                 if (w[i] == "class")   cname = w[i + 1]
                 if (w[i] == "extends") bname = w[i + 1]
             }
+            # `EmptyBox<T>` names the class `EmptyBox`; the type parameters are
+            # not part of the name the construction search looks for.
+            sub(/<.*/, "", cname)
+            sub(/<.*/, "", bname)
             if (cname != "" && bname != "") printf "%s\t%s\t%s\n", FILENAME, cname, bname
         }
     ' "${files[@]}" 2>/dev/null || true)
