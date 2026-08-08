@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+. "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+cd "$(repo_root)"
+
+# Generated code is committed and verified fresh (CLAUDE.md §10).
+#
+# Regenerate, then fail on any diff. A diff means someone hand-edited generated
+# output or changed a model without rerunning the builder — either way a clean
+# checkout would not build the same thing this one does.
+#
+# The second check below is the one that stops this gate going vacuous: if
+# *.g.dart / *.freezed.dart files exist but no package declares build_runner,
+# then nothing regenerates them, `git diff` is trivially empty, and the gate
+# would pass while guarding nothing.
+
+generated=$(git ls-files -- '*.g.dart' '*.freezed.dart' | grep -c . || true)
+
+codegen_pkgs=()
+while IFS= read -r pubspec; do
+    grep -qE '^[[:space:]]+build_runner:' "$pubspec" || continue
+    codegen_pkgs+=("$(dirname "$pubspec")")
+done < <(find packages apps -mindepth 2 -maxdepth 2 -name pubspec.yaml 2>/dev/null | sort)
+
+if [ ${#codegen_pkgs[@]} -eq 0 ]; then
+    if [ "$generated" -gt 0 ]; then
+        fail "$generated generated file(s) are committed but no package declares build_runner —
+       nothing can regenerate them, so this gate would verify nothing (§10)"
+    fi
+    echo "codegen: no package uses build_runner and no generated files are committed — nothing to verify"
+    exit 0
+fi
+
+for pkg in "${codegen_pkgs[@]}"; do
+    echo "codegen: $pkg"
+    (cd "$pkg" && dart run build_runner build --delete-conflicting-outputs)
+done
+
+if ! git diff --exit-code -- '*.g.dart' '*.freezed.dart'; then
+    fail "regenerating changed committed output (§10).
+       Either generated code was hand-edited, or a model changed without
+       rerunning 'just codegen'. Commit the regenerated files."
+fi
+
+# Untracked generated output means a new builder produced a file nobody
+# committed; §10 requires a clean checkout to build without running codegen.
+untracked=$(git ls-files --others --exclude-standard -- '*.g.dart' '*.freezed.dart')
+if [ -n "$untracked" ]; then
+    echo "$untracked" | sed 's/^/  /'
+    fail "generated files exist but are not committed (§10)"
+fi
+
+echo "codegen: generated output is up to date"

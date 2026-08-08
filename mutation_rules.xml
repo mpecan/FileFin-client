@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Mutation rules for `just mutants` (CLAUDE.md §3).
+
+  Coverage answers "did this line run". Mutation answers "would any assertion
+  notice if this line changed". Only the second one catches a test that calls a
+  function and asserts nothing useful about the result.
+
+  The builtin rule set is kept (`-b` on the command line); this document adds
+  only the test command, the exclusions, and the threshold. Rules themselves
+  are not customised, so an upstream improvement to them arrives for free.
+
+  THRESHOLD IS 100. Anything less means "some mutants may survive", and a
+  surviving mutant is a change to our code that no test objects to. The gate is
+  diff-scoped, so 100% is asking about the handful of mutants this commit adds,
+  not the whole tree.
+-->
+<mutations version="1.1">
+  <commands>
+    <!-- Run from the package directory the mutated file belongs to; the
+         mutants script cds there before invoking mutation_test, so "." is that
+         package. `dart test` (not `flutter test`) — filefin_core is pure Dart
+         and Flutter's runner arrives with the app at M3. -->
+    <command group="test" expected-return="0" working-directory="." timeout="300">dart test</command>
+  </commands>
+
+  <!--
+    Exclusions. Each needs a reason and a retirement condition, because an
+    exclusion is a piece of code the gate has stopped asking about.
+  -->
+  <exclude>
+    <!-- Comments carry no behaviour, so mutating them produces mutants no test
+         can ever kill. Never retires. -->
+    <token begin="//" end="\n"/>
+    <regex pattern="/[*].*?[*]/" dotAll="true"/>
+
+    <!-- Import and export directives: mutating a URI produces a file that does
+         not compile, which is an unviable mutant, not a missing assertion.
+         Never retires. -->
+    <token begin="import &apos;" end="&apos;;"/>
+    <token begin="export &apos;" end="&apos;;"/>
+    <token begin="import &quot;" end="&quot;;"/>
+    <token begin="export &quot;" end="&quot;;"/>
+
+    <!-- `part` / `part of` directives bind a library to its generated code.
+         Same reasoning as imports. Never retires. -->
+    <token begin="part &apos;" end="&apos;;"/>
+
+    <!-- Loops: the builtin rules invert loop conditions, which turns a bounded
+         loop into an unbounded one and hangs the run rather than reporting a
+         survivor. Retires if mutation_test gains a per-mutant kill that can
+         distinguish a hang from a survivor reliably; the 300s command timeout
+         is the current mitigation and it costs 300s per such mutant. -->
+    <regex pattern="[\s]for[\s]*\(.*?\)[\s]*{" dotAll="true"/>
+    <regex pattern="[\s]while[\s]*\(.*?\)[\s]*{.*?}" dotAll="true"/>
+
+    <!-- ++ and -- : the builtin rule rewrites them into each other via the
+         arithmetic rules and produces mostly false positives on index maths.
+         Retires when the resume engine's index arithmetic is expressed without
+         them (it currently is — this is inherited from the builtin default and
+         may be dropped at M1.9 if no survivor depends on it). -->
+    <regex pattern="\+\+"/>
+    <regex pattern="--"/>
+  </exclude>
+
+  <threshold failure="100">
+    <rating over="99.9" name="A"/>
+    <rating over="90" name="B"/>
+    <rating over="75" name="C"/>
+    <rating over="50" name="D"/>
+    <rating over="0" name="F"/>
+  </threshold>
+</mutations>
