@@ -1,0 +1,28 @@
+# 401 unauthenticated GET /api/me
+unauthorized
+
+HTTP 401
+
+# 404 unknown media id
+not found
+
+HTTP 404
+
+# 307 raw bytes refused for a transcode-only file (SPEC 3.4)
+HTTP/1.1 307 Temporary Redirect
+Location: /api/media/919ac9caad25/file/0/hls/index.m3u8
+
+# 415 HLS refused for a direct-playable file (SPEC 3.4, the symmetric half)
+not transcodable
+
+HTTP 415
+
+# 206 byte range on the direct-play file
+HTTP/1.1 206 Partial Content
+Accept-Ranges: bytes
+Content-Length: 50
+Content-Range: bytes 0-49/42953
+Content-Type: video/mp4
+
+# login rate limiting: 8 bad passwords in a row
+401 401 401 401 401 429 429 429 

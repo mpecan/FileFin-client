@@ -10,7 +10,7 @@ default:
 # `mutants` is last on purpose: mutation_test rewrites sources in place while
 # it runs, so it must never overlap another gate reading the same files. just
 # runs dependencies sequentially, which is what keeps that true.
-check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments constitution deps test coverage-check mutants
+check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments constitution deps fixtures-verify test coverage-check mutants
 
 # `just it` (integration tests against a real server) joins here at M2. It does
 # not exist yet: there is no integration suite, and a recipe over zero tests
@@ -94,8 +94,12 @@ hooks-status:
     @bash tool/check-hooks-status.sh
 
 # === fixtures (CLAUDE.md §8) ===
-# Needs the real filefin binary and a seeded data dir; not part of `check`,
-# because `check` must run in CI where no server exists.
+# `fixtures-seed` and `fixtures-capture` need the real filefin binary and are
+# not part of `check`, which must run in CI where no server exists.
+# `fixtures-verify` reads only committed files, so it IS in `check`: it checks
+# the fixtures against a committed SHA-256 manifest and asserts they still
+# exercise the shapes the models depend on. A fixture edited to make a failing
+# test pass is a hand-written literal wearing a captured payload's name.
 fixtures-seed:
     @bash tool/testserver/seed.sh
 
@@ -104,3 +108,7 @@ fixtures-capture:
 
 fixtures-verify:
     @bash tool/check-fixtures.sh
+
+# Regenerate the manifest after a real re-capture. Never to silence a diff.
+fixtures-accept:
+    @bash tool/check-fixtures.sh accept

@@ -1,0 +1,102 @@
+# Fixture provenance
+
+Every file in this directory is a **captured real payload**, not a hand-written
+literal. CLAUDE.md §8: a literal we author ourselves proves only that we can
+spell our own field names — it cannot catch a field the server spells
+differently, a number that arrives as a string, or a rounding rule we did not
+know about. (This capture found `continueSeconds` returning `2` for a reported
+position of `1.5`; Go rounds with `int(x + 0.5)`, not toward zero.)
+
+| | |
+|---|---|
+| Upstream | <https://github.com/xuedi/FileFin> |
+| Tag | `v0.20.3` |
+| Commit | `9399feb8f2f20cfad9f8d5be070d723faff5b3f6` |
+| Captured | 2026-08-08 |
+| Captured by | `tool/testserver/seed.sh` then `tool/testserver/capture_fixtures.sh` |
+| Server | a real `filefin` binary built from that commit, over a freshly seeded temp data dir on `127.0.0.1:8099` |
+| User | `testuser` (non-admin fields are as the server returned them) |
+
+Re-capture with `just fixtures-seed && just fixtures-capture`, then
+`bash tool/check-fixtures.sh accept` to refresh `SHA256SUMS`. A full re-seed
+and re-capture was verified to reproduce every byte of this directory
+identically, so an unexplained diff is a real change — either upstream's or
+ours.
+
+## The seeded library
+
+Two categories, three media files, chosen so both playback branches and both
+halves of the resume engine's file addressing are covered:
+
+| Category (`id`) | Item | Files | Playback |
+|---|---|---|---|
+| `Films` (1) | `(2020) Direct Play Movie` | 1 × `.mp4`, H.264 + AAC, plus an `.en.srt` sidecar | raw bytes, byte-range |
+| `Shows` (2) | `(2019) Transcode Show` | 2 × `.mkv`, HEVC + AAC (`1x1`, `1x2`) | `307` → HLS |
+
+The film is single-file, so `season`/`episode` are `0` and its state ref is the
+empty string. The show is two numbered episodes, so its refs are `1x1`/`1x2` —
+the only way `continueIndex` can be non-zero in any of these payloads.
+
+Both folders carry a hand-written `meta.json` with populated `metadata`,
+`ratings`, `technical`, `actors`, `genres` and `tags`. Nothing else in the
+harness fills them, and a fixture whose rich fields are all empty arrays would
+let a decoder that silently drops them round-trip perfectly.
+
+## What produced each file
+
+Every request below carried the `filefin_session` cookie from `POST /api/login`
+except the two marked unauthenticated. `{d}` = `e4285edb34d5`, the film;
+`{t}` = `919ac9caad25`, the show. Ids are `sha1(category + "/" + folder)[:12]`
+(`internal/server/import.go:354`), so they are stable across re-seeds.
+
+| Fixture | Method + path |
+|---|---|
+| `state.json` | `GET /api/state` (unauthenticated) |
+| `login.json` | `POST /api/login` `{"username","password"}` |
+| `me.json` | `GET /api/me` |
+| `categories.json` | `GET /api/categories` |
+| `tags.json` | `GET /api/tags` |
+| `category_media.json` | `GET /api/category/1/media` |
+| `media_detail_directplay.json` | `GET /api/media/{d}` — before any state was written |
+| `media_detail_transcode.json` | `GET /api/media/{t}` — before any state was written |
+| `media_detail_with_state.json` | `GET /api/media/{d}` — after favorite, rating 8, and progress `{file:0, position:1.5, duration:3.0}` |
+| `media_detail_multifile_advanced.json` | `GET /api/media/{t}` — after `watched:true` and progress `{file:0, position:2.9, duration:3.0}`, which crosses 90% of a non-last file and advances the pointer to `(1, 0s)` |
+| `home_populated.json` | `GET /api/home` — after the state writes above |
+| `search_results.json` | `GET /api/search?q=Movie&field=all` |
+| `search_empty.json` | `GET /api/search?q=zzzznope&field=all` |
+| `hls_index.m3u8` | `GET /api/media/{t}/file/0/hls/index.m3u8` |
+| `subtitle.vtt` | `GET /api/media/{d}/file/0/sub/0` — SRT converted to WebVTT per request |
+| `error_shapes.txt` | see below |
+| `SHA256SUMS` | `bash tool/check-fixtures.sh accept` |
+
+`error_shapes.txt` is a transcript, not a payload, because the interesting part
+is the status line and the headers rather than a body:
+
+| Section | Request |
+|---|---|
+| 401 | `GET /api/me` with no cookie |
+| 404 | `GET /api/media/deadbeefdead` |
+| 307 | `GET /api/media/{t}/file/0` — response headers only |
+| 415 | `GET /api/media/{d}/file/0/hls/index.m3u8` — the symmetric refusal |
+| 206 | `GET /api/media/{d}/file/0` with `Range: bytes=0-49` — headers only |
+| 429 | eight consecutive `POST /api/login` with a wrong password |
+
+## Known gaps
+
+Stated so silence does not read as coverage. None of these is claimed by any
+M1 model, so §8 is intact; they land on the `just it` harness at M2/M5.
+
+- **Poster bytes.** `GET /api/media/{id}/poster` is documented but not
+  captured: the seeded items have no poster, so the endpoint 404s. A fixture
+  would have to ship a binary image, and no model decodes it.
+- **HLS segments.** `hls_index.m3u8` is captured; `seg0.ts` is not. It is
+  multi-megabyte binary and nothing in `filefin_core` parses it. R1 already
+  proved the segment fetch works end-to-end
+  (`tool/spikes/r1_headers_across_redirect.sh`).
+- **Header-level 307 behaviour as a client sees it.** `error_shapes.txt`
+  records the status and `Location` from curl. Whether a *player* preserves the
+  `Cookie` across it is R1's question, and R1 answered it empirically.
+- **`Retry-After` value on the 429.** The transcript records the status codes
+  only; the header's exact seconds value is not captured.
+- **Multiple users.** Everything here is `testuser`. Per-user state isolation
+  is untested.
