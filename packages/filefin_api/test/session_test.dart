@@ -49,7 +49,7 @@ void main() {
   });
 
   void serveLogin(StubResponder responder) =>
-      stub.on(urls.login.path, responder);
+      stub.on('POST', urls.login.path, responder);
 
   StubResponse goodLogin([String value = 'sess-1']) => StubResponse.json(
     <String, Object?>{'user': 'testuser', 'admin': true},
@@ -257,6 +257,7 @@ void main() {
       () async {
         await secrets.write(server, SecretKind.session, 'stored-session');
         stub.on(
+          'GET',
           urls.me.path,
           (_) => StubResponse(
             status: 200,
@@ -283,8 +284,17 @@ void main() {
 
     test('a 401 from /api/me is the ordinary F3 path, not an error', () async {
       await secrets.write(server, SecretKind.session, 'expired');
-      stub.on(urls.me.path, (_) => const StubResponse.unauthorized());
+      await secrets.write(server, SecretKind.password, creds.password);
+      stub.on('GET', urls.me.path, (_) => const StubResponse.unauthorized());
+
       await expectLater(sessions.restore(), throwsA(isA<SessionExpired>()));
+
+      // The server has said this cookie is dead, so it does not stay in the
+      // store: keeping it made a second `restore()` re-seed the jar with it
+      // forever. The password stays — renewal is what it is for.
+      expect(await secrets.read(server, SecretKind.session), isNull);
+      expect(await jar.loadForRequest(urls.base), isEmpty);
+      expect(await secrets.read(server, SecretKind.password), creds.password);
     });
   });
 
@@ -296,6 +306,7 @@ void main() {
       // `auth.go:195` writes Go's MaxAge:-1, which goes on the wire as
       // Max-Age=0. Whether cookie_jar honours that is asserted, not assumed.
       stub.on(
+        'POST',
         urls.logout.path,
         (_) => const StubResponse(
           status: 204,
@@ -306,6 +317,14 @@ void main() {
       );
 
       await sessions.logout();
+
+      // The METHOD, asserted directly. `logout` reads nothing back, so every
+      // other assertion here passes just as happily against a GET — which the
+      // real binary answers `200 text/html` from the SPA catch-all, leaving the
+      // session alive forever. `just it` holds the server half of this.
+      final logout = stub.requests.last;
+      expect(logout.path, urls.logout.path);
+      expect(logout.method, 'POST');
 
       expect(await jar.loadForRequest(urls.base), isEmpty);
       expect(await secrets.read(server, SecretKind.session), isNull);
@@ -350,6 +369,7 @@ void main() {
       // out, training them to click through the one dialog F15 exists for.
       await secrets.write(server, SecretKind.certificatePin, 'aa:bb');
       stub.on(
+        'POST',
         urls.logout.path,
         (_) => const StubResponse(
           status: 204,

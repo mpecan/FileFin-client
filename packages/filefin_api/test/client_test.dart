@@ -40,7 +40,7 @@ void main() {
       serveLogin(stub, urls);
       await client.login(creds);
       var protectedHits = 0;
-      stub.on(urls.categories.path, (request) {
+      stub.on('GET', urls.categories.path, (request) {
         protectedHits++;
         return request.cookie == 'filefin_session=sess-2'
             ? categoriesJson()
@@ -66,6 +66,7 @@ void main() {
       serveLogin(stub, urls);
       await client.login(creds);
       stub.on(
+        'GET',
         urls.categories.path,
         (request) => request.cookie == 'filefin_session=sess-2'
             ? categoriesJson()
@@ -84,7 +85,11 @@ void main() {
     test('exactly one retry: a second 401 is a session loss', () async {
       serveLogin(stub, urls);
       await client.login(creds);
-      stub.on(urls.categories.path, (_) => const StubResponse.unauthorized());
+      stub.on(
+        'GET',
+        urls.categories.path,
+        (_) => const StubResponse.unauthorized(),
+      );
 
       await expectLater(client.categories(), throwsA(isA<SessionExpired>()));
 
@@ -96,6 +101,7 @@ void main() {
       serveLogin(stub, urls);
       await client.login(creds);
       stub.on(
+        'GET',
         urls.categories.path,
         (request) => request.cookie == 'filefin_session=sess-2'
             ? categoriesJson()
@@ -119,8 +125,13 @@ void main() {
       serveLogin(stub, urls);
       await client.login(creds);
       stub
-        ..on(urls.categories.path, (_) => const StubResponse.unauthorized())
         ..on(
+          'GET',
+          urls.categories.path,
+          (_) => const StubResponse.unauthorized(),
+        )
+        ..on(
+          'POST',
           urls.login.path,
           (_) => const StubResponse(
             status: 429,
@@ -142,10 +153,80 @@ void main() {
       );
     });
 
+    test('a 401 storm burns exactly ONE login, not one per request', () async {
+      // The generation guard and the in-flight future bound CONCURRENCY.
+      // Nothing bounded REPETITION: a renewal rejected with
+      // `InvalidCredentials` left no state, so the next request re-submitted
+      // the same known-bad password. Ten sequential calls sent ten logins into
+      // a server that locks the account after five (`loginlimit.go:15-27`) —
+      // reachable by an attacker who can force 401s and, far more often, by a
+      // password changed server-side while this client still holds the old one.
+      serveLogin(stub, urls);
+      await client.login(creds);
+      stub
+        ..on('GET', urls.me.path, (_) => const StubResponse.unauthorized())
+        ..on('POST', urls.login.path, (_) => const StubResponse.unauthorized());
+      final before = logins.count;
+
+      final outcomes = <Object>[];
+      for (var attempt = 0; attempt < 10; attempt++) {
+        try {
+          await client.me();
+        } on FileFinApiException catch (e) {
+          outcomes.add(e);
+        }
+      }
+
+      expect(outcomes, everyElement(isA<InvalidCredentials>()));
+      expect(outcomes, hasLength(10));
+      expect(
+        logins.count - before,
+        1,
+        reason: 'the stored password is known bad after the first refusal',
+      );
+    });
+
+    test('supplying a new password clears the refusal latch', () async {
+      // The latch must not become a wedge. A caller that hands over fresh
+      // credentials is the event it is waiting for, and the account limiter
+      // still guards the rest.
+      serveLogin(stub, urls);
+      await client.login(creds);
+      stub
+        ..on(
+          'GET',
+          urls.me.path,
+          (request) => request.cookie == 'filefin_session=x'
+              ? StubResponse.json(<String, Object?>{
+                  'user': 'testuser',
+                  'admin': true,
+                })
+              : const StubResponse.unauthorized(),
+        )
+        ..on('POST', urls.login.path, (_) => const StubResponse.unauthorized());
+      await expectLater(client.me(), throwsA(isA<InvalidCredentials>()));
+
+      stub.on(
+        'POST',
+        urls.login.path,
+        (_) => StubResponse.json(
+          <String, Object?>{'user': 'testuser', 'admin': true},
+          headers: {'set-cookie': 'filefin_session=x; Path=/'},
+        ),
+      );
+      await client.login(creds);
+
+      expect((await client.me()).user, 'testuser');
+    });
+
     test('a login that itself 401s does not loop', () async {
       // The structural guard: `/api/login` runs on a Dio with no
       // AuthInterceptor, so its 401 cannot reach the retry logic at all.
-      stub.on(urls.login.path, (_) => const StubResponse.unauthorized());
+      stub.on(
+        'POST',
+        urls.login.path,
+        (_) => const StubResponse.unauthorized(),
+      );
 
       await expectLater(
         client.login(creds),
@@ -156,7 +237,11 @@ void main() {
     });
 
     test('a 401 with no stored password fails loudly, once', () async {
-      stub.on(urls.categories.path, (_) => const StubResponse.unauthorized());
+      stub.on(
+        'GET',
+        urls.categories.path,
+        (_) => const StubResponse.unauthorized(),
+      );
 
       await expectLater(client.categories(), throwsA(isA<SessionExpired>()));
 
@@ -168,7 +253,7 @@ void main() {
   group('the caller stays in control (NF5)', () {
     test('a cancelled request is RequestCancelled, not a failure', () async {
       final token = CancelToken();
-      stub.on(urls.categories.path, (_) {
+      stub.on('GET', urls.categories.path, (_) {
         token.cancel();
         return null;
       });
@@ -182,7 +267,7 @@ void main() {
       client.close();
       client = build(timeout: const Duration(milliseconds: 300));
       addTearDown(client.close);
-      stub.on(urls.categories.path, (_) => null);
+      stub.on('GET', urls.categories.path, (_) => null);
       await expectLater(
         client.categories(),
         throwsA(

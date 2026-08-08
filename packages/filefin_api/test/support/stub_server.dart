@@ -45,12 +45,26 @@ class StubServer {
   /// How many requests arrived for [path].
   int countFor(String path) => requests.where((r) => r.path == path).length;
 
-  /// Registers [responder] for [path]. Later registrations replace earlier.
+  /// Registers [responder] for [method] on [path]. Later registrations replace
+  /// earlier.
   ///
   /// [path] comes from `FileFinUrls(...).state.path`, never a string literal,
   /// so renaming a route in `ApiPaths` cannot leave a stub silently answering
   /// the old one.
-  void on(String path, StubResponder responder) => _routes[path] = responder;
+  ///
+  /// **[method] is a required positional argument, and that is the point.**
+  /// This stub used to route on the path alone, and because the path also comes
+  /// from the code under test, a route or method error was *symmetric* —
+  /// invisible on both sides. Measured at M2: changing `logout` from `postUri`
+  /// to `getUri` left all 772 unit tests green while, against the real binary,
+  /// the session stayed alive on the server forever (`GET /api/logout` is
+  /// answered `200 text/html` by the SPA catch-all). A default value would put
+  /// the same hole back for whichever method the default is not, so there is
+  /// none: a registration has to say what it is registering.
+  void on(String method, String path, StubResponder responder) =>
+      _routes[_key(method, path)] = responder;
+
+  static String _key(String method, String path) => '$method $path';
 
   /// Stops serving and drops every connection.
   Future<void> close() => _server.close(force: true);
@@ -68,7 +82,12 @@ class StubServer {
     );
     requests.add(recorded);
 
-    final responder = _routes[recorded.path] ?? _spaCatchAll;
+    // An unmatched METHOD falls through to the SPA catch-all exactly as an
+    // unmatched path does, because that is what the real server answers: its
+    // catch-all is registered outside the route table (`server.go:352`), so a
+    // method mismatch is `200 text/html`, never a 405.
+    final responder =
+        _routes[_key(recorded.method, recorded.path)] ?? _spaCatchAll;
     final reply = responder(recorded);
     if (reply == null) {
       // A responder returning null never answers at all, which is how the

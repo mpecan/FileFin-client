@@ -26,6 +26,9 @@ import 'dart:io';
 ///    and `cache.db-shm` come along with it: SQLite runs in WAL mode, so a copy
 ///    without the `-wal` file loses committed rows and the library comes back
 ///    empty.
+/// The account `tool/testserver/seed.sh` installs, as `meta.json` keys it.
+const seededUser = 'testuser';
+
 class FixtureRun {
   FixtureRun._(this.root, this.port);
 
@@ -65,7 +68,144 @@ class FixtureRun {
     json['dataDir'] = '${root.path}/data';
     json['bindAddress'] = '127.0.0.1';
     await config.writeAsString(jsonEncode(json));
+    await _repointCache(root, from: '${seeded.path}/data');
+    await _decorrelateWatched(root);
     return FixtureRun._(root, port);
+  }
+
+  /// Points the copied SQLite cache at the copied media.
+  ///
+  /// **Without this the copy is not isolated at all, and the divergence is
+  /// silent.** `media.path` and `media_files.path` are stored ABSOLUTE, so a
+  /// copied cache still addresses the shared seed. Two consequences, both
+  /// measured against v0.20.3:
+  ///
+  /// 1. every suite read media bytes — and computed `size` — from the seed, so
+  ///    a suite that ever mutated a file would corrupt every other suite;
+  /// 2. `relTo(dataDir, f.Path)` returns the path **unchanged** when the row is
+  ///    not under `dataDir`, so `files[].path` came back as
+  ///    `/Users/…/filefin-test/run/data/Shows/…mkv` where the committed fixture
+  ///    and `docs/server-api.md` both say "relative to the data dir". An M3
+  ///    playback milestone that trusted `path` would have been testing a shape
+  ///    the real world never sends.
+  ///
+  /// The rows are rewritten rather than the cache dropped, because the cache
+  /// also holds `users` and `user_state` — dropping it would delete the account
+  /// every suite logs in as. `sqlite3` does the edit because the alternative is
+  /// a native SQLite dependency in a package that has no other use for one
+  /// (§4); `run-integration.sh` refuses when it is missing, the way it refuses
+  /// a missing `ffmpeg`.
+  ///
+  /// It **verifies**, and that is not ceremony: an upstream schema change that
+  /// moved these columns would otherwise leave the harness silently doing
+  /// nothing and the absolute paths back.
+  static Future<void> _repointCache(
+    Directory root, {
+    required String from,
+  }) async {
+    final db = _cacheDatabase(root);
+    final to = '${root.path}/data';
+    const tables = ['media', 'media_files'];
+    final sql = StringBuffer();
+    for (final table in tables) {
+      sql.writeln(
+        "UPDATE $table SET path = replace(path, '${_q(from)}', '${_q(to)}') "
+        "WHERE path LIKE '${_q(from)}%';",
+      );
+    }
+    sql.writeln('PRAGMA wal_checkpoint(TRUNCATE);');
+    for (final table in tables) {
+      sql.writeln(
+        "SELECT '$table', sum(path LIKE '${_q(from)}%'), "
+        "sum(path LIKE '${_q(to)}/%') FROM $table;",
+      );
+    }
+    final result = await Process.run('sqlite3', [db.path, '$sql']);
+    if (result.exitCode != 0) {
+      throw StateError(
+        'could not repoint ${db.path} at $to: ${result.stderr}\n'
+        'Is `sqlite3` on PATH? `just it` checks for it; a suite run directly '
+        'does not.',
+      );
+    }
+    // `wal_checkpoint` prints a row of its own, so the report lines are picked
+    // out by their table name rather than by position.
+    final reported = {
+      for (final line in '${result.stdout}'.trim().split('\n'))
+        if (tables.contains(line.split('|').first)) line.split('|').first: line,
+    };
+    for (final table in tables) {
+      final parts = reported[table]?.split('|');
+      if (parts == null || parts[1] != '0' || parts[2] == '0') {
+        throw StateError(
+          'repointing the cache left $table wrong (${reported[table]}). The '
+          'columns holding absolute media paths have moved; find them with '
+          '`sqlite3 <cache.db> .schema` and update this list.',
+        );
+      }
+    }
+  }
+
+  /// The copied cache, wherever `os.UserCacheDir()` put it for this platform.
+  ///
+  /// Searched rather than hard-coded: Go picks `$HOME/Library/Caches` on macOS
+  /// and `$XDG_CACHE_HOME`/`$HOME/.cache` on Linux, and a harness that knew
+  /// only one of them would fail on the other machine with "no media" rather
+  /// than with a sentence.
+  static File _cacheDatabase(Directory root) {
+    final home = Directory('${root.path}/home');
+    final found = home
+        .listSync(recursive: true, followLinks: false)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('/cache.db'));
+    if (found.isEmpty) {
+      throw StateError('no cache.db under ${home.path} — the seed is stale');
+    }
+    return found.first;
+  }
+
+  /// SQL single-quote escaping, for the two paths interpolated above.
+  static String _q(String value) => value.replaceAll("'", "''");
+
+  /// Makes `watched` the OPPOSITE of `transcode`, in every copy, on every
+  /// machine.
+  ///
+  /// **The two were perfectly correlated in the seeded library, so the one
+  /// assertion the whole playback design turns on proved nothing.** The show is
+  /// HEVC (`transcode: true`) and `tool/testserver/capture_fixtures.sh` marks it
+  /// watched; the film is H.264 and is not. So `transcode: json['watched']`
+  /// decoded every live payload correctly and all nineteen integration tests
+  /// stayed green — in the test whose own comment calls this "the one thing the
+  /// whole playback design turns on (SPEC.md §3.4)". Marking the DIRECT-PLAY
+  /// item watched and the transcoding one unwatched makes that substitution
+  /// wrong in both directions at once.
+  ///
+  /// It also makes the suite **reproducible**. `run-integration.sh` seeds only
+  /// when `$RUN/data` is missing, so whether a machine's library carried this
+  /// per-user state depended on whether fixtures had ever been captured there —
+  /// two machines, two different libraries, one of them silently blind. State
+  /// the copy needs is written by the copy.
+  ///
+  /// Per-user state lives in the item's own `meta.json` under `state.<user>`
+  /// (`importer.go`); the cache's `user_state` table is a projection the server
+  /// rebuilds from it, so this is the one place worth writing. Only `watched`
+  /// is touched — `progress` stays, because it is what moves `continueIndex`
+  /// off zero and a later milestone will want it.
+  static Future<void> _decorrelateWatched(Directory root) async {
+    final metas = Directory('${root.path}/data')
+        .listSync(recursive: true, followLinks: false)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('/meta.json'));
+    for (final meta in metas) {
+      final json = jsonDecode(meta.readAsStringSync()) as Map<String, Object?>;
+      final state = (json['state'] as Map<String, Object?>?) ?? {};
+      final user = (state[seededUser] as Map<String, Object?>?) ?? {};
+      user['watched'] = meta.path.contains('/Films/');
+      user['updated'] = user['updated'] ?? 1;
+      state[seededUser] = user;
+      json['state'] = state;
+      meta.writeAsStringSync(jsonEncode(json));
+    }
   }
 
   /// The base URL a client should be pointed at.

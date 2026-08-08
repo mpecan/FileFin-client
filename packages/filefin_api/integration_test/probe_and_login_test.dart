@@ -93,11 +93,31 @@ void main() {
   });
 
   test('logging out really ends the session server-side', () async {
+    // **Asserted through a raw client the code under test cannot repair.**
+    // Every local assertion here — the jar emptied, both secrets deleted, the
+    // next call 401ing — happens in `logout`'s `finally` block whether or not
+    // the server was ever told. Measured at M2: changing `postUri` to `getUri`
+    // left all 772 unit tests and all 19 integration tests green, while
+    // `GET /api/logout` was answered `200 text/html` by the SPA catch-all and
+    // the session stayed valid on the server forever. The only evidence that
+    // distinguishes the two is the server's own answer to the dead cookie.
     await client.login(seededCredentials);
     expect(await client.me(), isA<AuthResult>());
+    final cookie = await secrets.read(seededServer, SecretKind.session);
+    expect(cookie, isNotNull);
+    expect(
+      await meStatusWithCookie(server.baseUrl, cookie!),
+      200,
+      reason: 'the captured cookie is a live session before the logout',
+    );
 
     await client.logout();
 
+    expect(
+      await meStatusWithCookie(server.baseUrl, cookie),
+      401,
+      reason: 'the server must have destroyed the session, not just this app',
+    );
     // The cookie is gone locally AND the password with it, so the 401 that
     // follows cannot be silently repaired — which is what "signed out" has to
     // mean for it to mean anything.

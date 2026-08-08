@@ -28,7 +28,7 @@ void main() {
   /// `FileFinUrls` rather than typed out, so renaming the route in `ApiPaths`
   /// cannot leave this stub answering the old one.
   void serveState(StubResponse response) =>
-      stub.on(urls.state.path, (_) => response);
+      stub.on('GET', urls.state.path, (_) => response);
 
   test('a captured real /api/state is a FileFin server (F1)', () async {
     serveState(
@@ -147,7 +147,7 @@ void main() {
       ),
     );
     addTearDown(slow.close);
-    stub.on(urls.state.path, (_) => null);
+    stub.on('GET', urls.state.path, (_) => null);
     return expectLater(
       probe(dio: slow, urls: urls),
       completion(
@@ -217,7 +217,7 @@ void main() {
     () async {
       final token = CancelToken();
       serveState(StubResponse.json({'needsSetup': false, 'version': '1'}));
-      stub.on(urls.state.path, (_) {
+      stub.on('GET', urls.state.path, (_) {
         token.cancel();
         return null;
       });
@@ -240,6 +240,41 @@ void main() {
     expect(stub.requests, hasLength(1));
     expect(stub.requests.single.method, 'GET');
     expect(stub.requests.single.path, '/api/state');
+  });
+
+  test('no verdict carries a password out of the URL (§9, NF4)', () async {
+    // `ProbeResult` is F1's user-facing dialog text — the string most likely to
+    // reach a screenshot, a bug report or a log. A *saved server* URL is typed
+    // by the user, and `https://sam:hunter2@host/` is exactly the shape
+    // `redactUserInfo` was written for; every `FileFinApiException.toString()`
+    // applies it and, until M2's review, none of the probe's four messages did.
+    //
+    // All four arms are provoked, because three of them redacting is not the
+    // property — "no verdict leaks" is.
+    final credentialled = FileFinUrls(
+      stub.baseUrl.replace(userInfo: 'sam:hunter2'),
+    );
+    final reasons = <String>[];
+
+    Future<void> collect() async {
+      final result = await probe(dio: dio, urls: credentialled);
+      reasons.add((result as NotAFileFinServer).reason);
+    }
+
+    await collect(); // the SPA catch-all: not application/json
+    stub.on('GET', credentialled.state.path, (_) => _served);
+    await collect(); // JSON, but missing both documented keys
+    stub.on('GET', credentialled.state.path, (_) => _truncated);
+    await collect(); // JSON we could not read
+    stub.on('GET', credentialled.state.path, (_) => _refused);
+    await collect(); // a non-2xx, mapped and interpolated
+
+    expect(reasons, hasLength(4));
+    for (final reason in reasons) {
+      expect(reason, contains('127.0.0.1'));
+      expect(reason, isNot(contains('hunter2')));
+      expect(reason, isNot(contains('sam')));
+    }
   });
 
   test('a probe result is exhaustively switchable with no default arm', () {
@@ -270,3 +305,17 @@ void main() {
     );
   });
 }
+
+/// The three registered answers the redaction test walks through, one per
+/// `NotAFileFinServer` message that interpolates the address.
+final StubResponse _served = StubResponse.json(<String, Object?>{});
+const StubResponse _truncated = StubResponse(
+  status: 200,
+  body: '{"needsSetup": fal',
+  contentType: 'application/json',
+);
+const StubResponse _refused = StubResponse(
+  status: 502,
+  body: 'bad gateway',
+  contentType: 'text/plain',
+);

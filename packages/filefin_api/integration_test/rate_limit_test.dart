@@ -1,6 +1,7 @@
 @Timeout(Duration(seconds: 60))
 library;
 
+import 'package:dio/dio.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:test/test.dart';
 
@@ -65,6 +66,14 @@ void main() {
     // The client-side half, measured end to end: once blocked, `login` throws
     // before it reaches the network. Retrying into a limiter is how a locked
     // account stays locked.
+    //
+    // **Counted, not timed.** This used to assert that the refusal took under
+    // 100 ms, which cannot discriminate: a loopback 429 was measured at
+    // 0.31 ms, three hundred times under the threshold, so making
+    // `_refuseWhileBlocked` a no-op kept the test green — the client went to
+    // the network, the server 429'd again, and the same typed error arrived.
+    // A counting interceptor on `authDio` observes the thing the test claims
+    // to be about, the way the unit suite already does.
     final server = await startServer();
     final client = FileFinClient.forServer(
       server: seededServer,
@@ -72,6 +81,8 @@ void main() {
       secrets: InMemorySecretStore(),
     );
     addTearDown(client.close);
+    final logins = _LoginCounter();
+    client.authDio.interceptors.add(logins);
     final wrong = Credentials(
       username: seededCredentials.username,
       password: 'wrong',
@@ -93,12 +104,26 @@ void main() {
       reason: 'eight wrong passwords must trip the limit',
     );
 
-    final before = DateTime.now();
+    final sent = logins.count;
+    expect(sent, greaterThan(0), reason: 'the interceptor is really counting');
+
     await expectLater(client.login(wrong), throwsA(isA<RateLimited>()));
+
     expect(
-      DateTime.now().difference(before).inMilliseconds,
-      lessThan(100),
+      logins.count,
+      sent,
       reason: 'refusing locally must not involve a round trip',
     );
   });
+}
+
+/// Counts `POST /api/login` at the transport level.
+class _LoginCounter extends Interceptor {
+  int count = 0;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (options.path.endsWith('/api/login')) count++;
+    handler.next(options);
+  }
 }

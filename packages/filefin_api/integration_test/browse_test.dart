@@ -74,6 +74,37 @@ void main() {
     expect(film.files, hasLength(1));
     expect(film.files.single.transcode, isFalse);
     expect(film.files.single.season, 0, reason: '0 for a single-file item');
+
+    // DECORRELATION, and it is the point of this test rather than a detail of
+    // it. In the seeded library the transcoding item was also the watched one,
+    // so `transcode: json['watched']` decoded every live payload correctly and
+    // all nineteen integration tests stayed green. `FixtureRun` now writes the
+    // opposite state into every copy, and these four lines are what makes the
+    // substitution wrong in both directions at once.
+    expect(show.files.every((f) => f.watched), isFalse);
+    expect(film.files.single.watched, isTrue);
+    expect(
+      show.files.map((f) => f.transcode).toSet(),
+      isNot(show.files.map((f) => f.watched).toSet()),
+      reason: "transcode is the server's codec verdict; watched is user state",
+    );
+  });
+
+  test('files[].path is RELATIVE to the data dir, as documented', () async {
+    // `relTo(dataDir, f.Path)` returns the row unchanged when it is not under
+    // `dataDir`, and the cache stores absolute paths — so a copied library that
+    // still pointed at the seed answered `files[].path` ABSOLUTE, diverging
+    // from `media_detail_directplay.json` and from `docs/server-api.md` without
+    // one test noticing. M3's playback work reads this field.
+    final categories = await client.categories();
+    final films = categories.firstWhere((c) => c.leaf == 'Films');
+    final detail = await client.mediaDetail(
+      (await client.categoryMedia(films.id)).single.id,
+    );
+
+    final path = detail.files.single.path;
+    expect(path, isNot(startsWith('/')));
+    expect(path, 'Films/(2020) Direct Play Movie/(2020) Direct Play Movie.mp4');
   });
 
   test('the rich metadata blocks survive the round trip (§8)', () async {

@@ -29,7 +29,7 @@ void main() {
 
   group('endpoints round-trip the captured payloads (§8)', () {
     test('categories', () async {
-      stub.on(urls.categories.path, (_) => categoriesJson());
+      stub.on('GET', urls.categories.path, (_) => categoriesJson());
       final result = await client.categories();
       expect(result.map((c) => c.id), [
         const CategoryId(1),
@@ -41,6 +41,7 @@ void main() {
     test('categoryMedia', () async {
       final url = urls.categoryMedia(const CategoryId(1));
       stub.on(
+        'GET',
         url.path,
         (_) => StubResponse(
           status: 200,
@@ -56,6 +57,7 @@ void main() {
     test('mediaDetail', () async {
       const id = MediaId('e4285edb34d5');
       stub.on(
+        'GET',
         urls.mediaDetail(id).path,
         (_) => StubResponse(
           status: 200,
@@ -71,6 +73,7 @@ void main() {
 
     test('me', () async {
       stub.on(
+        'GET',
         urls.me.path,
         (_) => StubResponse(
           status: 200,
@@ -83,6 +86,7 @@ void main() {
 
     test('probe, on the client, does not go through F3', () async {
       stub.on(
+        'GET',
         urls.state.path,
         (_) => StubResponse(
           status: 200,
@@ -95,6 +99,7 @@ void main() {
 
     test('a JSON object where an array belongs fails the response', () {
       stub.on(
+        'GET',
         urls.categories.path,
         (_) => StubResponse.json(<String, Object?>{'not': 'a list'}),
       );
@@ -107,7 +112,7 @@ void main() {
     test('a list whose element is not an object fails the whole response', () {
       // NOT filtered out. Dropping the bad row silently is the failure G5
       // forbids; the caller sees a loud error naming the shape instead.
-      stub.on(urls.categories.path, (_) => StubResponse.json([1, 2]));
+      stub.on('GET', urls.categories.path, (_) => StubResponse.json([1, 2]));
       return expectLater(
         client.categories(),
         throwsA(isA<MalformedResponse>()),
@@ -124,6 +129,7 @@ void main() {
       var issued = 0;
       stub
         ..on(
+          'GET',
           urls.state.path,
           (_) => StubResponse(
             status: 200,
@@ -131,14 +137,17 @@ void main() {
             contentType: 'application/json',
           ),
         )
-        ..on(urls.login.path, (_) {
+        ..on('POST', urls.login.path, (_) {
           issued++;
-          return StubResponse.json(
-            <String, Object?>{'user': 'testuser', 'admin': true},
+          return StubResponse(
+            status: 200,
+            body: fixtureText('login.json'),
+            contentType: 'application/json',
             headers: {'set-cookie': 'filefin_session=live-$issued; Path=/'},
           );
         })
         ..on(
+          'POST',
           urls.logout.path,
           (_) => const StubResponse(
             status: 204,
@@ -148,6 +157,7 @@ void main() {
           ),
         )
         ..on(
+          'GET',
           urls.categories.path,
           (r) => r.cookie == 'filefin_session=live-1'
               ? categoriesJson()
@@ -163,7 +173,17 @@ void main() {
       addTearDown(wired.close);
 
       expect(await wired.probeServer(), isA<FileFinServer>());
-      expect((await wired.login(creds)).user, 'testuser');
+      // The whole captured `login.json`, not just `user` (§8). The hand-written
+      // literal this replaced omitted the three fields below, which the real
+      // server does send — so the login happy path proved only that we can
+      // spell our own field names, and the fixture `check-fixtures.sh` keeps a
+      // checksum of was read by no test at all.
+      final signedIn = await wired.login(creds);
+      expect(signedIn.user, 'testuser');
+      expect(signedIn.admin, isTrue);
+      expect(signedIn.alias, '');
+      expect(signedIn.mdlUsername, '');
+      expect(signedIn.malUsername, '');
       expect(await wired.categories(), hasLength(2));
       expect(await secrets.read(serverId, SecretKind.password), creds.password);
 

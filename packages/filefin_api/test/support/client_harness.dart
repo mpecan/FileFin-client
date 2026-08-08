@@ -4,6 +4,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 
+import 'fixtures.dart';
 import 'stub_server.dart';
 
 /// The saved server every client test talks to.
@@ -84,12 +85,20 @@ class ClientHarness {
 /// `sess-1`, `sess-2`, … so a test can assert *which* session a request
 /// carried rather than merely that it carried one — which is the difference
 /// between proving the replay used the new cookie and assuming it did.
+///
+/// The body is the **captured** `login.json` (§8), not a hand-written literal.
+/// The literal it replaced said `{"user":…,"admin":…}` and omitted `alias`,
+/// `mdlUsername` and `malUsername`, which the real server does send — so the
+/// happy path proved we can spell our own field names, and the fixture that
+/// `check-fixtures.sh` verifies the checksum of was read by nothing.
 void serveLogin(StubServer stub, FileFinUrls urls) {
   var issued = 0;
-  stub.on(urls.login.path, (_) {
+  stub.on('POST', urls.login.path, (_) {
     issued++;
-    return StubResponse.json(
-      <String, Object?>{'user': 'testuser', 'admin': true},
+    return StubResponse(
+      status: 200,
+      body: fixtureText('login.json'),
+      contentType: 'application/json',
       headers: {
         'set-cookie':
             'filefin_session=sess-$issued; Path=/; HttpOnly; SameSite=Lax',
