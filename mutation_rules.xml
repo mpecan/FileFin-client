@@ -303,6 +303,49 @@
     <regex pattern="if \(x &lt; 0\) return 0;"/>
     <regex pattern="targetSeconds &gt; state\.pointer!\.seconds"/>
 
+    <!-- `PosterKey.hashCode`'s argument order. The builtin argument-swap rule
+         produces `Object.hash(media, server, size)` and
+         `Object.hash(server, size, media)`, and NEITHER is killable — not
+         "hard to kill", not killable at all.
+
+         `hashCode`'s entire contract is `a == b` implies
+         `a.hashCode == b.hashCode`, and every permutation of the same three
+         fields satisfies it: two keys whose fields match hash the same under
+         any order, and two keys whose fields differ hash differently under any
+         order. Checked by hand rather than assumed — including the swapped
+         pair `(ServerId('a'), MediaId('b'))` vs `(ServerId('b'),
+         MediaId('a'))`, which the first attempt at a test used: under the
+         mutant those two simply exchange hashes and remain distinct, so the
+         assertion passes either way. Collision *distribution* differs, and
+         distribution is not a specified behaviour.
+
+         The `==` on the line above is a different matter and IS killed: field
+         order there is observable, and `poster_image_provider_test.dart`
+         asserts it.
+
+         Excluded by EXACT TEXT, so an edit that changes the shape simply stops
+         matching and the mutants come back.
+
+         THE PATTERN MATCHES THE WHOLE STATEMENT, AND IT HAS TO. Measured while
+         adding this: `Object\.hash\(server, media, size\)` — which contains
+         the arguments the rule rewrites — excluded NOTHING, and so did the
+         broader `Object\.hash\([^)]*\)`. Both ran clean and both left the two
+         mutants reported. An exclusion appears to take effect only when its
+         match covers the entire range the rule replaces, and a partial pattern
+         fails SILENTLY: the run looks identical to one with no exclusion at
+         all. Anyone adding an exclusion here should check the mutant count
+         actually moved (53 with this line, 56 without) rather than trusting
+         that a plausible pattern did something.
+
+         The cost is three mutants rather than two: a third permutation was
+         already being killed and is now not asked about either. Stated rather
+         than rounded down.
+
+         RETIREMENT CONDITION: the day this class stops needing a hand-written
+         hashCode — a `@freezed` or a record would generate one and take it out
+         of `dart_lib_sources`' hand-written scope entirely. -->
+    <regex pattern="int get hashCode => Object\.hash\(server, media, size\);"/>
+
     <!-- ++ and -- : the builtin rule rewrites them into each other via the
          arithmetic rules and produces mostly false positives on index maths.
          Retires when the resume engine's index arithmetic is expressed without
