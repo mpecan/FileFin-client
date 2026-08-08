@@ -1,0 +1,5 @@
+package dev.filefin.filefin_mobile
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()

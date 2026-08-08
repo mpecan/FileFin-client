@@ -1,0 +1,45 @@
+name: filefin_mobile
+description: >-
+  The FileFin mobile client: the app shell, the category tree, the virtualised
+  poster grid and the detail view. The only layer in this tree that draws
+  anything, and the only one that may depend on Flutter (CLAUDE.md §6).
+publish_to: none
+version: 0.1.0
+
+environment:
+  # Matches the workspace root and both packages. Deliberately NOT the
+  # `^3.12.2` `flutter create` writes: a member declaring a language version
+  # above the root's would let code compile here that cannot compile in
+  # `filefin_core`, and the scaffolded `main.dart` this replaces used the 3.12
+  # dot-shorthand syntax that the rest of the tree cannot read.
+  sdk: ^3.8.0
+
+# Resolved against the workspace root's single lockfile, so `just mutants` and
+# `just coverage-check` see the same package versions on every machine.
+resolution: workspace
+
+# §1 and §4: a dependency arrives in the commit that first imports it.
+# `filefin_core`, `filefin_api`, `path_provider` and the two platform-interface
+# packages that make `main()` coverable are all M3.4/M3.5 and are not here yet —
+# `just deps` would report each of them unimported, which is the gate doing its
+# job. Every non-SDK version added later is pinned exactly, per
+# docs/architecture.md's "exact on introduction".
+dependencies:
+  # The framework this package's whole lib/ is written in.
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  # The runner `just test`, `just coverage` and `just it` invoke for this
+  # package. `flutter test`, not `dart test` — see tool/run-tests.sh.
+  flutter_test:
+    sdk: flutter
+
+# `cupertino_icons` and `flutter_lints` were deleted from `flutter create`'s
+# output in the same commit that produced it. Nothing imports the first, and
+# the tree's lint set is `very_good_analysis` via the root
+# `analysis_options.yaml` this package includes (§1, §4).
+flutter:
+  # Ships the Material icon font. `Icons.*` glyphs render as boxes without it,
+  # and the empty state's server glyph is one.
+  uses-material-design: true

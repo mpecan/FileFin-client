@@ -42,10 +42,54 @@ while IFS= read -r pubspec; do
     # `cat` below. Prefer the package's own (a non-workspace package, or a
     # future one resolved standalone), fall back to the root's, and fail loudly
     # rather than passing an argument that silently means "no packages".
+    echo "coverage: $pkg_dir"
+
+    # THE FLUTTER BRANCH. `flutter test --coverage` writes lcov itself — there
+    # is no `.vm.json` hitmap and no `format_coverage` step, so none of the
+    # `--packages` / `--report-on` machinery below applies to it.
+    #
+    # What it writes is PACKAGE-RELATIVE: `SF:lib/src/app.dart`, from
+    # `formatLcov(..., basePath: currentDirectory)` in the tool's
+    # coverage_collector.dart. Measured at M3.0 on the pinned 3.44.9 before a
+    # line of this was written, because the missing-record cross-check further
+    # down anchors on the REPO-relative path and would have matched
+    # `packages/filefin_core/lib/src/app.dart` just as happily.
+    #
+    # The shape is ASSERTED rather than assumed. If a future Flutter emitted
+    # absolute paths, a blind `sed` would produce `SF:apps/mobile/lib//Users/…`
+    # — a record matching no source, so every app source would read as missing
+    # and the gate would fail loudly. That is the good case. The bad case is
+    # the reverse: an `SF:` shape that happens to match after rewriting while
+    # naming something else. So an `SF:` line that does not begin `SF:lib/` is
+    # a hard failure here, where the message can say why.
+    #
+    # Also measured at M3.0: this path DOES honour `// coverage:ignore-file` —
+    # a file carrying one disappears from the lcov entirely. The refusal of
+    # that comment in hand-written lib source (below) therefore protects the
+    # app exactly as it protects the packages, and `dart_lib_sources` already
+    # covers `apps/*/lib`.
+    if [ "${pkg_dir#apps/}" != "$pkg_dir" ]; then
+        raw="$PWD/$OUT/$(basename "$pkg_dir").flutter.lcov"
+        (cd "$pkg_dir" && flutter test --coverage --coverage-path="$raw")
+        [ -s "$raw" ] || fail "flutter test --coverage produced no lcov for $pkg_dir"
+        bad=$(grep '^SF:' "$raw" | grep -cv '^SF:lib/' || true)
+        if [ "$bad" -gt 0 ]; then
+            grep '^SF:' "$raw" | grep -v '^SF:lib/' | sed 's/^/  /'
+            fail "$bad SF: record(s) from 'flutter test --coverage' do not begin 'SF:lib/'.
+       This script rewrites them to repo-relative paths so the missing-record
+       cross-check below can match them. A different shape means that rewrite
+       is now wrong, and a wrong rewrite is a record that silently names no
+       file. Fix the rewrite; do not delete this check."
+        fi
+        sed "s|^SF:lib/|SF:$pkg_dir/lib/|" "$raw" > "$OUT/$(basename "$pkg_dir").lcov"
+        rm -f "$raw"
+        measured=$((measured + 1))
+        continue
+    fi
+
     pkg_config="$pkg_dir/.dart_tool/package_config.json"
     [ -f "$pkg_config" ] || pkg_config=".dart_tool/package_config.json"
     [ -f "$pkg_config" ] || fail "no package_config.json for $pkg_dir — run 'dart pub get'"
-    echo "coverage: $pkg_dir"
     (cd "$pkg_dir" && dart test --coverage="../../$OUT/raw/$(basename "$pkg_dir")")
     # --check-ignore honours `// coverage:ignore-file`, which freezed writes on
     # line 2 of everything it generates. Without it the denominator is mostly

@@ -46,13 +46,30 @@
   not the whole tree.
 -->
 <mutations version="1.1">
-  <commands>
-    <!-- Run from the package directory the mutated file belongs to; the
-         mutants script cds there before invoking mutation_test, so "." is that
-         package. `dart test` (not `flutter test`) — filefin_core is pure Dart
-         and Flutter's runner arrives with the app at M3. -->
-    <command group="test" expected-return="0" working-directory="." timeout="300">dart test</command>
-  </commands>
+  <!--
+    THERE IS DELIBERATELY NO <commands> BLOCK HERE, AND tool/check-mutants.sh
+    FAILS IF ONE COMES BACK.
+
+    The test command is per PACKAGE — `dart test` for `packages/*`, `flutter
+    test --no-pub` for `apps/*` — so it is written into the targets document
+    that script generates, which knows which package it is building.
+
+    A block here would not be an overridable default. Measured at M3.0 against
+    the pinned 1.7.1: a `<commands>` in the rules document runs IN ADDITION to
+    a `<commands>` in the targets document. With `dart test` here and `flutter
+    test` there, `dart test` still ran inside `apps/mobile` and still failed.
+
+    What that failure looked like is recorded because it was milder than
+    predicted: mutation_test runs the command set against unmodified code
+    first, so a command that always fails ABORTS the run ("Running the test
+    commands failed with unmodified code! Aborting.", rc 1) instead of marking
+    every mutant detected. Fail-closed, not a silent 100% over nothing. The
+    refusal in check-mutants.sh stands anyway — the gate could not run on the
+    app at all, and the next global command someone adds may fail less
+    honestly.
+
+    RETIREMENT CONDITION: none. The command belongs with the target.
+  -->
 
   <!--
     THE RULES BLOCK BELOW IS IN TWO HALVES.

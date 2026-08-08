@@ -17,6 +17,7 @@ environment:
 workspace:
   - packages/filefin_core
   - packages/filefin_api
+  - apps/mobile
 
 dev_dependencies:
   # Drives codegen from the workspace root, so `just codegen` is one command

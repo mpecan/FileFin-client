@@ -313,7 +313,34 @@ check_secret_tostring() {
     ' "${files[@]}" || true
 }
 
-CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring"
+# SPEC.md §5.1 from the other end. `core_purity` says `filefin_core` must not
+# reach the network; this says `apps/*` must not reach it EITHER — not because
+# the app is pure, but because `filefin_api` is the only place a `401` is
+# interpreted (F3), the only place a certificate is pinned (F15) and the only
+# place a cookie jar exists. A widget that opens its own socket bypasses all
+# three at once, and every one of them fails silently rather than loudly: the
+# request simply succeeds, unauthenticated, unpinned, and against a server
+# whose identity nobody checked.
+#
+# The concrete temptation this exists for is `Image.network` and the poster
+# route. That route sits behind `s.auth`, so a raw `HttpClient` fetch of it
+# 401s — and the obvious next step is a hand-rolled client with the cookie
+# copied into it, which is F15's bypass written by accident. M3 answers it with
+# a custom `ImageProvider` fetching through `FileFinClient` instead.
+#
+# SCOPE IS `apps/*/lib` AND NOTHING ELSE. `filefin_api` cannot satisfy this —
+# dio and `HttpClient` are its entire job — and `dart_lib_sources` alone would
+# therefore report the layer that is behaving correctly. Tests are out of scope
+# too: `test_live/` sets `HttpOverrides.global = null` to get real sockets back
+# from `flutter_test`'s binding, which is the right thing to do there.
+check_app_no_raw_http() {
+    local files=() f
+    while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources -path 'apps/*')
+    if [ ${#files[@]} -eq 0 ]; then return 0; fi
+    grep -nHE "package:dio/|package:http/|HttpClient\(|HttpOverrides|IOClient" "${files[@]}" || true
+}
+
+CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http"
 
 # --- ratchet ----------------------------------------------------------------
 

@@ -28,6 +28,61 @@ command -v dart >/dev/null 2>&1 || fail "dart not on PATH"
 
 git rev-parse --verify --quiet "$BASE" >/dev/null || fail "FILEFIN_MUTANTS_BASE=$BASE is not a valid revision"
 
+# THE TEST COMMAND IS PER PACKAGE, AND IT LIVES IN THE GENERATED TARGETS FILE
+# BELOW — NOT IN mutation_rules.xml. This refusal is what keeps it that way.
+#
+# Measured at M3.0 against the pinned mutation_test 1.7.1: a `<commands>` block
+# in the rules document runs IN ADDITION to a `<commands>` block in the targets
+# document. It is not an overridable default. With `dart test` in the rules and
+# `flutter test` in the targets, `dart test` still ran inside `apps/mobile` and
+# still failed — measured, not reasoned.
+#
+# What that failure looks like is worth recording, because it is milder than
+# expected and the expectation is what this comment is for. mutation_test runs
+# the command set against UNMODIFIED code first, so a command that always fails
+# aborts the run ("Running the test commands failed with unmodified code!
+# Aborting.", rc 1) rather than marking every mutant detected. Both halves of
+# this script then refuse it: rc != 0 sets `status`, and no "Found N mutations"
+# line means `found` is 0, which is its own hard failure. So the old wiring was
+# fail-CLOSED, not the silent 100%-over-nothing this comment was drafted to
+# warn about. It still cannot run the app's suite at all, which is reason
+# enough — and the next global command someone adds may not fail so honestly.
+#
+# The check reads XML, not text. `grep -q` over the raw file was the first
+# version and it failed on a CORRECT rules file: the comment explaining why
+# there is no commands block contains the element name, so the gate refused the
+# very state it exists to enforce. That is CLAUDE.md's "an assertion satisfiable
+# in prose" with the sign flipped — a rule a comment can break is as broken as
+# one a comment can satisfy. mutation_test does not read comments, so neither
+# does this: `<!-- … -->` spans are stripped first, across lines.
+strip_xml_comments() {
+    awk '
+        {
+            res = ""; line = $0
+            while (line != "") {
+                if (incomment) {
+                    i = index(line, "-->")
+                    if (i == 0) { line = "" } else { line = substr(line, i + 3); incomment = 0 }
+                } else {
+                    i = index(line, "<!--")
+                    if (i == 0) { res = res line; line = "" }
+                    else { res = res substr(line, 1, i - 1); line = substr(line, i + 4); incomment = 1 }
+                }
+            }
+            print res
+        }
+    ' "$1"
+}
+
+if strip_xml_comments "$RULES" | grep -q '<commands>'; then
+    fail "$RULES declares a <commands> block.
+       It would run IN ADDITION to the per-package command this script writes
+       into its generated targets file, so every package would also be tested
+       with the wrong runner. Measured at M3.0 on mutation_test 1.7.1. The
+       test command belongs in the targets document, which knows which package
+       it is building. Delete the block from the rules file."
+fi
+
 # The gate's one structural blind spot, and it sat over the place it mattered
 # most. The default BASE is `HEAD`, which is right locally — the working tree vs
 # the last commit is what the commit about to be made is responsible for. But CI
@@ -100,9 +155,34 @@ for pkg in $packages; do
     # template returns the literal path and rc 0, the third fails with rc 1.
     tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/filefin-mutants-XXXXXX")"
     targets="$tmpdir/targets.xml"
+
+    # The runner, by LOCATION, for the same reason tool/run-tests.sh chooses it
+    # that way: `packages/*` is pure Dart, `apps/*` is Flutter. run-tests.sh is
+    # what cross-checks that against the pubspec and fails on a disagreement,
+    # so this is one rule enforced in one place and consulted in two.
+    #
+    # `--no-pub` here and NOT in run-tests.sh, deliberately. This gate runs the
+    # suite once per mutant — tens to hundreds of times — and an implicit `pub
+    # get` on each one costs more than the mutation. run-tests.sh keeps the
+    # implicit resolve so a stale or broken resolution fails there, loudly,
+    # once, instead of being papered over everywhere.
+    case "$pkg" in
+        apps/*)     test_cmd='flutter test --no-pub' ;;
+        packages/*) test_cmd='dart test' ;;
+        *) fail "$pkg is neither under packages/ nor apps/, so there is no rule
+       for which test runner mutation_test should use. Add one here." ;;
+    esac
+
     {
         echo '<?xml version="1.0" encoding="UTF-8"?>'
         echo '<mutations version="1.1">'
+        echo '  <commands>'
+        # working-directory "." is the package: the run below cds there first.
+        # The 300s timeout is the one the NOTE at the bottom of this script
+        # refers to — a mutant killed by it is counted "undetected" and reads
+        # like a real survivor.
+        printf '    <command group="test" expected-return="0" working-directory="." timeout="300">%s</command>\n' "$test_cmd"
+        echo '  </commands>'
         echo '  <files>'
         printf '%s\n' "$changed" | while IFS= read -r f; do
             case "$f" in "$pkg"/*) printf '    <file>%s</file>\n' "${f#"$pkg"/}" ;; esac
@@ -167,7 +247,7 @@ for pkg in $packages; do
         # the 300s command timeout reported exactly that; the same tree run to
         # completion reported 62/62. Failing safe when interrupted is right —
         # this line is so the reader knows which happened.
-        echo "NOTE:  a mutant killed by the 300s command timeout (mutation_rules.xml) is"
+        echo "NOTE:  a mutant killed by the 300s command timeout (set above) is"
         echo "       also counted 'undetected'. If the log above shows a timeout, the"
         echo "       run was interrupted rather than a mutant surviving — re-run"
         echo "       on a quiescent machine before hunting for a missing test."

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  F15 permits a plain `http://` FileFin on a LAN, and Android 9+ (API 28)
+  blocks cleartext by default. Without this file every plain-http server fails
+  on device for a reason that looks nothing like its cause.
+
+  The permission is BASE-SCOPED, not domain-scoped, and that is forced rather
+  than lazy: a saved server is any host the user types — an IP, an mDNS name,
+  a hostname behind a VPN — so there is no domain list to write. F1 shows a
+  visible warning whenever the scheme is `http`, which is where the cost of
+  this decision is paid back to the user.
+
+  `trust-anchors` re-states the system default explicitly. Declaring a
+  base-config without one would REPLACE the platform default rather than
+  extend it, and the app would then trust nothing at all over TLS.
+  F15's own pinning happens above this, in `filefin_api`'s connection factory.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

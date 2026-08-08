@@ -50,7 +50,19 @@ jobs:
         run: just install-hooks
 
       - name: Resolve dependencies
-        run: dart pub get
+        # `flutter pub get`, not `dart pub get`, and the reason is NOT the one
+        # you would guess. Measured at M3.0 on Flutter 3.44.9: `dart pub get`
+        # resolves this workspace perfectly well once `apps/mobile` joined it,
+        # because the `dart` on PATH here is the Flutter SDK's own and knows
+        # how to resolve `sdk: flutter`. It exits 0 and writes a correct
+        # lockfile.
+        #
+        # What it does NOT write is `apps/mobile/.flutter-plugins-dependencies`,
+        # which is how a plugin (`path_provider`, from M3.5) gets registered
+        # with the Android and iOS builds. `flutter pub get` writes it.
+        # Measured both ways: absent after `dart pub get`, present after
+        # `flutter pub get`.
+        run: flutter pub get
 
       - name: just check
         # FILEFIN_MUTANTS_BASE is load-bearing, not decoration. CI checks out a

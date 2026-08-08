@@ -70,9 +70,9 @@ while IFS= read -r pubspec; do
     pkg_dir="$(dirname "$pubspec")"
     pkg_name="$(awk '/^name:/ { print $2; exit }' "$pubspec")"
 
-    # A package's own sources: its lib/, test/, integration_test/, bin/, tool/,
-    # example/. The workspace root deliberately has none, which is why all four
-    # of its tooling dev-dependencies live in the allowlist.
+    # A package's own sources: its lib/, test/, integration_test/, test_live/,
+    # bin/, tool/, example/. The workspace root deliberately has none, which is
+    # why all four of its tooling dev-dependencies live in the allowlist.
     #
     # `integration_test` joined the list at M2 with `just it`. Without it an
     # import in an integration suite was invisible to BOTH halves of this gate:
@@ -80,8 +80,14 @@ while IFS= read -r pubspec; do
     # import there was never reported at all. Dart resolves an undeclared package
     # anyway when a sibling workspace member pulls it in, which is exactly how
     # one survives to break a clean checkout.
+    #
+    # `test_live` joined at M3 for the identical reason in a new location. The
+    # app's live suite cannot live in `integration_test/`: `flutter test
+    # integration_test` is routed to the device path by the tool, which then
+    # demands a connected device. So the directory has a different name, and a
+    # different name is a directory this gate had never heard of.
     srcs=()
-    for sub in lib test integration_test bin tool example; do
+    for sub in lib test integration_test test_live bin tool example; do
         [ -d "$pkg_dir/$sub" ] && srcs+=("$pkg_dir/$sub")
     done
 
