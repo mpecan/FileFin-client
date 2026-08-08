@@ -15,6 +15,7 @@ class CategoryTreePage extends StatefulWidget {
     required this.title,
     required this.onOpen,
     this.onSignIn,
+    this.onSettings,
     super.key,
   });
 
@@ -29,6 +30,14 @@ class CategoryTreePage extends StatefulWidget {
 
   /// Where a `SessionExpired` sends the user (F3's last resort).
   final VoidCallback? onSignIn;
+
+  /// Opens the playback settings sheet.
+  ///
+  /// This screen is the only one signed in to a server and above every other,
+  /// which is what makes it the place `wifiOnly` and `allowUnverifiedPlayback`
+  /// become reachable — both are refusals `decide()` can return and neither had
+  /// a way in before M4.8.
+  final VoidCallback? onSettings;
 
   @override
   State<CategoryTreePage> createState() => _CategoryTreePageState();
@@ -57,7 +66,17 @@ class _CategoryTreePageState extends State<CategoryTreePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.title)),
+    appBar: AppBar(
+      title: Text(widget.title),
+      actions: [
+        if (widget.onSettings != null)
+          IconButton(
+            onPressed: widget.onSettings,
+            tooltip: 'Playback settings',
+            icon: const Icon(Icons.settings_outlined),
+          ),
+      ],
+    ),
     body: AsyncView<List<CategoryNode>>(
       controller: _controller,
       onSignIn: widget.onSignIn,
