@@ -260,13 +260,24 @@ exactly what a mock papers over.
 skipping. A skipped integration suite that reports success is the
 gate-that-cannot-fail problem wearing a different hat.
 
-`tool/run-integration.sh` refuses on a missing binary, a missing `ffmpeg`, zero
-test files, and **any test marked skippable** — a suite that can excuse itself is
-the same problem wearing a third hat. All four refusals were proven at M2.7, and
-so was the fifth thing that must fail: breaking F3's retry turns the restart
-test red. The one precondition it repairs rather than refuses is a missing
-seeded data directory, because seeding is recoverable and a missing binary is
-not.
+`tool/run-integration.sh` refuses on a missing binary, a missing `ffmpeg`, a
+missing `sqlite3`, zero test files, a `dart_test.yaml` (which can exclude tests
+invisibly), **any test marked skippable**, **any test the runner reports as
+skipped at runtime**, and a **test count below the committed floor**. A suite
+that can excuse itself is the gate-that-cannot-fail wearing another hat.
+
+The runtime skip check is the load-bearing one. A grep for skip syntax can only
+catch the forms someone thought of: the first version matched `skip:` and was
+defeated by `@Skip()`, `solo:` and `markTestSkipped`, any of which silently drop
+a whole suite while the gate prints "All tests passed!". Asserting on the
+runner's own `~N` skipped count catches every mechanism, including ones that do
+not exist yet. The count floor catches the remaining case — a test quietly
+deleted rather than skipped.
+
+Every refusal has been proven in both directions, and so has the thing that
+must fail underneath them: breaking F3's retry turns the restart test red. The
+one precondition the script repairs rather than refuses is a missing seeded data
+directory, because seeding is recoverable and a missing binary is not.
 
 ## Playback truths that keep biting
 
