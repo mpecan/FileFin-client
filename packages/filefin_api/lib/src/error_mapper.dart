@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:filefin_api/src/errors.dart';
+import 'package:filefin_api/src/tls/certificate_pinner.dart';
+import 'package:filefin_api/src/tls/fingerprint.dart';
+import 'package:filefin_api/src/tls/pin_decision.dart';
 
 /// Turns dio's one exception type into our sealed hierarchy.
 ///
@@ -21,11 +26,20 @@ import 'package:filefin_api/src/errors.dart';
 /// served as plain text (`docs/server-api.md`, "Authentication"), so a blanket
 /// guard would turn every documented error into "not a FileFin server" and F3
 /// would never see a 401 at all.
+///
+/// [pinner] is optional and is consulted only for the two exception types TLS
+/// can produce. It is how a `HandshakeException` — which carries nothing but
+/// an OpenSSL string — becomes a message naming the fingerprint the user has
+/// to compare. Without it F15's failures would read "TLS failed", which is the
+/// message F15 exists to replace.
 FileFinApiException mapDioException(
   DioException error, {
   required Uri requested,
+  CertificatePinner? pinner,
 }) {
   final response = error.response;
+  final certificate = _certificateProblem(error, requested, pinner);
+  if (certificate != null) return certificate;
   return switch (error.type) {
     DioExceptionType.connectionTimeout => RequestTimedOut(
       RequestPhase.connect,
@@ -50,6 +64,63 @@ FileFinApiException mapDioException(
     _ => ConnectionFailed(requested, cause: error.error),
   };
 }
+
+/// Turns a TLS refusal back into the decision that caused it, or null.
+///
+/// The two exception types are what dio produces for the two hooks, measured
+/// against 5.11.0: `badCertificateCallback` returning false surfaces as a
+/// `HandshakeException` under `DioExceptionType.unknown`, while
+/// `validateCertificate` returning false surfaces as
+/// `DioExceptionType.badCertificate`. Both are checked, so neither hook's
+/// refusal can arrive as a bare "could not reach the server".
+///
+/// It is scoped to those two types deliberately. The pinner remembers the last
+/// decision per `host:port` for as long as it lives, so consulting it on every
+/// failure would let a stale rejection explain an unrelated timeout.
+FileFinApiException? _certificateProblem(
+  DioException error,
+  Uri requested,
+  CertificatePinner? pinner,
+) {
+  if (pinner == null) return null;
+  final isTlsShaped =
+      error.type == DioExceptionType.badCertificate ||
+      (error.type == DioExceptionType.unknown &&
+          error.error is HandshakeException);
+  if (!isTlsShaped) return null;
+  return switch (pinner.decisionFor(requested)) {
+    RejectChanged(:final expected, :final actual) => CertificatePinMismatch(
+      requested,
+      expected: expected.value,
+      actual: actual.value,
+    ),
+    RejectUntrusted(:final observed) => _notTrusted(
+      requested,
+      observed,
+      pinner.certificateFor(requested),
+    ),
+    _ => null,
+  };
+}
+
+/// Builds the prompt payload from the certificate the callback actually saw.
+///
+/// The certificate is always present alongside a `RejectUntrusted` — the same
+/// call recorded both — but the field is nullable, and inventing values for a
+/// null would put fabricated identity details in front of a user being asked
+/// to trust something. An absent certificate degrades to empty strings and the
+/// epoch, which reads as "we do not know" rather than as a claim.
+FileFinApiException _notTrusted(
+  Uri requested,
+  CertificateFingerprint observed,
+  X509Certificate? certificate,
+) => CertificateNotTrusted(
+  requested,
+  fingerprint: observed.value,
+  subject: certificate?.subject ?? '',
+  issuer: certificate?.issuer ?? '',
+  validTo: certificate?.endValidity ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
 
 /// Maps one non-2xx status onto the variant that describes it.
 FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {

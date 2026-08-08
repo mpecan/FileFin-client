@@ -14,20 +14,30 @@ environment:
 # `mutants` see the same package versions on every machine.
 resolution: workspace
 
+# Every version here is pinned exactly. CLAUDE.md §4 and docs/architecture.md
+# disagree — §4 pins pre-1.0 exactly, architecture.md says exact on
+# introduction — and the stricter reading wins: a dio patch that changes
+# interceptor ordering or `fetch` semantics silently changes F3, and both
+# `just mutants` and `just codegen-check` need identical resolution on every
+# machine to answer the same way twice. STATE.md flags the wording conflict.
 dependencies:
+  # SHA-256 over a certificate's DER, for F15's fingerprint. `dart:io` hands us
+  # the DER and no digest to run over it.
+  crypto: 3.0.7
   # SPEC.md §6's HTTP client. Its interceptor chain is where F3 lives and its
-  # IOHttpClientAdapter is where F15 hooks into TLS. Pinned exactly: a patch
-  # release that changes interceptor ordering, or what `Dio.fetch` does with
-  # the chain, silently changes F3 — and `just mutants` needs the same
-  # resolution on every machine to give the same answer twice.
+  # IOHttpClientAdapter is where F15 hooks into TLS.
   dio: 5.11.0
-
   # The wire models, the extension-type IDs and `FileFinUrls` — the one place a
   # route literal exists in this tree (§8's `undocumented_endpoint` reads them
   # straight out of its source). A path dependency, not a version: they move
   # together and there is nothing to publish.
   filefin_core:
     path: ../filefin_core
+  # @immutable on CertificateFingerprint. Without it the analyzer refuses an
+  # `==`/`hashCode` override on a class it cannot see is immutable, and a
+  # fingerprint that compared by identity would pin nothing.
+  meta: ^1.15.0
+
 dev_dependencies:
   # The test runner `just test` and `just coverage` invoke.
   test: ^1.25.0

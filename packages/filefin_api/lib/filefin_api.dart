@@ -23,4 +23,8 @@ export 'src/errors.dart';
 export 'src/json_response.dart';
 export 'src/probe_result.dart';
 export 'src/server_probe.dart';
+export 'src/tls/certificate_pinner.dart';
+export 'src/tls/fingerprint.dart';
+export 'src/tls/pin_decision.dart';
+export 'src/tls/pinned_adapter.dart';
 export 'src/transport.dart';

@@ -357,6 +357,8 @@ void main() {
         ServerFailure() => 'server error',
         NotAFileFinServerResponse() => 'not a FileFin server',
         MalformedResponse() => 'unreadable',
+        CertificateNotTrusted() => 'unknown certificate',
+        CertificatePinMismatch() => 'certificate changed',
       };
       expect(
         describe(
