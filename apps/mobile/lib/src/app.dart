@@ -1,10 +1,17 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/category_grid_page.dart';
 import 'package:filefin_mobile/src/browse/category_tree_page.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
+import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/servers/sign_in_page.dart';
 import 'package:flutter/material.dart';
 
@@ -103,6 +110,69 @@ class _HomeRouteState extends State<HomeRoute> {
     });
   }
 
+  /// The player route.
+  ///
+  /// Built here rather than inside the detail page so the two ports playback
+  /// needs — the connection sample and the engine factory — come from the one
+  /// scope the whole app is built on, and a widget test substitutes both by
+  /// building that scope.
+  void _play(
+    LibraryApi api,
+    SavedServer server,
+    MediaDetail detail,
+    FileIndex file,
+    Duration startAt,
+  ) {
+    final deps = FileFinScope.of(context);
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => PlayerPage(
+            api: api,
+            hostFactory: deps.playbackHostFactory,
+            network: deps.network,
+            detail: detail,
+            server: server,
+            prefs: deps.settings.read().playback,
+            initialFile: file,
+            startAt: startAt,
+            onSignIn: _signOut,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The playback settings sheet, and the write it produces.
+  ///
+  /// The write is caught here rather than in the sheet because this is the
+  /// screen with somewhere to say so: `SettingsStore.write` throws on a full
+  /// disk or a revoked permission, and a setting that silently did not stick is
+  /// worse than one that refused.
+  void _playbackSettings(SavedServer server) {
+    final settings = FileFinScope.of(context).settings;
+    unawaited(
+      showPlaybackSettings(
+        context,
+        server: server,
+        prefs: settings.read().playback,
+        onChanged: (changed, prefs) {
+          setState(() => _server = changed);
+          try {
+            settings.write(settings.read().upsert(changed).withPlayback(prefs));
+          } on FileSystemException catch (e) {
+            _messenger?.showSnackBar(
+              SnackBar(content: Text(describeSettingsWriteFailure(e))),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  ScaffoldMessengerState? get _messenger =>
+      mounted ? ScaffoldMessenger.maybeOf(context) : null;
+
   @override
   Widget build(BuildContext context) {
     final saved = FileFinScope.of(context).settings.read().servers;
@@ -112,6 +182,7 @@ class _HomeRouteState extends State<HomeRoute> {
       return CategoryTreePage(
         api: api,
         title: server.name,
+        onSettings: () => _playbackSettings(server),
         // Sign-out on a SessionExpired is a state change here rather than a
         // route push: the tree, the grid and the detail page can all be the
         // screen that discovers the session is gone, and every one of them
@@ -132,6 +203,8 @@ class _HomeRouteState extends State<HomeRoute> {
                     api: api,
                     item: item,
                     onSignIn: _signOut,
+                    onPlay: (detail, file, startAt) =>
+                        _play(api, server, detail, file, startAt),
                   ),
                 ),
               ),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/app.dart';
+import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
@@ -30,6 +31,8 @@ void main() {
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
+      network: FakeNetworkStatus(),
+      playbackHostFactory: fakeHostFactory(),
       settings: SettingsStore(dir),
       apiFactory: (_) => api,
     ),
@@ -258,5 +261,47 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Signed out'), findsOneWidget);
+  });
+  testWidgets('tapping Play pushes the player, wired from the SCOPE', (
+    tester,
+  ) async {
+    // The two ports playback needs — the connection sample and the engine
+    // factory — come from the one scope the app is built on, which is what
+    // lets a widget test substitute both without a plugin or libmpv.
+    api
+      ..categoriesResult = [
+        const Category(id: CategoryId(1), name: 'Films', leaf: 'Films'),
+      ]
+      ..categoryMediaResult = [
+        const MediaSummary(id: MediaId('e4285edb34d5'), title: 'Movie'),
+      ]
+      ..mediaDetailResult = const MediaDetail(
+        id: MediaId('e4285edb34d5'),
+        title: 'Movie',
+        files: [FileInfo(name: 'File 0', size: 10)],
+      )
+      ..loginResult = const AuthResult(user: 'sam')
+      ..playbackHeadersResult = const PlaybackSessionHeaders({'Cookie': 'x'});
+    SettingsStore(dir).write(
+      AppSettings.empty.upsert(
+        SavedServer(
+          id: const ServerId('http://nas.local'),
+          name: 'Attic NAS',
+          baseUrl: Uri.parse('http://nas.local'),
+          lastUser: 'sam',
+        ),
+      ),
+    );
+
+    await signIn(tester);
+    await tester.tap(find.text('Films'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Movie'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PlayerPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('fake-surface')), findsOneWidget);
   });
 }

@@ -8,15 +8,14 @@ import 'package:filefin_mobile/src/browse/poster_image_provider.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/material.dart';
 
-/// F4's third screen: everything the server says about one item.
-///
-/// **No playback affordance.** M4 owns playback (SPEC.md §10), and a button
-/// that did nothing would be a promise this milestone cannot keep.
+/// F4's third screen: everything the server says about one item, and where
+/// playback starts (F8).
 class MediaDetailPage extends StatefulWidget {
   /// Shows [item]'s detail, fetched through [api].
   const MediaDetailPage({
     required this.api,
     required this.item,
+    this.onPlay,
     this.onSignIn,
     super.key,
   });
@@ -27,6 +26,13 @@ class MediaDetailPage extends StatefulWidget {
   /// The list entry that was tapped. Its title is the app-bar title until the
   /// real one arrives, so the screen is never nameless.
   final MediaSummary item;
+
+  /// Opens the player on one file of the item, at a start position.
+  ///
+  /// The route lives in `app.dart`; this screen decides only **which file and
+  /// from where**, which is `startSecondsFor`'s answer rather than its own.
+  final void Function(MediaDetail detail, FileIndex file, Duration startAt)?
+  onPlay;
 
   /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
@@ -103,7 +109,21 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           _Pairs(label: 'Details', pairs: detail.metadata),
           _Pairs(label: 'Ratings', pairs: detail.ratings),
           _Pairs(label: 'Technical', pairs: detail.technical),
-          _Files(files: detail.files),
+          if (widget.onPlay != null)
+            PlayButtons(
+              detail: detail,
+              onPlay: (file, startAt) => widget.onPlay!(detail, file, startAt),
+            ),
+          _Files(
+            files: detail.files,
+            onPlay: widget.onPlay == null
+                ? null
+                : (file) => widget.onPlay!(
+                    detail,
+                    file,
+                    Duration(seconds: startSecondsFor(detail, file)),
+                  ),
+          ),
         ],
       ),
     ),
@@ -210,11 +230,72 @@ class _Pairs extends StatelessWidget {
   }
 }
 
+/// F8's two buttons: *Continue* where the pointer is, or *Play* from the top.
+///
+/// The label comes from `offerResume`, which is **upstream's own rule observed
+/// rather than invented** — `!watched && (continueIndex > 0 ||
+/// continueSeconds > 0)`. The ambiguous `(0, 0)` is never offered, so this
+/// screen can never propose a resume position it made up.
+class PlayButtons extends StatelessWidget {
+  /// Offers playback of [detail].
+  const PlayButtons({required this.detail, required this.onPlay, super.key});
+
+  /// The item.
+  final MediaDetail detail;
+
+  /// Starts one file at a position.
+  final void Function(FileIndex file, Duration startAt) onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    if (detail.files.isEmpty) return const SizedBox.shrink();
+    final choice = offerResume(detail);
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Row(
+        children: [
+          if (choice case ResumeAvailable(:final file, :final seconds)) ...[
+            FilledButton.icon(
+              onPressed: () => onPlay(file, Duration(seconds: seconds)),
+              icon: const Icon(Icons.play_arrow),
+              label: Text('Continue ${_clock(seconds)}'),
+            ),
+            const SizedBox(width: 12),
+            TextButton(
+              onPressed: () => onPlay(const FileIndex(0), Duration.zero),
+              child: const Text('Start over'),
+            ),
+          ] else
+            FilledButton.icon(
+              onPressed: () => onPlay(const FileIndex(0), Duration.zero),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Play'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _clock(int seconds) {
+    // One constant for both, and the reason is the mutation gate's rather than
+    // style's: Dart defines `a % b` to land in `[0, b.abs())`, so `% 60` and
+    // `% -60` are the same function and a bare literal produces a mutant no
+    // assertion can kill. Shared with the `~/` below, the same mutation turns
+    // `Continue 2:05` into `Continue -2:05`, which a test does object to.
+    // `formatPosition` in `player_controls.dart` carries the same note; the two
+    // are not merged because that would make `browse` depend on `playback`.
+    const perMinute = 60;
+    final s = (seconds % perMinute).toString().padLeft(2, '0');
+    return '${seconds ~/ perMinute}:$s';
+  }
+}
+
 /// The item's files.
 class _Files extends StatelessWidget {
-  const _Files({required this.files});
+  const _Files({required this.files, this.onPlay});
 
   final List<FileInfo> files;
+  final void Function(FileIndex file)? onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +316,7 @@ class _Files extends StatelessWidget {
               // that addresses nothing and looks like it should.
               subtitle: file.path.isEmpty ? null : Text(file.path),
               trailing: Text(humanSize(file.size)),
+              onTap: onPlay == null ? null : () => onPlay!(file.index),
             ),
         ],
       ),

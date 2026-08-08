@@ -23,6 +23,8 @@ void main() {
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
+      network: FakeNetworkStatus(),
+      playbackHostFactory: fakeHostFactory(),
       settings: SettingsStore(dir),
       apiFactory: (_) => api,
     ),
@@ -76,6 +78,8 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
+          network: FakeNetworkStatus(),
+          playbackHostFactory: fakeHostFactory(),
           settings: SettingsStore(dir),
           apiFactory: (_) => api,
         ),

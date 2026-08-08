@@ -83,6 +83,15 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     needsSignIn: true,
   ),
 
+  // NOT retryable: the arguments were unusable, so the same request fails
+  // again. Today's is `bad file index` — the file list changed under us.
+  BadRequest(:final body) => ErrorMessage(
+    title: 'The server refused that request',
+    detail:
+        'The server said: $body. This usually means the item changed on the '
+        'server since it was opened — go back and open it again.',
+  ),
+
   NotFound(:final requested) => ErrorMessage(
     title: 'Not on the server any more',
     detail:

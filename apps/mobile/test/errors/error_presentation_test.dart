@@ -299,6 +299,24 @@ void main() {
       }
     });
   });
+
+  group('a 400 explains itself and does NOT offer a retry', () {
+    test("the server's own sentence is what the user reads", () {
+      final message = describeApiError(
+        BadRequest(
+          Uri.parse('http://nas.local/api/media/a/progress'),
+          'bad file index',
+        ),
+      );
+
+      // Retrying a rejected file index posts the same rejected body forever,
+      // which is why this variant exists separately from ServerFailure.
+      expect(message.retryable, isFalse);
+      expect(message.needsSignIn, isFalse);
+      expect(message.detail, contains('bad file index'));
+      expect(message.title, isNotEmpty);
+    });
+  });
 }
 
 /// Whether a variant is allowed to send the user to the sign-in screen.
@@ -317,6 +335,7 @@ bool expectedNeedsSignIn(FileFinApiException error) => switch (error) {
   CacheUnavailable() ||
   RateLimited() ||
   MalformedIdentifier() ||
+  BadRequest() ||
   InvalidCredentials() ||
   NotAFileFinServerResponse() ||
   MalformedResponse() ||
