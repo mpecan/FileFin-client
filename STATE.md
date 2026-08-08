@@ -19,6 +19,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
 | M1.5 | `lib/src/search_field.dart` — the full `db/search.go` field vocabulary as an enum |
 | M1.6 | `lib/src/urls.dart` — `ApiPaths` (every route as one full literal) and `FileFinUrls` |
+| M1.7 | `lib/src/resume/` — `ResumePointer`, `WatchState`, `ProgressReport`, `WatchView`, and the engine: `applyProgress`, `deriveView`, `resolveIndex`, `setWatched`, `clearWatched`, `clearProgress`, `setFavorite`, `setRating` |
 | M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
 
 ### Two M0 gate scripts had to change for the first package to land
@@ -86,6 +87,56 @@ that then failed would leave the tree gutted.
 | one character changed in a committed `*.g.dart`, unstaged | 1 | **1** |
 | the same edit, **`git add`ed** | **0**, "generated output is up to date" | **1**, prints the diff and names §10 |
 | reverted | 0 | 0 |
+
+### glados does not exist for Dart 3, so the property tests use kiri_check
+
+The plan names glados for the resume engine's property tests. **Every published
+glados version — 0.0.1 through 1.1.7 — declares `sdk: >=2.12.0 <3.0.0`**, so
+none of them resolves on any Dart 3 SDK, let alone 3.12. This is not a
+constraint that can be worked around; the package has not been updated for Dart
+3 at all.
+
+`kiri_check` 1.3.1 (`sdk: ^3.4.0`) is the maintained equivalent: generators,
+`forAll`, and shrinking to a minimal counterexample. Verified before adopting —
+a deliberately failing property over `integer(min: 0, max: 100)` shrank to
+exactly `50` and reported the seed, twice in a row identically.
+
+It is pinned exactly and `KiriCheck.seed` is pinned in the test file. `just
+mutants` runs `dart test` once per mutant, so a generator drawing a different
+sample each run would turn a surviving mutant into a coin flip and the gate into
+a flaky one.
+
+### The resume oracle is live, and it was checked
+
+601 captured vectors replay green. That on its own says nothing — a fixture is
+only worth having if a plausible wrong implementation fails it. So the
+`continueSeconds = pointer?.seconds ?? 0` implementation the vectors were
+re-captured to catch (finding C2) was substituted into `deriveView` and the
+suite re-run: **exactly 18 vectors objected**, the same 18 the capture script
+set out to produce. `resume_vectors_test.dart` also asserts that count directly,
+so a future re-capture that quietly drops the stale-ref grid fails rather than
+passing over a weaker oracle.
+
+The translation from the vectors' **ref space** to the engine's **index space**
+is where the care went. A captured pointer whose ref is absent from `refs` maps
+to `FileIndex(refs.length)` — out of range, and deliberately not `null`.
+Collapsing it to `null` would reproduce every observable value and still pass all
+601, but it would erase the distinction the traps exist to test and the engine
+would pass them for the wrong reason. An index past the end of the list is also
+what the same situation actually looks like on a client: a file list that shrank
+between sessions.
+
+### Three mutants survived the first run of the resume engine
+
+All three were in the arguments to `RangeError.range(rating, 0, 10, 'rating')`
+— the bounds carried in the error object, which the test did not read. It
+asserted `throwsA(isA<RangeError>())` and nothing more, so `end: -10`, swapped
+`start`/`end`, and a swapped `invalidValue` all passed.
+
+Not excluded. The test now asserts `invalidValue`, `start`, `end` and `name`,
+because those four are what a developer reads when the error fires, and an error
+naming the wrong range sends them to look in the wrong place. 56 of 56 mutants
+in `engine.dart` now die.
 
 ### `Uri` does not save you from a path template
 
