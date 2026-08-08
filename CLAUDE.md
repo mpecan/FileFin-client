@@ -56,8 +56,15 @@ it is genuinely equivalent, with the reason and its retirement condition in
 
 **§4 — Every dependency pays rent.** A package in `pubspec.yaml` has at least
 one `import` referencing it, and a one-line comment naming what needs it.
-Version constraints carry a one-line reason when they are tighter than caret
-default. Pre-1.0 packages are pinned exactly.
+
+**Every dependency is pinned exactly on introduction, with its reason beside
+it** — not only pre-1.0 ones. Two gates require it: `just mutants` runs the
+whole suite once per mutant, and `just codegen-check` compares generated output
+byte-for-byte, so both are non-deterministic across machines the moment a
+constraint can resolve two ways. A caret range is also how a patch release
+silently changes behaviour the tests were written against — dio's interceptor
+ordering and `fetch` semantics are the live example. Loosen a pin only when
+something concrete needs it, and record what.
 
 Tooling packages are consumed by configuration or by a gate recipe and are
 never imported by anything (`very_good_analysis`, `mutation_test`, `coverage`
