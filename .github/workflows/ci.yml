@@ -17,9 +17,9 @@ jobs:
         # actions/checkout v7.0.1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # `just mutants` diffs the working tree against HEAD, and
-          # `FILEFIN_MUTANTS_BASE=HEAD~1` is the documented way to re-check a
-          # commit that already landed. Neither works in a shallow clone.
+          # `just mutants` diffs against FILEFIN_MUTANTS_BASE, which the
+          # `just check` step below sets to the PR base sha or HEAD^. Neither
+          # resolves in a shallow clone.
           fetch-depth: 0
 
       - name: Set up Flutter (bundles the Dart SDK)
@@ -53,7 +53,27 @@ jobs:
         run: dart pub get
 
       - name: just check
-        run: just check
+        # FILEFIN_MUTANTS_BASE is load-bearing, not decoration. CI checks out a
+        # commit, so the working tree IS HEAD; with the default base of HEAD the
+        # mutation gate diffed a commit against itself, found no changed Dart,
+        # printed "nothing to mutate" and exited 0 — on every PR and every push,
+        # for the one gate §3 leans on hardest. tool/check-mutants.sh now REFUSES
+        # that combination when $CI is set, so this step fails loudly if the
+        # variable is ever dropped again rather than going quietly green.
+        #
+        # On a PR the base is the merge target, so the whole branch is mutated.
+        # On a push it is HEAD^ — the one commit that just landed. The empty-tree
+        # object is the fallback for a root commit, where everything is new.
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$(git rev-parse --verify --quiet HEAD^ || git hash-object -t tree /dev/null)"
+          fi
+          echo "mutation base: $base"
+          FILEFIN_MUTANTS_BASE="$base" just check
 
 # There is deliberately no fixture-capture job.
 #

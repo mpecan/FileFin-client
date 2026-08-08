@@ -28,6 +28,27 @@ command -v dart >/dev/null 2>&1 || fail "dart not on PATH"
 
 git rev-parse --verify --quiet "$BASE" >/dev/null || fail "FILEFIN_MUTANTS_BASE=$BASE is not a valid revision"
 
+# The gate's one structural blind spot, and it sat over the place it mattered
+# most. The default BASE is `HEAD`, which is right locally — the working tree vs
+# the last commit is what the commit about to be made is responsible for. But CI
+# checks out a commit, so the working tree IS HEAD: `git diff HEAD` is empty,
+# `changed` is empty, and the script below reported "nothing to mutate" and
+# exited 0 on every PR and every push. §3's whole answer to "coverage cannot
+# tell a real assertion from a tautology" was dead wherever it was not being
+# watched.
+#
+# Under $CI that combination is now a hard failure rather than a silent pass.
+# .github/workflows/ci.yml passes the PR base sha (or HEAD^) — the workflow
+# already sets fetch-depth: 0 so both resolve.
+if [ -n "${CI:-}" ] \
+    && [ "$(git rev-parse "$BASE")" = "$(git rev-parse HEAD)" ] \
+    && [ -z "$(git status --porcelain)" ]; then
+    fail "FILEFIN_MUTANTS_BASE resolves to HEAD and the tree is clean, so this
+       gate would diff a commit against itself and mutate nothing. Under \$CI
+       that is a configuration error, not a clean run. Pass a real base:
+       the pull request's base sha, or HEAD^ on a push."
+fi
+
 # Tracked changes plus untracked files. `git diff` does not see a brand-new
 # file, and a brand-new file is precisely the code that has never been tested —
 # omitting it is how this gate would report success over unexercised code.
@@ -89,15 +110,31 @@ for pkg in $packages; do
     set -e
     cat "$log"
 
+    # Zero mutants is NOT a pass, and this block used to say so in a comment
+    # while printing a NOTICE and leaving `status` untouched — the gate agreeing
+    # in prose that it had checked nothing, then reporting success.
+    #
+    # Two ways it happens, and both must fail: mutation_rules.xml excludes every
+    # loop body and every ++/--, so a diff living entirely inside a loop yields
+    # 0 mutants; and `found` is scraped from the literal string "Found N
+    # mutations", so an upstream wording change pins it at 0 forever. A hard
+    # failure turns the second one into a loud, one-line fix instead of a gate
+    # that quietly stopped existing.
     found=$(grep -oE 'Found [0-9]+ mutations' "$log" | grep -oE '[0-9]+' | head -1 || echo 0)
     if [ "${found:-0}" -eq 0 ]; then
-        # Not a pass. Zero mutants means the run asked nothing, and 0 undetected
-        # out of 0 reads as 100% success — exactly the shape of a gate that
-        # congratulates you for checking nothing.
-        echo "NOTICE: $pkg — the changed lines produced 0 mutants."
-        echo "        That is legitimate only for pure declarations (a const, a"
-        echo "        field, an export). If behaviour changed here, the exclusions"
-        echo "        in mutation_rules.xml are swallowing it — check them."
+        if [ "${FILEFIN_MUTANTS_ALLOW_ZERO:-0}" = "1" ]; then
+            echo "NOTICE: $pkg — 0 mutants, allowed by FILEFIN_MUTANTS_ALLOW_ZERO=1."
+        else
+            echo "ERROR: $pkg — the changed lines produced 0 mutants, so this run"
+            echo "       asked nothing and 0-undetected-of-0 would read as 100%."
+            echo "       Legitimate only for pure declarations (a const, a field, an"
+            echo "       export). Otherwise: the exclusions in mutation_rules.xml are"
+            echo "       swallowing the change, or mutation_test's 'Found N mutations'"
+            echo "       wording moved and the scrape above is now always 0."
+            echo "       Re-run with FILEFIN_MUTANTS_ALLOW_ZERO=1 only when you have"
+            echo "       checked which, and say which in the commit message."
+            status=1
+        fi
     fi
 
     if [ "$rc" -ne 0 ]; then
