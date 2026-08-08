@@ -61,6 +61,11 @@ The root `workspace:` list starts empty and gains a member when that member is
 created. Listing a directory that does not exist yet fails `dart pub get`
 outright, so the list cannot run ahead of the tree.
 
+One consequence bit the first member that landed: in a workspace, `dart pub get`
+writes **one** `package_config.json`, at the root. Members do not get their own,
+so anything that names `<package>/.dart_tool/package_config.json` — as
+`run-coverage.sh` did — silently receives an argument that means "no packages".
+
 ---
 
 ## Gate scope — what each gate actually measures
@@ -86,13 +91,41 @@ gates can never disagree about which files count:
 | `constitution` / `secret_tostring` | `dart_lib_sources` | §9 is about what ships and what logs. |
 | `deps` | every `pubspec.yaml`, sources = that package's `lib bin test tool example` | a dev-dependency used only by tests is used. |
 | `dupes` | `packages/` + `apps/`, `*.dart`, generated excluded | generated code is duplicative by construction and nobody can refactor it. |
-| `coverage` | `report-on` each package's `lib/`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. |
+| `coverage` | `report-on` each package's `lib/`, `--check-ignore`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. `--check-ignore` is what keeps generated freezed boilerplate out of it — see below. |
 | `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. |
 | `fixtures-verify` | `test/fixtures/**` | reads committed files only, so it runs in CI without a server. |
 
 Generated files are exempt from every gate. The exemption lives in
 `dart_sources`, in one place, and was proven: a 700-line file fails `file-size`
 and the identical 700 lines renamed `*.g.dart` pass.
+
+### Coverage and generated code
+
+`dart_sources` cannot do this job for coverage, because coverage is produced by
+`format_coverage --report-on=lib`, which does not consult it. Two rules fill the
+gap, and they pull in opposite directions on purpose.
+
+**`--check-ignore` honours `// coverage:ignore-file`, which freezed writes on
+line 2 of everything it generates.** Without it the denominator was 793 lines of
+which 591 were freezed's `when` / `maybeMap` / `whenOrNull` pattern-matching
+helpers — code with no caller and no prospect of one — and the gate reported 53%
+while every hand-written line was covered. A number that noisy cannot detect a
+real regression. json_serializable does *not* write that comment, so the
+`.g.dart` decode bodies stay counted, which is right: tolerant decoding is what
+§8 is about.
+
+**A `coverage:ignore` comment in hand-written `lib/` source is an error.** That
+is the hole the flag opens — a one-line opt-out of the §3 floor — and
+`run-coverage.sh` fails on it. Only generated files may carry one.
+
+**A lib source that produces no coverage record at all fails**, unless it
+contains no executable code. A barrel of `export`s and a set of `extension type`
+declarations compile to no functions, so the VM emits no hitmap entry for them
+however well they are exercised; requiring one would be requiring the
+impossible. The exemption is mechanical rather than a list: every line of the
+file must be a `library` / `import` / `export` directive or an empty-bodied
+`extension type`. There is no allowlist and no marker comment, because both are
+things a reviewer can be talked past.
 
 ### The no-op paths, and why they cannot survive M1
 
@@ -119,6 +152,9 @@ are committed while nothing can regenerate them, which is the only way that
 branch could hide a real problem.
 
 These are recorded in `STATE.md` as accepted M0 debt rather than left implied.
+**All of them retired at M1.1**, when `packages/filefin_core/pubspec.yaml`
+landed; `codegen-check`'s fourth retired at M1.4 with the first `@freezed`
+model.
 
 ---
 
@@ -213,9 +249,21 @@ pinned 1.7.1 rather than assumed:
 The threshold is 100%. A diff-scoped gate asks about the handful of mutants
 this commit adds, so anything less means "some of them may survive".
 
+**The builtin rules do not mutate a strict comparison.** They rewrite `<=` and
+`>=` (to `==` and to the strict form) but have no rule for a bare `<` or `>`, so
+until M1.9 the off-by-one at a boundary — the bug §3 cites mutation testing for
+— was invisible in this tree. Measured on `decide()`: with every
+equal-to-threshold assertion removed, `>` could be changed to `>=` and the suite
+passed, while the gate still reported 6 of 6 killed. `mutation_rules.xml` now
+adds two regex rules that require whitespace on **both** sides of the operator,
+which is what keeps them off `List<bool>`, `Map<String, int>`, `=>`, `<=` and
+`>=`.
+
 Every exclusion in `mutation_rules.xml` carries a reason **and a retirement
 condition**, because an exclusion is a piece of code the gate has stopped
-asking about.
+asking about. The two the new rules made necessary are excluded by their
+**exact text** rather than by line number, so an edit elsewhere cannot widen the
+exclusion and a change of shape simply stops matching.
 
 ---
 

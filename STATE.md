@@ -5,12 +5,13 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | | |
 |---|---|
 | **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
-| **In progress** | **M1** — `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` |
-| **Exit criterion met** | `just check` exits 0 on a clean tree; every gate has a both-directions proof below |
+| **Done** | **M1** — `filefin_core`: wire models, extension-type IDs, URL building, the resume engine, `decide()` |
+| **Next** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, and `just it` |
+| **Exit criterion met** | `just check` exits 0 on a clean tree; **every** gate now has a both-directions proof on real code, none deferred |
 
 ---
 
-## M1 — what has been built
+## M1 — what was built
 
 | Step | Deliverable |
 |---|---|
