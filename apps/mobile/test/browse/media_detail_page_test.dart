@@ -270,6 +270,13 @@ void main() {
     // decoding, and the grid renders that item like any other because
     // filtering it out IS the silent failure G5 forbids. Opening it has to
     // fail loudly and name the value.
+    //
+    // The `calls` assertion is the half this test was missing. The error is
+    // hand-injected here, so on its own the test proves only that the panel
+    // renders a `MalformedIdentifier` — a page that noticed the empty id and
+    // silently repaired or skipped the request, which is exactly the G5
+    // failure, passed it. The boundary itself is `client_test.dart:284`; what
+    // belongs here is that the page still ASKS.
     api.mediaDetailResult = const MalformedIdentifier('', 'media id');
 
     await pump(tester, item: const MediaSummary(title: 'No id'));
@@ -277,6 +284,49 @@ void main() {
     expect(find.text('The server sent an item we cannot open'), findsOneWidget);
     expect(find.textContaining('media id'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
+    expect(api.calls, ['mediaDetail()']);
+  });
+
+  testWidgets('the detail asked for is the item that was TAPPED', (
+    tester,
+  ) async {
+    // `FakeLibraryApi` answers the same payload whatever id it is handed, so a
+    // page with a hard-coded media id renders identically to a correct one —
+    // measured against the whole suite, which stayed green. The id in the call
+    // record is the only thing that separates them.
+    api
+      ..mediaDetailResult = _fixture('media_detail_directplay')
+      ..posterResult = null;
+
+    await pump(
+      tester,
+      item: const MediaSummary(id: MediaId('0f1e2d3c4b5a'), title: 'Tapped'),
+    );
+
+    expect(api.calls, contains('mediaDetail(0f1e2d3c4b5a)'));
+  });
+
+  testWidgets('the detail poster is the DETAIL size, for the detail item', (
+    tester,
+  ) async {
+    // The detail page keys off `detail.id` rather than the summary's, because
+    // the payload is what says whether a poster exists at all — and it asks
+    // for the bigger variant, which a fake ignoring `size` cannot see.
+    api
+      ..mediaDetailResult = const MediaDetail(
+        id: MediaId('aaaaaaaaaaaa'),
+        title: 'Promised',
+        hasPoster: true,
+      )
+      ..posterResult = null;
+
+    await pump(tester, item: const MediaSummary(id: MediaId('aaaaaaaaaaaa')));
+    await tester.pump();
+
+    expect(
+      api.calls,
+      contains('posterBytes(aaaaaaaaaaaa, PosterSize.detail)'),
+    );
   });
 
   testWidgets('the detail load carries a token, and dispose cancels it', (

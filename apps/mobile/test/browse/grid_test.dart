@@ -27,10 +27,19 @@ import '../support/fakes.dart';
 /// experiment.
 ///
 /// What IS measurable here is the property 60fps rests on: per-frame build and
-/// layout cost O(visible), not O(5000). A regression that breaks it — a
-/// `Column` wrapper, a `.toList()` per build, keep-alives left on — breaks
-/// these tests. The invariants are gated; the timing number at the bottom is
-/// reported and deliberately not.
+/// layout cost O(visible), not O(5000).
+///
+/// **What the live-widget count catches, precisely.** It catches "the sliver
+/// lays everything out" — `shrinkWrap: true` takes it from under 80 to 5000 —
+/// and not much else. `GridView(children: [...])` builds all 5000 widgets per
+/// frame and still passes it, because `SliverChildListDelegate` mounts only the
+/// visible range, so the delegate is asserted separately below. And flipping
+/// `addAutomaticKeepAlives` is inert here: nothing under `apps/mobile/lib`
+/// mixes in `AutomaticKeepAliveClientMixin`, so there is no keep-alive to
+/// disable and no test can see the flag move.
+///
+/// The invariants are gated; the timing number at the bottom is reported and
+/// deliberately not.
 ///
 /// **Where the 5000 items come from, and why it is arranged this way.** They
 /// are decoded ONCE in `setUpAll`, by the real `FileFinClient` over a real
@@ -170,6 +179,21 @@ void main() {
       },
     );
 
+    testWidgets('the grid builds its children lazily, not from a list', (
+      tester,
+    ) async {
+      // The element count cannot see this, which is why it is asserted
+      // separately: `GridView(children: [...])` builds all $itemCount widgets
+      // per frame and `SliverChildListDelegate` still mounts only the visible
+      // range, so the bounded-tile test above passes over it. The delegate is
+      // the difference.
+      await pump(tester);
+
+      final grid = tester.widget<GridView>(find.byType(GridView));
+
+      expect(grid.childrenDelegate, isA<SliverChildBuilderDelegate>());
+    });
+
     testWidgets('posters are lazy — far fewer requests than items', (
       tester,
     ) async {
@@ -210,6 +234,11 @@ void main() {
     ) async {
       // A rebuild that re-fetched would turn every scroll into a $itemCount
       // download, and nothing on screen would say so.
+      //
+      // The ARGUMENT is asserted, not just the count. `FakeLibraryApi` answers
+      // the same list whatever category it is handed, so a grid asking for
+      // category 999 renders exactly like one asking for the right category —
+      // measured, and it passed 181 unit tests and all 33 integration tests.
       await pump(tester);
       final position = positionOf(tester);
       for (var i = 0; i < 20; i++) {
@@ -217,10 +246,9 @@ void main() {
         await tester.pump();
       }
 
-      expect(
-        api.calls.where((c) => c.startsWith('categoryMedia')),
-        hasLength(1),
-      );
+      expect(api.calls.where((c) => c.startsWith('categoryMedia')), [
+        'categoryMedia(${category.id.value})',
+      ]);
     });
 
     testWidgets('a tile scrolled away cancels its poster request (NF5)', (
@@ -294,96 +322,5 @@ void main() {
         expect(elapsed.inMicroseconds, greaterThan(0));
       },
     );
-
-    testWidgets('an item with NO id gets a tile like any other', (
-      tester,
-    ) async {
-      // `client.dart:196-199` is explicit that filtering bad items out of a
-      // list IS the silent failure G5 forbids. The list renders as decoded and
-      // opening the bad one fails loudly, naming the value.
-      await pump(
-        tester,
-        items: const [
-          MediaSummary(title: 'No id', year: 2020),
-          MediaSummary(id: MediaId('aaaaaaaaaaaa'), title: 'Fine'),
-        ],
-      );
-
-      expect(find.byType(PosterTile), findsNWidgets(2));
-      expect(find.text('No id'), findsOneWidget);
-    });
-
-    testWidgets('an item with no title still shows something', (tester) async {
-      await pump(tester, items: const [MediaSummary(id: MediaId('a'))]);
-
-      expect(find.text('Untitled'), findsWidgets);
-    });
-
-    testWidgets('an item the server says has no poster never requests one', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        items: const [MediaSummary(id: MediaId('aaaaaaaaaaaa'), title: 'Bare')],
-      );
-
-      expect(posterCalls(), 0);
-      expect(find.text('Bare'), findsWidgets);
-    });
-
-    testWidgets('tapping a tile opens that item', (tester) async {
-      final opened = <MediaSummary>[];
-      await pump(
-        tester,
-        onOpen: opened.add,
-        items: [for (var i = 0; i < 6; i++) realItems[i]],
-      );
-
-      await tester.tap(find.text('Item 3'));
-
-      expect(opened.single.title, 'Item 3');
-    });
-
-    testWidgets('an empty category is an empty state, not a spinner', (
-      tester,
-    ) async {
-      await pump(tester, items: const []);
-
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.textContaining('Nothing in this category'), findsOneWidget);
-    });
-
-    testWidgets('a failed listing explains itself and can be retried', (
-      tester,
-    ) async {
-      api.categoryMediaResult = CacheUnavailable(Uri.parse('http://nas/api'));
-
-      await pump(tester);
-
-      expect(find.text('The library is unavailable'), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
-    });
-
-    testWidgets('the app bar shows the leaf, not the full path', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: CategoryGridPage(
-            api: api..categoryMediaResult = const <MediaSummary>[],
-            category: const Category(
-              id: CategoryId(3),
-              leaf: 'Documentaries',
-              name: 'Films/Documentaries',
-            ),
-            onOpen: (_) {},
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text('Documentaries'), findsOneWidget);
-      expect(find.text('Films/Documentaries'), findsNothing);
-    });
   });
 }

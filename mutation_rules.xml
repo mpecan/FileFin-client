@@ -337,14 +337,73 @@
          actually moved (53 with this line, 56 without) rather than trusting
          that a plausible pattern did something.
 
-         The cost is three mutants rather than two: a third permutation was
-         already being killed and is now not asked about either. Stated rather
-         than rounded down.
+         The cost is three mutants rather than two, and the third is NOT what
+         an earlier draft of this comment said. It called it "a third
+         permutation already being killed"; a `--dry -v` diff shows it is not a
+         permutation at all — it is the builtin `&&`-negation rule matching at
+         line 34 and running into the excluded statement, producing text that
+         does not compile. It was killed by the compiler, not by an assertion.
+         Consequence nil, but the correction matters in the other direction:
+         after the exclusion `other.size == size` has NO mutant at all, so the
+         neighbouring assurance about field order rests entirely on the two
+         `const PosterKey(...)` constructor swaps, which are killed.
 
          RETIREMENT CONDITION: the day this class stops needing a hand-written
          hashCode — a `@freezed` or a record would generate one and take it out
          of `dart_lib_sources`' hand-written scope entirely. -->
     <regex pattern="int get hashCode => Object\.hash\(server, media, size\);"/>
+
+    <!-- `SavedServer.hashCode`'s argument order, the same case as `PosterKey`
+         above and excluded on the same reasoning rather than by analogy to it.
+
+         The builtin rule produces the three adjacent swaps —
+         `Object.hash(name, id, baseUrl, lastUser)`,
+         `Object.hash(id, baseUrl, name, lastUser)` and
+         `Object.hash(id, name, lastUser, baseUrl)` — and all three survived
+         the whole 194-test suite. `==` compares all four fields, so equal
+         servers hold equal values and hash identically under ANY fixed order,
+         and unequal ones hash differently under any fixed order. Every
+         permutation preserves the entire contract.
+
+         **Why no assertion can distinguish them, measured rather than
+         assumed.** `id` is an extension type over String, so the (id, name)
+         swap merely EXCHANGES the hashes of `(ServerId('a'), 'b')` and
+         `(ServerId('b'), 'a')` — they stay distinct, and any `isNot`
+         assertion passes either way. That leaves a golden value, and there is
+         none to pin: `Object.hash` is seeded per process. Three runs of the
+         same two-line program printed `'a'.hashCode` as 170824770 every time
+         and `Object.hash('a', 'b')` as 480010859, 191724426 and 356100938. The
+         only test that would kill these is
+         `expect(server.hashCode, Object.hash(id, name, baseUrl, lastUser))`,
+         which is the implementation copied into the test file.
+
+         Field order in `==` IS observable and IS killed — `settings_store_test`
+         compares servers differing in one field at a time, and those mutants
+         are reported detected.
+
+         **The cost is FOUR mutants, not three, and the fourth is not a
+         permutation** — checked with a `--dry -v` diff rather than assumed,
+         because the note on `PosterKey` above got exactly this wrong until
+         M3.R. 23 mutants without this line, 19 with it. The fourth is the
+         builtin `&&`-negation rule matching at line 101
+         (`other.baseUrl == baseUrl &&`) and running past the end of the `==`
+         expression into the excluded statement, producing
+
+             other.baseUrl == baseUrl &&!(
+                   other.lastUser == lastUser;
+               @override
+               int get hashCode => Object.hash(id, name, baseUrl, lastUser));
+
+         which does not compile. It was killed by the compiler rather than by
+         an assertion, so nothing is lost — but the `&&` at that position now
+         has no mutant at all, and `==`'s field order rests on
+         `settings_store_test` comparing servers that differ in one field at a
+         time.
+
+         RETIREMENT CONDITION: as `PosterKey`'s — the day this class stops
+         needing a hand-written `hashCode`. The pattern is exact, so any change
+         to the expression stops matching and the mutants come back. -->
+    <regex pattern="int get hashCode => Object\.hash\(id, name, baseUrl, lastUser\);"/>
 
     <!-- ++ and -- : the builtin rule rewrites them into each other via the
          arithmetic rules and produces mostly false positives on index maths.

@@ -53,7 +53,7 @@ void main() {
     // proves nothing about the wiring.
     File('${dir.path}/settings.json').writeAsStringSync(
       '{"servers":[{"id":"a","name":"Attic NAS", '
-      '"baseUrl":"http://nas.local","lastUser":"sam","wifiOnly":false}]}',
+      '"baseUrl":"http://nas.local","lastUser":"sam"}]}',
     );
 
     await entrypoint.main();
@@ -72,7 +72,6 @@ void main() {
         .dependencies;
 
     expect(deps.settings.directory.path, dir.path);
-    expect(deps.secrets, isNotNull);
     // The factory really builds a client for the server it is handed, rather
     // than one shared client — F11 is one cookie jar, one secret namespace and
     // one certificate pin PER server.

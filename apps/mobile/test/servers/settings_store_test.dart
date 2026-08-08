@@ -112,10 +112,33 @@ void main() {
   test('the file holds no password, session or pin (§9)', () {
     // The one assertion that matters most in this file. `settings.json` is
     // plain JSON any app on a rooted device can read.
-    store.write(AppSettings.empty.upsert(home));
+    //
+    // The `userInfo` arm is STRUCTURAL rather than a keyword search, and that
+    // is the whole lesson of M3's review: this test used to grep the text for
+    // "password", "session" and "certpin", and a real leaked credential —
+    // `"baseUrl":"http://sam:hunter2@192.168.1.10:8099"` — contains none of
+    // the three. A field is checked by what it can carry, not by what it
+    // happens to be spelled.
+    store.write(
+      AppSettings.empty
+          .upsert(home)
+          .upsert(
+            SavedServer.fromTypedUrl(
+              Uri.parse('http://sam:hunter2@192.168.1.10:9000'),
+            ),
+          ),
+    );
 
-    final text = store.file.readAsStringSync().toLowerCase();
+    final raw = store.file.readAsStringSync();
+    final text = raw.toLowerCase();
+    final decoded = jsonDecode(raw)! as Map<String, Object?>;
+    final entries = (decoded['servers']! as List<Object?>)
+        .cast<Map<String, Object?>>();
 
+    for (final entry in entries) {
+      expect(Uri.parse(entry['baseUrl']! as String).userInfo, isEmpty);
+    }
+    expect(text, isNot(contains('hunter2')));
     expect(text, isNot(contains('password')));
     expect(text, isNot(contains('session')));
     expect(text, isNot(contains('certpin')));

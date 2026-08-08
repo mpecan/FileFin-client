@@ -21,8 +21,8 @@ resolution: workspace
 # §1 and §4: a dependency arrives in the commit that first imports it, and
 # every non-SDK version is pinned exactly per docs/architecture.md's "exact on
 # introduction" (reconciled with CLAUDE.md §4 at M3). `path_provider` and the
-# two platform-interface packages that make `main()` coverable belong to M3.5
-# and are deliberately not here yet.
+# two platform-interface packages that make `main()` coverable arrived with
+# M3.5 and are declared below.
 dependencies:
   # The only layer allowed to open a socket: typed endpoints, the cookie jar,
   # F3's 401 retry, F15's pinning — and `CancelToken`, re-exported from its
@@ -41,7 +41,13 @@ dependencies:
   # `@immutable` on `UiState` and the value types beside it. Without it the
   # analyzer will not accept an `==`/`hashCode` override on a class it cannot
   # see is immutable — which the poster ImageProvider's cache key needs.
-  meta: ^1.15.0
+  #
+  # Exact, per §4, and it arrived at M3 with a caret and no recorded reason.
+  # `meta` is what `@immutable` and `@internal` come from, and a patch release
+  # of it changes what the analyzer accepts — which `just analyze
+  # --fatal-infos` turns straight into a red gate on a machine that resolved a
+  # different version.
+  meta: 1.18.0
   # `getApplicationSupportDirectory()` — the one directory SPEC.md §7's
   # `settings.json` may live in. Called from exactly one line, in `main()`;
   # everything downstream takes an injected `Directory`, so no other test in

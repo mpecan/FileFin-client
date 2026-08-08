@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
@@ -10,7 +9,6 @@ import 'support/fakes.dart';
 
 void main() {
   final deps = AppDependencies(
-    secrets: InMemorySecretStore(),
     settings: SettingsStore(Directory.systemTemp),
     apiFactory: (_) => FakeLibraryApi(),
   );
@@ -65,7 +63,6 @@ void main() {
     final same = FileFinScope(dependencies: deps, child: child);
     final other = FileFinScope(
       dependencies: AppDependencies(
-        secrets: deps.secrets,
         settings: deps.settings,
         apiFactory: deps.apiFactory,
       ),

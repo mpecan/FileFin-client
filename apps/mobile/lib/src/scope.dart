@@ -1,25 +1,23 @@
-import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
 
-/// The three things the whole app is built on, constructed once in `main()`.
+/// The two things the whole app is built on, constructed once in `main()`.
 ///
 /// A plain object behind one `InheritedWidget` rather than a service locator:
 /// a locator is global mutable state that a widget test has to reset between
 /// cases, and forgetting to reset it makes one test's fake leak into the next.
+///
+/// **There is no `secrets` field.** M3 carried one and nothing ever read it:
+/// `main()` builds the `SecretStore` and closes over it in [apiFactory], which
+/// is the only consumer there is, so the field was written once and read
+/// never — §1 and §5's definition of dead. Its two "consumers" were a test
+/// asserting a non-nullable final field was not null and a test copying it.
 @immutable
 class AppDependencies {
-  /// Holds the secret store, the settings store and the API factory.
-  const AppDependencies({
-    required this.secrets,
-    required this.settings,
-    required this.apiFactory,
-  });
-
-  /// Where the session, the password and the certificate pin live (§9).
-  final SecretStore secrets;
+  /// Holds the settings store and the API factory.
+  const AppDependencies({required this.settings, required this.apiFactory});
 
   /// Where `settings.json` lives. Holds no secrets.
   final SettingsStore settings;

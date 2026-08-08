@@ -108,11 +108,13 @@ void main() {
     await tester.pump();
     expect(find.text('Documentaries'), findsOneWidget);
     expect(find.text('Films/Documentaries'), findsNothing);
+    expect(offline.calls, ['categories']);
   });
 
   testWidgets('the grid renders the real item with its real title', (
     tester,
   ) async {
+    final filmsCategory = categories.firstWhere((c) => c.leaf == 'Films');
     final offline = FakeLibraryApi()
       ..categoryMediaResult = films
       ..posterResult = filmPoster;
@@ -120,7 +122,7 @@ void main() {
       MaterialApp(
         home: CategoryGridPage(
           api: offline,
-          category: categories.firstWhere((c) => c.leaf == 'Films'),
+          category: filmsCategory,
           onOpen: (_) {},
         ),
       ),
@@ -129,6 +131,14 @@ void main() {
 
     expect(find.text('Direct Play Movie'), findsOneWidget);
     expect(films.single.hasPoster, isTrue);
+    // The IDENTIFIERS, not just the words. Until M3.R this fake answered the
+    // same list whatever it was handed, so a grid asking for category 999 and
+    // a tile fetching a neighbour's poster both rendered this screen exactly
+    // as it is and the whole `just it` run stayed green.
+    expect(offline.calls, [
+      'categoryMedia(${filmsCategory.id.value})',
+      'posterBytes(${films.single.id.value}, PosterSize.tile)',
+    ]);
   });
 
   testWidgets('the detail screen renders the real metadata rows', (
@@ -158,14 +168,20 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(offline.calls.first, 'mediaDetail(${films.single.id.value})');
   });
 
   testWidgets('an item with no poster shows the placeholder, not an error', (
     tester,
   ) async {
-    // The 404 branch, end to end: `docs/server-api.md` calls it the normal
-    // answer for an un-enriched library and says it must never look like a
-    // failure.
+    // NOT the 404 branch end to end — this label used to say it was, and it
+    // is wrong: `posterResult = null` below is set by hand. The REAL 404 is
+    // `showPoster`, fetched from the binary in `setUpAll` and asserted in "the
+    // real poster route answers both ways". What this test proves is the other
+    // half: given that null, the grid draws the placeholder rather than an
+    // error. `docs/server-api.md` calls the 404 the normal answer for an
+    // un-enriched library and says it must never look like a failure.
+    //
     // The ImageCache is global and this key was filled by the test above, so
     // without this the poster is served from memory and the 404 branch is
     // never reached. The dedup is the point of PosterImageProvider; it also

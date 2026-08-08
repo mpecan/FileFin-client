@@ -14,6 +14,17 @@ import 'package:filefin_mobile/src/library_api.dart';
 /// It `extend`s rather than `implement`s because `LibraryApi` is an
 /// `abstract base class`: a method added there is a compile error here, which
 /// an `implements` clause would let a stub silently satisfy.
+///
+/// **The answer ignores the arguments, so every test that cares which item was
+/// asked for must read [calls].** M3's review found five shippable bugs that
+/// passed the whole unit suite and the whole integration suite — a grid that
+/// requested category 999, a detail page with a hard-coded media id, a tile
+/// fetching a neighbour's poster, a dropped `?size=` hint, and a detail route
+/// pushed with a fabricated item — because a fake that answers the same value
+/// whatever it is handed cannot tell a right identifier from a wrong one.
+/// [calls] records the arguments verbatim; asserting the exact string is what
+/// closes that hole, and `expect(api.calls, contains('categoryMedia(1)'))`
+/// costs one line more than `hasLength(1)`.
 base class FakeLibraryApi extends LibraryApi {
   /// A fake for one server.
   FakeLibraryApi({this.server = const ServerId('fake')});
@@ -99,7 +110,12 @@ base class FakeLibraryApi extends LibraryApi {
     CancelToken? cancelToken,
   }) async => _answer<Uint8List?>(
     posterResult,
-    'posterBytes(${id.value})',
+    // `size` is in the record because dropping the hint is invisible
+    // otherwise: the server treats `?size=` as a hint it may ignore
+    // (`media.go:351`), so a tile that asked for the full-size poster of every
+    // item in a 5000-item grid still renders correctly and just moves far more
+    // bytes than it needs to.
+    'posterBytes(${id.value}, $size)',
     cancelToken,
   );
 

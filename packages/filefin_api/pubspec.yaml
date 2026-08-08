@@ -45,7 +45,7 @@ dependencies:
   # @immutable on CertificateFingerprint. Without it the analyzer refuses an
   # `==`/`hashCode` override on a class it cannot see is immutable, and a
   # fingerprint that compared by identity would pin nothing.
-  meta: ^1.15.0
+  meta: 1.18.0
 
 dev_dependencies:
   # The test runner `just test` and `just coverage` invoke.

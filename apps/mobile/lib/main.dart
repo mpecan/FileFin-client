@@ -26,18 +26,17 @@ Future<void> main() async {
 ///
 /// Separate from [main] so a test can build the same tree over a temp
 /// directory without touching the plugin at all.
+///
+/// **One `SecretStore` for the process.** F3 needs the password in memory for
+/// the process lifetime whatever the persistence story is — a re-auth cannot
+/// await a Keychain prompt in the middle of a 401 retry — and M7's platform
+/// store is a persistence decorator around exactly this object. The
+/// consequence, stated out loud because silence would imply otherwise: nothing
+/// persists a password at M3, so it is re-typed on every cold start.
 Widget buildApp(Directory support) {
-  // One SecretStore for the process. F3 needs the password in memory for the
-  // process lifetime whatever the persistence story is — a re-auth cannot
-  // await a Keychain prompt in the middle of a 401 retry — and M7's platform
-  // store is a persistence decorator around exactly this object.
-  //
-  // The consequence, stated out loud because silence would imply otherwise:
-  // nothing persists a password at M3, so it is re-typed on every cold start.
   final secrets = InMemorySecretStore();
   return FileFinScope(
     dependencies: AppDependencies(
-      secrets: secrets,
       settings: SettingsStore(support),
       apiFactory: (server) => FileFinLibraryApi(
         FileFinClient.forServer(

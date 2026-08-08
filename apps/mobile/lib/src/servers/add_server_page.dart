@@ -1,8 +1,10 @@
+import 'dart:io';
+
 import 'package:filefin_api/filefin_api.dart';
-import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
 
 /// F1: add a server by URL and say clearly what is at that address.
@@ -71,15 +73,10 @@ class _AddServerPageState extends State<AddServerPage> {
       );
       return;
     }
-    final candidate = SavedServer(
-      // The normalised origin IS the id. It is stable across restarts without
-      // a clock or a random source, and re-adding the same server updates the
-      // saved entry rather than creating a second one with its own cookie jar
-      // and its own certificate pin.
-      id: ServerId(parsed.origin),
-      name: parsed.host,
-      baseUrl: parsed,
-    );
+    // The origin-as-id rule and the `userInfo` strip both live on `SavedServer`
+    // rather than here: they are properties of a saved server, and a screen
+    // that reimplemented either would be a second place to get §9 wrong.
+    final candidate = SavedServer.fromTypedUrl(parsed);
     final api = FileFinScope.of(context).apiFactory(candidate);
     final token = CancelToken();
     _token = token;
@@ -121,6 +118,9 @@ class _AddServerPageState extends State<AddServerPage> {
       if (!mounted) return;
       final message = describeApiError(error);
       setState(() => _problem = '${message.title}. ${message.detail}');
+    } on FileSystemException catch (error) {
+      if (!mounted) return;
+      setState(() => _problem = describeSettingsWriteFailure(error));
     } finally {
       api.close();
       if (mounted) setState(() => _busy = false);

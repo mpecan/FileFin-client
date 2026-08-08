@@ -55,8 +55,26 @@ class SettingsStore {
   }
 
   /// Writes the settings, creating the directory if it is not there.
+  ///
+  /// **This one throws, and the asymmetry with [read] is the point.** A file we
+  /// cannot read is answerable — start over with nothing (§13). A file we
+  /// cannot write has no answer at all: the server the user just added is gone
+  /// at the next launch, and there is nothing on screen to look at. The two
+  /// screens that call this catch [FileSystemException] and say so through
+  /// [describeSettingsWriteFailure].
   void write(AppSettings settings) {
     directory.createSync(recursive: true);
     file.writeAsStringSync(jsonEncode(settings.toJson()));
   }
 }
+
+/// What a user is told when `settings.json` could not be written.
+///
+/// The OS message is included rather than swallowed. "Could not save" gives a
+/// user nothing to act on; "Permission denied" and "No space left on device"
+/// are different problems with different fixes, and this app cannot tell which
+/// it is any better than the OS already has.
+String describeSettingsWriteFailure(FileSystemException error) =>
+    'This app could not save its settings file '
+    '(${error.osError?.message ?? error.message}). Nothing was written, so '
+    'this will not be here after a restart.';

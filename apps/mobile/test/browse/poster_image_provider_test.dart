@@ -94,15 +94,19 @@ void main() {
     testWidgets("obtainKey names the API's server, not a literal", (
       tester,
     ) async {
+      // A DIFFERENT id from every other fake in this file, because the name of
+      // this test is the claim: an `obtainKey` that returned a literal
+      // `const ServerId('home')` — exactly the bug ruled out here — passed
+      // while the fake and the expectation both said `home`.
       final provider = PosterImageProvider(
-        api: api,
+        api: FakeLibraryApi(server: const ServerId('attic')),
         media: media,
         size: PosterSize.tile,
       );
 
       expect(
         await provider.obtainKey(ImageConfiguration.empty),
-        const PosterKey(ServerId('home'), media, PosterSize.tile),
+        const PosterKey(ServerId('attic'), media, PosterSize.tile),
       );
     });
   });
@@ -155,7 +159,7 @@ void main() {
       );
 
       expect(failure, isNull);
-      expect(api.calls, ['posterBytes(e4285edb34d5)']);
+      expect(api.calls, ['posterBytes(e4285edb34d5, null)']);
     });
 
     testWidgets('no poster is a failure the tile turns into a placeholder', (
@@ -188,7 +192,12 @@ void main() {
         PosterImageProvider(api: api, media: media),
       );
 
+      // `contains('no poster')` as well as the type, because `resolve`'s own
+      // nothing-happened sentinel at the top of this group is ALSO a
+      // `StateError` — so the type alone cannot tell "the provider refused an
+      // empty body" from "the stream never produced anything".
       expect(failure, isA<StateError>());
+      expect('$failure', contains('no poster'));
     });
 
     testWidgets('the size hint and the cancel token are forwarded', (
@@ -207,6 +216,11 @@ void main() {
         ),
       );
 
+      // The SIZE half was unasserted until M3's review: the fake did not
+      // record it, so a provider that dropped `size` on the floor passed this
+      // test under its own name. `?size=` is a hint the server may ignore
+      // (`media.go:351`), so nothing downstream would have said so either.
+      expect(api.calls, ['posterBytes(e4285edb34d5, PosterSize.detail)']);
       expect(api.tokens.single, same(token));
     });
   });

@@ -32,21 +32,22 @@ class VisibleRow {
 ///
 /// Iterative rather than recursive for the same reason `buildCategoryTree` is:
 /// the depth is whatever the server sent.
+///
+/// **A `for` over a list that grows as it is walked, not a `while` over a
+/// stack**, and that is not style: `mutation_rules.xml` excludes a `while` body
+/// up to its first closing brace, so the `if` below — the only branch here —
+/// would never be mutated. The `for` exclusion covers the header alone, which
+/// leaves the body in front of the gate.
+///
+/// Inserting children right after their parent is what makes the walk
+/// depth-first. `insertAll` is O(n) each time, so the function is O(n²) in the
+/// worst case; a category list is directories on a disk, and the alternative
+/// loop shape costs more than the arithmetic saves.
 List<VisibleRow> visibleRows(
   List<CategoryNode> forest,
   Set<CategoryId> expanded,
 ) {
   final rows = <VisibleRow>[];
-  // A `for` over a list that grows as it is walked, rather than a `while` over
-  // a stack. Not a style choice: `mutation_rules.xml` excludes a `while` body
-  // up to its first closing brace, so the `if` below — the only branch in this
-  // function — would never be mutated. The `for` exclusion covers the header
-  // alone, which is what leaves the body in front of the gate.
-  //
-  // Inserting the children right after their parent is what makes this
-  // depth-first. `insertAll` is O(n) each time and the whole function is
-  // therefore O(n²) in the worst case; a category list is directories on a
-  // disk, and the alternative loop shape costs more than the arithmetic saves.
   final pending = <CategoryNode>[...forest];
   for (var i = 0; i < pending.length; i += 1) {
     final node = pending[i];

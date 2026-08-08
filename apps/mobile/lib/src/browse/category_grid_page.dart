@@ -19,7 +19,11 @@ import 'package:flutter/rendering.dart';
 ///   over the items would quietly make it O(everything) again.
 /// - `addAutomaticKeepAlives: false`, so a tile scrolled away is really
 ///   disposed — which is what cancels its poster request. With keep-alives on,
-///   every tile ever visited stays live and holds its bytes.
+///   every tile ever visited stays live and holds its bytes. **Stated as a
+///   guard rather than as a tested invariant:** a keep-alive only exists once
+///   a child mixes in `AutomaticKeepAliveClientMixin`, nothing under
+///   `apps/mobile/lib` does, so flipping this flag today changes nothing and
+///   no test can see it. It is here for the tile that one day does.
 /// - the item list is whatever the controller loaded. `build()` does no
 ///   sorting, filtering or copying, because all three are O(n) per frame.
 class CategoryGridPage extends StatefulWidget {

@@ -40,6 +40,13 @@ class ErrorMessage {
 /// Every URL goes through `redactUserInfo`. A message is a log line waiting to
 /// happen (§9, NF4), and a saved-server URL is typed by a user —
 /// `https://sam:hunter2@nas.local/` is a thing people type.
+///
+/// **A message names the cause it actually has.** `SessionExpired`'s wording
+/// used to blame a server restart, which is the one cause it almost never
+/// carries: a restart is exactly what F3 renews and replays without any
+/// message at all. `session.dart:137` and `:223` are where it really comes
+/// from — no stored session, or no password to renew with — so that is what
+/// the words say.
 ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
   RequestTimedOut(:final phase, :final requested) => ErrorMessage(
     title: 'The server did not answer in time',
@@ -66,13 +73,13 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     retryable: true,
   ),
 
-  // F3 already re-authenticated and retried once, so a retry repeats what
-  // did not work.
+  // F3 already retried, so a retry repeats what did not work.
   SessionExpired() => const ErrorMessage(
     title: 'Please sign in again',
     detail:
-        'Your session ended. FileFin keeps sessions in memory, so a server '
-        'restart signs everyone out — this is routine rather than a problem.',
+        'Your session ended and there is no saved password to renew it with. '
+        'A session that can be renewed is renewed without asking, so getting '
+        'here means typing the password once more.',
     needsSignIn: true,
   ),
 

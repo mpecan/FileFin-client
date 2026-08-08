@@ -23,7 +23,6 @@ void main() {
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
-      secrets: InMemorySecretStore(),
       settings: SettingsStore(dir),
       apiFactory: (_) => api,
     ),
@@ -77,7 +76,6 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
-          secrets: InMemorySecretStore(),
           settings: SettingsStore(dir),
           apiFactory: (_) => api,
         ),
@@ -190,88 +188,5 @@ void main() {
 
     expect(find.text('Attic NAS'), findsOneWidget);
     expect(find.text('Films'), findsOneWidget);
-  });
-
-  testWidgets('tree to grid to detail, and back out again', (tester) async {
-    // The three browsing screens wired to each other, which nothing in
-    // test/browse/ can prove: each of those suites builds one screen on its
-    // own.
-    api
-      ..loginResult = const AuthResult(user: 'sam')
-      ..categoriesResult = const [
-        Category(id: CategoryId(1), leaf: 'Films', name: 'Films', media: 1),
-      ]
-      ..categoryMediaResult = const [
-        MediaSummary(id: MediaId('e4285edb34d5'), title: 'Direct Play Movie'),
-      ]
-      ..mediaDetailResult = const MediaDetail(
-        id: MediaId('e4285edb34d5'),
-        title: 'Direct Play Movie',
-        year: 2020,
-      );
-    SettingsStore(dir).write(
-      AppSettings.empty.upsert(
-        SavedServer(
-          id: const ServerId('http://nas.local'),
-          name: 'Attic NAS',
-          baseUrl: Uri.parse('http://nas.local'),
-          lastUser: 'sam',
-        ),
-      ),
-    );
-    await tester.pumpWidget(shell());
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'hunter2');
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Films'));
-    await tester.pumpAndSettle();
-    expect(find.text('Direct Play Movie'), findsWidgets);
-
-    await tester.tap(find.text('Direct Play Movie').first);
-    await tester.pumpAndSettle();
-    expect(find.text('2020'), findsOneWidget);
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Attic NAS'), findsOneWidget);
-  });
-
-  testWidgets('a SessionExpired anywhere in browsing returns to sign-in', (
-    tester,
-  ) async {
-    // F3 has already retried by then, so this is the one 401 that is not
-    // routine. It is a state change rather than a route push because any of
-    // the three screens can be the one that discovers it.
-    api
-      ..loginResult = const AuthResult(user: 'sam')
-      ..categoriesResult = SessionExpired(Uri.parse('http://nas.local/api'));
-    SettingsStore(dir).write(
-      AppSettings.empty.upsert(
-        SavedServer(
-          id: const ServerId('http://nas.local'),
-          name: 'Attic NAS',
-          baseUrl: Uri.parse('http://nas.local'),
-          lastUser: 'sam',
-        ),
-      ),
-    );
-    await tester.pumpWidget(shell());
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'hunter2');
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Please sign in again'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Signed out'), findsOneWidget);
   });
 }

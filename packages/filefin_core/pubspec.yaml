@@ -26,7 +26,7 @@ dependencies:
   # @immutable on the hand-written value types (FileFinUrls, the resume state)
   # that freezed does not generate. Without it the analyzer cannot warn when one
   # of them grows a mutable field.
-  meta: ^1.15.0
+  meta: 1.18.0
 
 dev_dependencies:
   # Runs the two builders below; `just codegen-check` invokes it per package.

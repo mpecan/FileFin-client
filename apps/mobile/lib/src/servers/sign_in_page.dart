@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
 
 /// F2: sign in to one saved server.
@@ -74,6 +77,10 @@ class _SignInPageState extends State<SignInPage> {
       if (!mounted) return;
       final message = describeApiError(error);
       setState(() => _problem = '${message.title}. ${message.detail}');
+    } on FileSystemException catch (error) {
+      api.close();
+      if (!mounted) return;
+      setState(() => _problem = describeSettingsWriteFailure(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

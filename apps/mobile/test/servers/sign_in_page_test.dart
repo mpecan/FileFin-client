@@ -39,7 +39,6 @@ void main() {
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     FileFinScope(
       dependencies: AppDependencies(
-        secrets: InMemorySecretStore(),
         settings: settings,
         apiFactory: (_) => api,
       ),
@@ -88,6 +87,38 @@ void main() {
     await submit(tester, 'hunter2');
 
     expect(settings.file.readAsStringSync(), isNot(contains('hunter2')));
+  });
+
+  testWidgets('a settings file that cannot be written SAYS so', (tester) async {
+    // Same hole as the add-server screen: only `FileFinApiException` was
+    // caught, so a write failure vanished into an unhandled async error with
+    // the button re-enabled and nothing on screen.
+    final blocker = File('${dir.path}/blocker')..writeAsStringSync('x');
+    api.loginResult = const AuthResult(user: 'sam');
+    await tester.pumpWidget(
+      FileFinScope(
+        dependencies: AppDependencies(
+          settings: SettingsStore(Directory('${blocker.path}/settings')),
+          apiFactory: (_) => api,
+        ),
+        child: MaterialApp(
+          home: SignInPage(
+            server: server,
+            onSignedIn: (_, signedIn) => handedOn = signedIn,
+          ),
+        ),
+      ),
+    );
+
+    await submit(tester, 'hunter2');
+
+    expect(handedOn, isNull);
+    expect(api.closed, isTrue);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('sign-in-problem'))).data,
+      contains('could not save its settings file'),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('bad credentials do not claim to know which of the three', (
@@ -154,7 +185,6 @@ void main() {
       await tester.pumpWidget(
         FileFinScope(
           dependencies: AppDependencies(
-            secrets: InMemorySecretStore(),
             settings: settings,
             apiFactory: (_) => slow,
           ),

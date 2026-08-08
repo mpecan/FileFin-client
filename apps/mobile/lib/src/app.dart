@@ -54,24 +54,23 @@ class _HomeRouteState extends State<HomeRoute> {
       builder: (_) => AddServerPage(
         // `pushReplacement`, so Back from sign-in returns to the launch screen
         // rather than to an address the user has already answered for.
-        onAdded: (server) => Navigator.of(context).pushReplacement<void, void>(
-          _signInRoute(server, pops: 1),
-        ),
+        onAdded: (server) => Navigator.of(
+          context,
+        ).pushReplacement<void, void>(_signInRoute(server)),
       ),
     ),
   );
 
   /// The sign-in route, built once for both ways in.
   ///
-  /// [pops] is how many routes to remove on success: one when sign-in replaced
-  /// the add-server screen, one when it was pushed on its own. Written as one
-  /// method rather than two call sites because two copies of this closure is
-  /// two places for the client-swap to be got wrong — and closing the previous
-  /// API is the half that leaks a socket when it is.
-  MaterialPageRoute<void> _signInRoute(
-    SavedServer server, {
-    required int pops,
-  }) => MaterialPageRoute(
+  /// One method rather than two call sites because two copies of this closure
+  /// is two places for the client-swap to be got wrong — and closing the
+  /// previous API is the half that leaks a socket when it is.
+  ///
+  /// Exactly one `pop` on success, from both ways in: sign-in either replaced
+  /// the add-server screen or was pushed straight onto the launch screen, and
+  /// in both cases it is one route above the root.
+  MaterialPageRoute<void> _signInRoute(SavedServer server) => MaterialPageRoute(
     builder: (_) => SignInPage(
       server: server,
       onSignedIn: (signedIn, api) {
@@ -80,12 +79,29 @@ class _HomeRouteState extends State<HomeRoute> {
           _api = api;
           _server = signedIn;
         });
-        for (var i = 0; i < pops; i++) {
-          Navigator.of(context).pop();
-        }
+        Navigator.of(context).pop();
       },
     ),
   );
+
+  /// What a `SessionExpired` on ANY browsing screen does.
+  ///
+  /// Two halves, and both are needed. `popUntil` is the half the tree does not
+  /// need and the grid and the detail page do: sign-out is a state change on
+  /// this route, so without it the user is returned to a signed-out shell
+  /// sitting under two pushed routes they must dismiss by hand. Clearing the
+  /// API is what makes [build] draw the signed-out screen at all.
+  ///
+  /// [_server] is deliberately KEPT. It is what the sign-in button then offers,
+  /// and dropping it sent someone who signed out of their second server to
+  /// their first one — silently, with no picker anywhere to correct it.
+  void _signOut() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() {
+      _api?.close();
+      _api = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,20 +115,24 @@ class _HomeRouteState extends State<HomeRoute> {
         // Sign-out on a SessionExpired is a state change here rather than a
         // route push: the tree, the grid and the detail page can all be the
         // screen that discovers the session is gone, and every one of them
-        // must land on the same place.
-        onSignIn: () => setState(() {
-          _api?.close();
-          _api = null;
-          _server = null;
-        }),
+        // must land on the same place. All three therefore get `_signOut` —
+        // the grid and the detail page shipped M3 without it, which left the
+        // two screens a user actually lives in showing "Please sign in again"
+        // with no button and no retry.
+        onSignIn: _signOut,
         onOpen: (category) => Navigator.of(context).push<void>(
           MaterialPageRoute(
             builder: (_) => CategoryGridPage(
               api: api,
               category: category,
+              onSignIn: _signOut,
               onOpen: (item) => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => MediaDetailPage(api: api, item: item),
+                  builder: (_) => MediaDetailPage(
+                    api: api,
+                    item: item,
+                    onSignIn: _signOut,
+                  ),
                 ),
               ),
             ),
@@ -120,14 +140,16 @@ class _HomeRouteState extends State<HomeRoute> {
         ),
       );
     }
+    // The server signed out of, when there is one, rather than `saved.first`:
+    // with two saved servers the latter sent someone who signed out of the
+    // second to the first, and there is no picker to correct it with.
+    final target = server ?? (saved.isEmpty ? null : saved.first);
     return NoServerPage(
       savedCount: saved.length,
       onAddServer: _addServer,
-      onSignIn: saved.isEmpty
+      onSignIn: target == null
           ? null
-          : () => Navigator.of(
-              context,
-            ).push<void>(_signInRoute(saved.first, pops: 1)),
+          : () => Navigator.of(context).push<void>(_signInRoute(target)),
     );
   }
 }
@@ -179,8 +201,13 @@ class NoServerPage extends StatelessWidget {
               savedCount == 0
                   ? 'Add the address of your FileFin server to browse its '
                         'library.'
-                  : 'FileFin keeps sessions in memory, so a server restart '
-                        'signs everyone out. Sign in again to carry on.',
+                  // NOT "a server restart signs everyone out": F3 renews and
+                  // replays that transparently and the user never sees this
+                  // screen for it. What lands here is having no password to
+                  // renew with — which at present is every fresh launch.
+                  : 'Your password is kept only while this app is running, so '
+                        'a fresh launch starts signed out. Sign in again to '
+                        'carry on.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),

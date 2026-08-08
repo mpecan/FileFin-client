@@ -199,74 +199,128 @@ void main() {
     expect(message.retryable, isFalse);
   });
 
-  test('no message leaks a password out of a URL (§9, NF4)', () {
-    // A message is a log line waiting to happen, and a saved-server URL is
-    // typed by a user — `https://sam:hunter2@nas.local/` is a thing people
-    // type. Every variant that echoes a URL must go through redactUserInfo.
+  group('the whole sealed hierarchy, one row per variant', () {
+    // ONE table for the three sweeps that used to keep their own lists. The
+    // redaction sweep kept 11 of the 14 variants by hand and quietly omitted
+    // MalformedIdentifier, CertificateNotTrusted and CertificatePinMismatch —
+    // a hand-maintained "every variant" list is a list of the variants
+    // somebody remembered.
+    //
+    // Every URL here carries `sam:hunter2@`, so the redaction sweep runs over
+    // all of them rather than over a second, shorter list.
     final secret = Uri.parse('https://sam:hunter2@nas.local/api/me');
     final all = <FileFinApiException>[
       RequestTimedOut(RequestPhase.send, secret),
       RequestCancelled(secret),
-      ConnectionFailed(secret),
+      ConnectionFailed(secret, cause: 'Connection refused'),
       SessionExpired(secret),
       NotFound(secret),
       CacheUnavailable(secret),
-      RateLimited(Duration.zero, secret),
+      RateLimited(const Duration(seconds: 1), secret),
+      const MalformedIdentifier('', 'media id'),
       InvalidCredentials(secret),
       NotAFileFinServerResponse(secret, 'text/html'),
-      MalformedResponse(secret, 'bad'),
-      ServerFailure(500, 'x', secret),
-    ];
-
-    for (final error in all) {
-      final message = describe(error);
-      expect(
-        '${message.title} ${message.detail}',
-        isNot(contains('hunter2')),
-        reason: '${error.runtimeType} leaked a password',
-      );
-    }
-  });
-
-  test('every message has a title and a detail worth reading', () {
-    // "Something went wrong." is the failure mode this whole file exists
-    // against; an empty or one-word detail is the same thing with fewer
-    // letters.
-    final all = <FileFinApiException>[
-      RequestTimedOut(RequestPhase.connect, url),
-      RequestCancelled(url),
-      ConnectionFailed(url),
-      SessionExpired(url),
-      NotFound(url),
-      CacheUnavailable(url),
-      RateLimited(const Duration(seconds: 1), url),
-      const MalformedIdentifier('', 'media id'),
-      InvalidCredentials(url),
-      NotAFileFinServerResponse(url, 'text/html'),
-      MalformedResponse(url, 'bad'),
-      ServerFailure(500, 'x', url),
+      MalformedResponse(secret, 'expected an object'),
+      ServerFailure(500, 'internal error', secret),
+      // The 15th row, and the reason this group exists. See below.
+      ServerFailure(401, 'unauthorized', secret),
       CertificateNotTrusted(
-        url,
+        secret,
         fingerprint: 'AA',
         subject: 's',
         issuer: 'i',
         validTo: DateTime.utc(2027),
       ),
-      CertificatePinMismatch(url, expected: 'AA', actual: 'BB'),
+      CertificatePinMismatch(secret, expected: 'AA', actual: 'BB'),
     ];
 
-    for (final error in all) {
-      final message = describe(error);
-      expect(
-        message.title.length,
-        greaterThan(3),
-        reason: '${error.runtimeType}',
-      );
-      expect(
-        message.detail.length,
-        greaterThan(15),
-        reason: '${error.runtimeType}',
-      );
-    }
+    test('the table really does cover every variant', () {
+      // `expectedNeedsSignIn` below is an exhaustive switch with no default,
+      // so a variant added to `filefin_api` stops this file compiling — the
+      // same alarm `describeApiError` itself carries. This length check is the
+      // other half: it catches a variant added to the switch and forgotten
+      // here.
+      expect(all, hasLength(15));
+      expect(all.map((e) => e.runtimeType).toSet(), hasLength(14));
+    });
+
+    test('only SessionExpired asks for a password — a 401 never does', () {
+      // **THE 401 DISCIPLINE, asserted at last.** The sibling test in
+      // `sign_in_page_test.dart` drives a fake that SUCCEEDS: no 401, no
+      // retry, no interceptor, and nothing about it can fail when the rule is
+      // broken. Adding `needsSignIn: statusCode == 401` to the `ServerFailure`
+      // arm — precisely the UI-level 401 handler the rule forbids — left all
+      // 181 tests green. It does not any more; the row is in the table above.
+      //
+      // Server sessions live in memory and die with the process (SPEC.md L1),
+      // so a 401 on any call is routine. `filefin_api` re-authenticates and
+      // replays once (F3) and the caller never sees it. A UI that prompted on
+      // a raw 401 would ask for a password every time a server restarted
+      // mid-scroll, which is the experience F2 and F3 exist to prevent.
+      for (final error in all) {
+        expect(
+          describe(error).needsSignIn,
+          expectedNeedsSignIn(error),
+          reason: '$error',
+        );
+      }
+    });
+
+    test('no message leaks a password out of a URL (§9, NF4)', () {
+      // A message is a log line waiting to happen, and a saved-server URL is
+      // typed by a user — `https://sam:hunter2@nas.local/` is a thing people
+      // type. Every variant that echoes a URL must go through redactUserInfo.
+      for (final error in all) {
+        final message = describe(error);
+        expect(
+          '${message.title} ${message.detail}',
+          isNot(contains('hunter2')),
+          reason: '${error.runtimeType} leaked a password',
+        );
+      }
+    });
+
+    test('every message has a title and a detail worth reading', () {
+      // "Something went wrong." is the failure mode this whole file exists
+      // against; an empty or one-word detail is the same thing with fewer
+      // letters.
+      for (final error in all) {
+        final message = describe(error);
+        expect(
+          message.title.length,
+          greaterThan(3),
+          reason: '${error.runtimeType}',
+        );
+        expect(
+          message.detail.length,
+          greaterThan(15),
+          reason: '${error.runtimeType}',
+        );
+      }
+    });
   });
 }
+
+/// Whether a variant is allowed to send the user to the sign-in screen.
+///
+/// **Exhaustive, with no default arm**, for the same reason `describeApiError`
+/// is: a variant added to `filefin_api` stops this file compiling rather than
+/// silently inheriting somebody's default. Written as one arm per variant
+/// instead of `e is SessionExpired` so that adding, say, a future
+/// `PasswordChanged` forces an answer rather than getting `false` for free.
+bool expectedNeedsSignIn(FileFinApiException error) => switch (error) {
+  SessionExpired() => true,
+  RequestTimedOut() ||
+  RequestCancelled() ||
+  ConnectionFailed() ||
+  NotFound() ||
+  CacheUnavailable() ||
+  RateLimited() ||
+  MalformedIdentifier() ||
+  InvalidCredentials() ||
+  NotAFileFinServerResponse() ||
+  MalformedResponse() ||
+  ServerFailure() ||
+  CertificateNotTrusted() ||
+  CertificatePinMismatch() => false,
+};
