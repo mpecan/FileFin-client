@@ -108,7 +108,7 @@ class SessionManager {
     } on DioException catch (e) {
       throw _loginFailure(e, url);
     }
-    final session = await _sessionCookie();
+    final session = await sessionCookie();
     if (session == null) {
       // Storing the password against a session that does not exist would make
       // every later call 401 into a re-auth that logs in and stores nothing
@@ -266,7 +266,16 @@ class SessionManager {
     return mapped;
   }
 
-  Future<String?> _sessionCookie() async {
+  /// The live session cookie's value, or null when the jar holds none.
+  ///
+  /// **Public because playback needs the value itself, not just its effect.**
+  /// Everything else in this package sends the cookie by having dio's
+  /// `CookieManager` attach it; libmpv opens its own socket from native code
+  /// and has to be handed the header, so this is the one place the value
+  /// leaves the jar. It is read out immediately before an open and never
+  /// stored anywhere by the caller — `PlaybackSessionHeaders` is what carries
+  /// it from here, and it redacts.
+  Future<String?> sessionCookie() async {
     final cookies = await jar.loadForRequest(urls.base);
     for (final cookie in cookies) {
       if (cookie.name == sessionCookieName) return cookie.value;

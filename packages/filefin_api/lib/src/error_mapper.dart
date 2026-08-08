@@ -126,6 +126,7 @@ FileFinApiException _notTrusted(
 FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
   final body = '${response.data ?? ''}';
   return switch (response.statusCode) {
+    400 => BadRequest(requested, body),
     401 => SessionExpired(requested),
     404 => NotFound(requested),
     429 => _rateLimited(response, requested),

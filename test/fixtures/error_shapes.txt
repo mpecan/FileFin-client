@@ -26,3 +26,27 @@ Content-Type: video/mp4
 
 # login rate limiting: 8 bad passwords in a row
 401 401 401 401 401 429 429 429 
+
+# 400 bad file index: POST /api/media/{id}/progress with file: 99 (and with -1)
+bad file index
+
+HTTP 400
+
+# 400 rating out of range: POST /api/media/{id}/rating with {"rating": 99}
+rating out of range
+
+HTTP 400
+
+# 200 the sidecar subtitle route, converted SRT -> WebVTT per request
+HTTP/1.1 200 OK
+Content-Type: text/vtt; charset=utf-8
+
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+Hello fixture
+
+# the browser-native verdict is decided by EXTENSION, not by probed codecs
+# (identical VP9+Opus streams, ffprobe format_name=matroska,webm for both)
+#   (2021) Native Matroska.mkv  -> transcode:true   GET file/0 -> 307
+#   (2022) Native WebM.webm     -> transcode:false  GET file/0 -> 200

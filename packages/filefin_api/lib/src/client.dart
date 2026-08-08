@@ -8,6 +8,7 @@ import 'package:filefin_api/src/credentials.dart';
 import 'package:filefin_api/src/error_mapper.dart';
 import 'package:filefin_api/src/errors.dart';
 import 'package:filefin_api/src/json_response.dart';
+import 'package:filefin_api/src/playback_session.dart';
 import 'package:filefin_api/src/probe_result.dart';
 import 'package:filefin_api/src/secret_store.dart';
 import 'package:filefin_api/src/server_probe.dart';
@@ -17,6 +18,8 @@ import 'package:filefin_api/src/tls/fingerprint.dart';
 import 'package:filefin_api/src/tls/pinned_adapter.dart';
 import 'package:filefin_api/src/transport.dart';
 import 'package:filefin_core/filefin_core.dart';
+
+part 'client_playback.dart';
 
 /// One server's API, typed, with F3's retry and F15's pinning already wired.
 ///
@@ -214,37 +217,46 @@ class FileFinClient {
         // what to do with the body based on the content type.
         options: Options(responseType: ResponseType.bytes),
       );
-      _refuseSpaCatchAll(response, url);
+      _refuseHtml(response.headers, url);
       return Uint8List.fromList(response.data ?? const []);
     } on DioException catch (e) {
-      final cause = e.error;
-      if (cause is FileFinApiException) throw cause;
-      final mapped = mapDioException(e, requested: url, pinner: pinner);
+      final mapped = _asOurs(e, url);
       if (mapped is NotFound) return null;
       throw mapped;
     }
   }
 
-  /// Refuses an HTML body on a route that serves bytes.
+  /// Refuses an HTML body on a route that does not serve JSON.
   ///
   /// Same reasoning as F1, and the same mechanism: this server registers its
   /// SPA catch-all outside the route table (`server.go:352`), so a route that
   /// moved — or an address that is not FileFin at all — answers `200
   /// text/html` with `index.html`. Those bytes handed to an `ImageProvider`
-  /// become a broken image with no explanation; named here they become a
+  /// become a broken image with no explanation, and handed to libmpv as a
+  /// subtitle they become a track with no cues; named here they become a
   /// sentence.
   ///
-  /// Anything else is allowed through on purpose. The server serves the poster
-  /// with `http.ServeFile`, so the content type is whatever the file is — WebP,
-  /// PNG, or absent — and a client insisting on `image/*` would refuse posters
-  /// that work.
-  static void _refuseSpaCatchAll(Response<List<int>> response, Uri url) {
-    final contentType =
-        response.headers[Headers.contentTypeHeader]?.firstOrNull;
+  /// Anything else is allowed through on purpose. The poster is served with
+  /// `http.ServeFile`, so its content type is whatever the file is — WebP, PNG,
+  /// or absent — and the subtitle route answers `text/vtt`. A client insisting
+  /// on one media type would refuse responses that work.
+  static void _refuseHtml(Headers headers, Uri url) {
+    final contentType = headers[Headers.contentTypeHeader]?.firstOrNull;
     if (contentType != null &&
         contentType.split(';').first.trim().toLowerCase() == 'text/html') {
       throw NotAFileFinServerResponse(url, contentType);
     }
+  }
+
+  /// Turns dio's exception into ours, keeping a cause we already wrapped.
+  ///
+  /// `AuthInterceptor` rejects with the real reason wrapped when a renewal
+  /// itself fails, so a 429 arrives as `RateLimited` rather than being re-read
+  /// as a plain 401 and reported as "signed out".
+  FileFinApiException _asOurs(DioException error, Uri url) {
+    final cause = error.error;
+    if (cause is FileFinApiException) return cause;
+    return mapDioException(error, requested: url, pinner: pinner);
   }
 
   /// Releases both clients' sockets.
@@ -299,12 +311,31 @@ class FileFinClient {
       );
       return read(response, url);
     } on DioException catch (e) {
-      // `AuthInterceptor` rejects with the real reason wrapped when a renewal
-      // itself fails, so a 429 arrives as `RateLimited` rather than being
-      // re-read as a plain 401 and reported as "signed out".
-      final cause = e.error;
-      if (cause is FileFinApiException) throw cause;
-      throw mapDioException(e, requested: url, pinner: pinner);
+      throw _asOurs(e, url);
+    }
+  }
+
+  /// One POST of a JSON body, one error vocabulary, no response to decode.
+  ///
+  /// A sibling of [_send] rather than a seventh copy of its try/catch: `just
+  /// dupes` (15 lines / 50 tokens / 5%) would fire on the duplication, and
+  /// more importantly two copies is two chances to map an error differently.
+  /// The `204` routes here answer no body at all, so there is nothing to read
+  /// and no media type to check.
+  Future<void> _sendJson(
+    Uri url,
+    Map<String, Object?> body, {
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      await _dio.postUri<void>(
+        url,
+        data: body,
+        cancelToken: cancelToken,
+        options: Options(contentType: Headers.jsonContentType),
+      );
+    } on DioException catch (e) {
+      throw _asOurs(e, url);
     }
   }
 

@@ -12,9 +12,6 @@
 ///
 /// - `TranscodingDisabled` (415) — M5, where F12's wording is the whole point
 ///   of the variant.
-/// - `BadRequest` (400) — M4 (`bad file index`) and M6 (`rating out of
-///   range`). At M2 the only 400 the server can produce is `bad category id`,
-///   and `CategoryId` is an `int`, so nothing can construct that request.
 /// - 403 — never. It is admin-only, and C4 forbids calling an admin route.
 ///
 /// **Hand-written, not `@freezed`.** None of these needs `copyWith` or JSON,
@@ -331,6 +328,40 @@ final class MalformedResponse extends FileFinApiException {
   String toString() =>
       'MalformedResponse: ${redactUserInfo(requested)} sent JSON we could not '
       'read: $problem';
+}
+
+/// A `400`: the request itself was wrong, and repeating it will not help.
+///
+/// **The distinction from [ServerFailure] is retryability, and it is not
+/// cosmetic.** `ServerFailure` is the "we have no opinion" landing place and a
+/// caller may reasonably try again; a 400 is the server saying the arguments
+/// were unusable, so a progress reporter that retried one would post the same
+/// rejected body on every tick for as long as playback lasted.
+///
+/// Two shapes exist, both captured live at v0.20.3 into
+/// `test/fixtures/error_shapes.txt`:
+///
+/// - `bad file index` — `POST .../progress` with a `file` outside `files[]`
+///   (`media.go:511`). It means the file list changed under us, so the right
+///   answer is to stop reporting and re-read the item, not to retry.
+/// - `rating out of range` — `POST .../rating` outside 1..10 (`media.go:425`).
+///   M6's, and named here because the variant is one type for both.
+///
+/// [body] is the server's own plain-text sentence, kept because it is the only
+/// thing that separates the two.
+final class BadRequest extends FileFinApiException {
+  /// [requested] rejected the arguments it was given, saying [body].
+  const BadRequest(this.requested, this.body);
+
+  /// The URL that was being requested.
+  final Uri requested;
+
+  /// The server's plain-text explanation, verbatim.
+  final String body;
+
+  @override
+  String toString() =>
+      'BadRequest: ${redactUserInfo(requested)} rejected the request: $body';
 }
 
 /// Any other non-2xx status, kept so the hierarchy stays total.
