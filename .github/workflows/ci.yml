@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+# Actions are pinned to commit SHAs, not tags. A tag is mutable, and a mutable
+# reference in CI means the thing that gated yesterday's commit is not
+# necessarily the thing that gates today's.
+jobs:
+  check:
+    name: just check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # `just mutants` diffs the working tree against HEAD, and
+          # `FILEFIN_MUTANTS_BASE=HEAD~1` is the documented way to re-check a
+          # commit that already landed. Neither works in a shallow clone.
+          fetch-depth: 0
+
+      - name: Set up Flutter (bundles the Dart SDK)
+        # subosito/flutter-action v2.23.0. Flutter rather than dart-lang/setup-dart
+        # because it bundles a matching Dart, so nothing here changes at M3 when
+        # the Flutter app arrives and `just test` gains `flutter test`.
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.44.9
+          channel: stable
+          cache: true
+
+      - name: Set up Node (for the jscpd duplication gate)
+        # actions/setup-node v6.5.0. `just dupes` FAILS when npx is absent
+        # rather than skipping, so this step is not optional.
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+
+      - name: Set up just
+        # extractions/setup-just v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3
+
+      - name: Install the git hooks
+        # `just check` runs `hooks-status`, which FAILS when the hooks are not
+        # installed. That is the point of the gate — so CI installs them rather
+        # than being exempted from it.
+        run: just install-hooks
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: just check
+        run: just check
+
+# There is deliberately no fixture-capture job.
+#
+# Capturing fixtures needs a real `filefin` binary built from upstream (Go plus
+# a Node web build) and a seeded data directory. That is a genuine piece of
+# work, not a checkbox, and a job that quietly skips when the binary is absent
+# would report success while checking nothing — the exact failure mode
+# CLAUDE.md's "gates must be able to fail" section describes.
+#
+# What CI *does* enforce is `just fixtures-verify`, inside `just check`: the
+# committed fixtures must match their SHA-256 manifest and still satisfy every
+# structural assertion. So a fixture edited by hand fails CI even though CI
+# never talks to a server. Re-capture is a local, deliberate act
+# (`just fixtures-seed && just fixtures-capture`), recorded in
+# test/fixtures/PROVENANCE.md. STATE.md carries this as accepted debt.
