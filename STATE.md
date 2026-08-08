@@ -4,7 +4,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 
 | | |
 |---|---|
-| **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded |
+| **Done** | **M0** — workspace, gates, hooks, CI, `docs/server-api.md`, fixture capture, R1 retired, R4 licensing position recorded, then remediated against three adversarial reviews |
 | **Next** | **M1** — `filefin_core`: models, extension-type IDs, URL building, resume engine, `decide()` |
 | **Exit criterion met** | `just check` exits 0 on a clean tree; every gate has a both-directions proof below |
 
@@ -27,10 +27,11 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M0.11 | `tool/hooks/pre-commit`, `tool/hooks/post-commit`, `just install-hooks` |
 | M0.12 | `docs/server-api.md` — every user-facing endpoint, cited to upstream `file:line`, plus the resume semantics transcribed rule by rule |
 | M0.13 | `seed.sh` enriched (two-file item + rich `meta.json`), fixtures captured and committed with `PROVENANCE.md` and a SHA-256 manifest; `tool/check-fixtures.sh` + `just fixtures-verify` |
-| M0.13b | `tool/fixtures/capture_state_vectors_test.go` + `tool/capture-resume-vectors.sh` → `test/fixtures/resume_vectors.json`, **333 vectors captured from the real engine** |
+| M0.13b | `tool/fixtures/capture_state_vectors_test.go` + `tool/capture-resume-vectors.sh` + `just fixtures-vectors` → `test/fixtures/resume_vectors.json`, **601 vectors captured from the real engine** across all three `Refs` branches |
 | M0.14 | `docs/architecture.md`, `docs/risks.md`, this file |
 | M0.15 | `.github/workflows/ci.yml` |
 | extra | `tool/check-dupes.sh` + `just dupes` — jscpd was evaluated and *works* for Dart, so the gate exists rather than a note explaining its absence |
+| M0.16 | remediation of three adversarial reviews: 14 gate holes closed and re-proven both ways, `docs/server-api.md` corrected against upstream and against a live server, `resume_vectors.json` re-captured with the stale-ref case (333 → 601 vectors) |
 
 ---
 
@@ -44,6 +45,8 @@ codes were observed, not inferred.
 |---|---|---|---|---|
 | `toolchain-check` | ran with `PATH=/usr/bin:/bin` so `dart` is absent | **1** | normal PATH, Dart 3.12.2 | 0 |
 | `hooks-status` | before `just install-hooks` | **1** | after installing | 0 |
+| `hooks-status` — a stub | `.git/hooks/pre-commit` replaced by an executable `#!/bin/sh\nexit 0` | **1** | `just install-hooks` | 0 |
+| `hooks-status` — a copy | `cp tool/hooks/pre-commit .git/hooks/` — executable, byte-identical, still not a symlink | **1** | `just install-hooks` | 0 |
 | `fmt-check` | a `.dart` with mangled whitespace | **1** | after `just fmt` | 0 |
 | `analyze` — `--fatal-warnings` | an unused local variable | **2** | removed | 0 |
 | `analyze` — `--fatal-infos` | `final x = 42;` → `prefer_const_declarations`, an **info**-severity lint only. Same file with `--fatal-warnings` alone exits **0**, with the recipe's `--fatal-infos` exits **1** | **1** | removed | 0 |
@@ -59,7 +62,8 @@ codes were observed, not inferred.
 | `constitution` / `dead_types` | `sealed class PlaybackDecision` with `PlayDirect` constructed elsewhere and `PlayHls` never constructed | **1** (named `PlayHls`) | constructed `PlayHls` too | 0 |
 | `constitution` / `undocumented_endpoint` | `'/api/categories'` literal, doc listed only `/api/state` | **1** | added it to the doc | 0 |
 | `constitution` / `secret_tostring` | `class SessionCookie` with no `toString()` override | **1** | added `String toString() => '…<redacted>'` | 0 |
-| `constitution-accept` — up | accepted with 1 placeholder present → baseline 0 → 1, with a loud `WARNING: … Accepting new debt, not paying it`; a subsequent `check` then passed at the raised baseline | 0 | — | — |
+| `constitution-accept` — up | accepted with 1 placeholder present → **refused**, `ERROR: placeholders rises 0 -> 1`, and `tool/constitution-baseline.txt` byte-identical afterwards | **1** | — | — |
+| `constitution-accept` — up, overridden | same input with `FILEFIN_ACCEPT_NEW_DEBT=1` → baseline 0 → 1 with `WARNING: … accepting new debt, not paying it` | 0 | — | — |
 | `constitution-accept` — down | removed the violation → `check` printed `NOTICE: … down from 1. Debt paid.`; `accept` rewrote the baseline to 0 | 0 | — | — |
 | `deps` — rent comment | `path: ^1.9.0` with no comment above it | **1** | comment added | (still 1, see next row) |
 | `deps` — unused | `path` with a rent comment but no import and no allowlist entry | **1** | added to `tool/dep-allowlist.txt` | 0 |
@@ -71,13 +75,50 @@ codes were observed, not inferred.
 | `coverage-check` — **no data** | lcov with **zero `DA:` records** → `ERROR: no DA: records … coverage data is missing or empty` (not 0%, not a pass) | **1** | — | — |
 | `coverage-check` — missing file | lcov path that does not exist | **1** | — | — |
 | `mutants` | real scratch package: `int add(a, b) => a + b;` with a test asserting only `add(0,0) == 0` → 1 mutant, 1 undetected | **1** | test strengthened to `add(2,3) == 5` → 1 of 1 caught | 0 |
-| `mutants` — empty diff | no changed Dart lib sources vs HEAD | 0, with `no changed Dart lib sources vs HEAD — nothing to mutate` | — | — |
+| `mutants` — empty diff, local | no changed Dart lib sources vs HEAD | 0, with `no changed Dart lib sources vs HEAD — nothing to mutate` | — | — |
+| `mutants` — **the CI path** | clone at a committed HEAD, clean tree, `CI=true`. Old script: `nothing to mutate`, **RC 0**. New script, same tree, same second: **RC 1**, `FILEFIN_MUTANTS_BASE resolves to HEAD and the tree is clean` | **1** | `CI=true FILEFIN_MUTANTS_BASE=HEAD^` on the same tree | 0 |
+| `mutants` — zero mutants | real scratch package; the only changed lib file is a barrel `export`. `Found 0 mutations` → previously a NOTICE and RC 0; now `ERROR: … produced 0 mutants` | **1** | `FILEFIN_MUTANTS_ALLOW_ZERO=1` on the same input | 0 |
 | `fixtures-verify` — manifest | `jq '.title = "Sneakily Edited"'` on a committed fixture → diff against `SHA256SUMS` | **1** | restored | 0 |
 | `fixtures-verify` — structural | `jq '.tags = []'` **and** a regenerated manifest, so the checksum half passes → structural assertion caught it | **1** | restored | 0 |
+| `fixtures-accept` — key loss | deleted 8 top-level + 5 per-file keys from `media_detail_directplay.json`, then `accept` — the exact attack that used to launder a gutted payload → **refused**, naming each lost path, `SHA256SUMS`/`KEYS.txt` unwritten | **1** | restored, `accept` clean | 0 |
+| `fixtures-accept` — key loss, overridden | same input with `FILEFIN_ACCEPT_FIXTURE_KEY_LOSS=1` | 0 | — | — |
+| `fixtures-verify` — vector grid | `jq '.vectors \|= .[0:50]'` **and** `accept` (the key set is unchanged, so the ratchet allows it) → `the vector grid did not run in full` | **1** | restored | 0 |
+| `fixtures-verify` — stale-ref vectors | dropped only the 18 vectors whose output pointer ref is absent from `refs`, then `accept` → `no vector has an output pointer whose ref is absent from refs` | **1** | restored | 0 |
 | `test` | *zero-test guard not yet exercisable on a real package* — see debt below | — | no Dart sources | 0 |
 | pre-commit hook — blocks | badly-formatted staged `.dart` | **1**, `BLOCKED by: fmt analyze` | — | — |
 | pre-commit hook — bypass is audible | same tree, `git commit --no-verify` | commit **succeeded (0)** *and* post-commit printed `WARNING: commit 2c16415 landed with failing gates` with the full gate log and the amend instruction | — | — |
 | pre-commit hook — clean | clean tree | 0, `all gates passed`, post-commit **silent** | — | — |
+
+### Remediation of three adversarial reviews — proof log
+
+Three independent reviews (constitution compliance, gate integrity, server
+contract accuracy) found fourteen gate holes and eleven contract inaccuracies.
+Every gate changed in response was re-proven in both directions, on the real
+scripts, before and after. "Before" is the committed script at `bd34161`, run
+against the same input in the same second.
+
+| Finding | What was wrong | Fail input | Before | After |
+|---|---|---|---|---|
+| **F1 / G3** | `check-constitution.sh` expanded `$files` unquoted at ten sites, so one Dart path containing a space word-split into non-existent paths and `\|\| true` swallowed grep's complaint — **all six** constitutional checks silently disabled at once | `packages/filefin_core/lib/my file.dart` with `throw UnimplementedError()` | RC **0**, `constitution: no new violations`, with `grep: …/my: No such file or directory` hidden by the hook's log capture | RC **1**, names the file |
+| F1 / G3 | the same, per check | one space-named fixture per check: `dart:io` import (`core_purity`), `typedef MediaId` (`id_typedefs`), an unconstructed variant (`dead_types`), `'/api/…'` (`undocumented_endpoint`), a `Session` class (`secret_tostring`) | RC 0 for every one | RC **1** for every one |
+| **G1** | `just mutants` structurally could not fail in CI: base defaults to `HEAD`, CI checks out a commit, so the diff was always empty | clone at a committed HEAD, clean tree, `CI=true` | RC **0**, `nothing to mutate` | RC **1**, `FILEFIN_MUTANTS_BASE resolves to HEAD and the tree is clean`. With `FILEFIN_MUTANTS_BASE=HEAD^`: RC 0 |
+| **G2** | the 50% floor could not be breached by adding untested code — `dart test --coverage` omits never-loaded libraries entirely, so they are absent from the denominator rather than 0% | `lib/tested.dart` (1 line, tested) + `lib/never_imported.dart` (11 public functions, no importer) | RC **0**, `Coverage: 100% (1/1 lines)` | RC **1**, names `never_imported.dart`. Once a test imports it: `Coverage: 16% (2/12 lines)` → floor **fails**, which is the true figure |
+| G2 | `run-coverage.sh:29` dropped a whole package from the denominator when it had no `test/` | a 100%-covered package plus a 2-line package with no `test/` | RC **0**, `Coverage: 100% (1/1 lines)` | RC **1**, `packages/untested has no test/ directory` |
+| **G4** | `dead_types` required the `final` keyword, so the byte-identical hierarchy written as plain `class X extends Y` was invisible | `sealed class PlaybackDecision` + `class PlayHls extends PlaybackDecision`, never constructed | RC 0 | RC **1**. Constructing `PlayHls()` elsewhere: RC 0 |
+| **G5** | `secret_tostring` matched `String toString(` on any line, including prose | `class SessionCookie` whose only mention is `// We deliberately do not write String toString() here.` | RC 0 | RC **1**. A real `@override String toString()`: RC 0 |
+| **G6** | `undocumented_endpoint` matched only single-quoted literals *starting* at `/api/`, missing the interpolated form `filefin_api` will actually use — **and** would have false-positived at M1.6, because the doc writes `{id}` and Dart writes `$id` | `'$b/api/undocumented/$id'` | RC 0 (invisible) | RC **1**. `"/api/definitely-not-real"` (double-quoted): RC **1**. `'$b/api/media/$id'` — documented, interpolated: RC **0**, the false positive is gone |
+| **G7** | the structural assertions covered ~15 named fields, so gutting a payload and re-running `accept` passed both halves | delete 8 top-level + 5 per-file keys, then `accept` | `accept` RC 0, `verify` RC 0 on a gutted payload | `accept` RC **1**, naming each lost path, manifest unwritten |
+| G7 | `PROVENANCE.md` was excluded from `hash_all`, so nothing tied the provenance record to the bytes | — | 17 files hashed, `PROVENANCE.md` and the vectors' record uncovered | 19 files hashed, `PROVENANCE.md` included |
+| **G8** | the "M0 only" guards keyed on `dart_sources`, which excludes generated files — so a package whose only Dart was `*.g.dart` turned them all green again | `packages/genonly/pubspec.yaml` + `lib/model.g.dart`, nothing else | `run-tests` RC **0** "(M0 only)", `run-coverage` RC **0** "(M0 only)", `coverage-gate` RC **0** "(M0 only)" | RC **1**, **1**, **1** — `has no *_test.dart files` / `has no test/ directory` / `lcov.info not found` |
+| **G9** | `constitution-accept` warned on a rise and wrote the raised baseline anyway, exit 0 | `accept` with one new placeholder | baseline 0 → 1, RC 0 | RC **1**, baseline byte-identical. With `FILEFIN_ACCEPT_NEW_DEBT=1`: RC 0 and the warning. Paying the debt and accepting the **fall**: RC 0, no override needed |
+| **G10** | `check-deps.sh` accepted a bare `#` as a rent comment | `#` alone above `very_good_analysis:`; then `###` | RC 0 both | RC **1** both. Real comment restored: RC 0 |
+| **G11** | `hooks-status` tested only `-e`/`-x`, so any executable passed | an executable `#!/bin/sh\nexit 0` stub; then a byte-identical *copy* of the real hook | RC 0 both | RC **1** both. `just install-hooks`: RC 0 |
+| **G12** | zero mutants was treated as a pass — the comment said "Not a pass" and then did not touch `status` | real scratch package whose only changed lib file is a barrel `export` → `Found 0 mutations` | RC **0**, `mutants: all mutants … were killed` | RC **1**. With `FILEFIN_MUTANTS_ALLOW_ZERO=1`: RC 0. A real mutable change with mutants killed: RC 0 |
+| **C2** | `resume_vectors.json` had **0 of 333** vectors with a pointer ref absent from `refs`, so a Dart `View` written as `continueSeconds = pointer?.seconds ?? 0` was wrong and passed everything | replayed that exact wrong `View` over both vector files | fails **0 of 333** old vectors | fails **18 of 601** new vectors |
+
+The C2 replay is the proof that matters for the oracle: the fixture is only
+worth having if a plausible wrong implementation fails it. It did not, and now
+it does.
 
 ### Gate proofs deliberately deferred
 
@@ -112,22 +153,82 @@ Stated here rather than left implied by silence.
 
 Said out loud, per CLAUDE.md. Silence would read as "there was none".
 
-### The three M0-only no-op gate paths
+### Ten of fourteen gates measure zero Dart today
 
-`test`, `coverage-check` and `dupes` each have one branch that exits 0 without
-measuring anything, because the tree contains **no Dart at all**. Each branch
-is guarded on `dart_sources` being completely empty and prints "(M0 only)".
+The honest number, said plainly. `just check` runs fourteen gates. **Four of
+them measure something now** — `toolchain-check` (the SDK version),
+`hooks-status` (the installed hooks), `deps` (the root pubspec), and
+`fixtures-verify` (19 files, 259 captured key paths, 20 structural assertions).
+The other ten degenerate over an empty Dart file list: `fmt-check`, `analyze`,
+`file-size`, `comments`, `constitution` and `mutants` run their real logic over
+nothing, and `test`, `coverage-check`, `dupes` and `codegen-check` take an
+explicit "(M0 only)" branch.
 
-The first `.dart` file under `packages/` or `apps/` makes all three
-unreachable, and from that moment the gates fail rather than skip:
-`run-tests.sh` fails when a package has no `*_test.dart`; `run-coverage.sh`
-fails when no package has a `test/`; `check-coverage.sh` fails on an lcov with
-zero `DA:` records. `codegen-check` has a fourth such branch, guarded instead
-by "generated files committed but nothing can regenerate them".
+The distinction between those two groups is real and worth keeping: an explicit
+branch is code that must be **deleted**, and until it is, it is a line that says
+"exit 0 without checking". A gate running its real logic over zero files needs
+no deletion. But both measure nothing, and reporting only the four explicit
+branches would have understated it.
+
+Each of the three M0-only branches (`test`, `coverage-check`, `dupes`) is
+guarded on `no_dart_packages` — no `pubspec.yaml` under `packages/` or `apps/`.
+They were previously guarded on `dart_sources` being empty, which did **not**
+hold: `dart_sources` excludes `*.g.dart`, so a package whose only Dart was
+generated made all three reachable again. That is finding G8, and the claim in
+the previous version of this file — "the first `.dart` file makes them
+unreachable" — was false as written. It is now true of the first *package*.
+`codegen-check`'s fourth branch is guarded differently, by "generated files
+committed but nothing can regenerate them", and retires at M1.4.
 
 This is genuine vacuity for the duration of M0 and it is the price of M0's exit
-criterion being `just check exits 0` over an empty tree. It self-destructs at
-M1.1.
+criterion being `just check exits 0` over an empty tree. Nine of the ten retire
+at M1.1; `codegen-check`'s at M1.4.
+
+### Three environment overrides, and the limits they do not cover
+
+Each of these refuses by default and exists because the alternative was a gate
+that could not fail. They are levers, and a lever left lying around gets pulled,
+so they are listed here as debt rather than as features.
+
+| Override | Relaxes | Required alongside |
+|---|---|---|
+| `FILEFIN_ACCEPT_NEW_DEBT=1` | `constitution-accept` writing a raised baseline | a line in this section saying which violation and why |
+| `FILEFIN_ACCEPT_FIXTURE_KEY_LOSS=1` | `fixtures-accept` recording a captured JSON key disappearing | the commit message naming the upstream change (§8: the doc and the model move with it) |
+| `FILEFIN_MUTANTS_ALLOW_ZERO=1` | `mutants` failing on a diff that produced no mutants | the commit message saying which cause — a declaration-only diff, or exclusions swallowing a real change |
+
+`FILEFIN_MUTANTS_BASE` is not in this list: it selects a diff base rather than
+relaxing a threshold, and CI now sets it. Nothing else under `tool/` reads the
+environment — `FILEFIN_JSCPD_VERSION` and `FILEFIN_DUPES_THRESHOLD` were
+removed, since nothing set them and an env var that raises the duplication
+threshold contradicts the "ratchets down, never up" policy it was sitting next
+to (finding F4).
+
+Two gate limits are known and not closed:
+
+- **`undocumented_endpoint` does not reconstruct a path split across adjacent
+  concatenated string literals** (`'/api/' 'media'`). It matches `/api/` inside
+  any single- or double-quoted literal, interpolated or not, which covers every
+  form `filefin_api` will actually write. M1.6's single `ApiPaths` class is the
+  structural answer; a grep gate is not going to parse Dart.
+- **`dead_types` deliberately ignores `sealed` and `abstract` variant
+  modifiers.** Neither can be constructed, so "never constructed outside its own
+  file" is their definition rather than a violation, and flagging them would
+  false-positive on every intermediate node of a nested hierarchy. The review
+  suggested including them; this is a considered deviation, not an omission.
+  `final`, `base`, `interface` and bare `class` are all covered.
+
+### `build_runner` was removed rather than justified
+
+Finding F3: `tool/dep-allowlist.txt` claimed it was "invoked by `just codegen` /
+`just codegen-check`", but `check-codegen.sh` scans `packages/*` and `apps/*`
+for a `build_runner:` declaration, found none — it was declared in the *root*
+pubspec — and short-circuited. `just codegen` had no builders and no caller. So
+it was a dependency no milestone needed yet, which is §1.
+
+It is gone from `pubspec.yaml`, from the allowlist, and `just codegen` is gone
+with it; all three return at **M1.4** with the first `@freezed` model.
+`codegen-check`'s anti-vacuity guard is unaffected and still proven: committed
+generated files with no declared builder fail.
 
 ### Deferred by decision, not oversight
 
@@ -145,8 +246,10 @@ M1.1.
 Listed in full in `test/fixtures/PROVENANCE.md`. Summary: no poster bytes (the
 seeded items have no poster and no model decodes an image), no HLS segment
 bytes (multi-megabyte binary; R1's spike already confirmed `200 video/mp2t`),
-no captured `Retry-After` value, and only one user so per-user state isolation
-is untested. None of these is claimed by any M1 model, so §8 is intact; they
+and only one user — who **is** an admin — so neither per-user state isolation
+nor a non-admin `authResult` is exercised. The `Retry-After` gap is closed:
+verified live as `Retry-After: 900` on the sixth consecutive bad login,
+matching `int(retry.Seconds()) + 1` at `auth.go:149`. None of these is claimed by any M1 model, so §8 is intact; they
 land on the `just it` harness at M2/M5.
 
 ### CI does not capture fixtures
@@ -191,7 +294,8 @@ at M1.2 as well.
 - **M0.13b needed no Go toolchain download.** The plan warned that upstream's
   `go.mod` wants Go 1.26.4 while the local toolchain is 1.23, and that
   `GOTOOLCHAIN=auto` would need network. In the event, the capture ran against
-  the existing clone with the local toolchain and produced 333 vectors. The
+  the existing clone with the local toolchain and produced the vectors (333 at
+  first capture, 601 after the stale-ref grid was added). The
   script still sets `GOTOOLCHAIN=auto` and still fails loudly rather than
   degrading, since a fabricated oracle is worse than no oracle.
 - **The `meta.json` enrichment had to declare `version: 2`.** The first attempt
@@ -207,4 +311,13 @@ at M1.2 as well.
 - `tool/testserver/capture_fixtures.sh` builds the fixture list twice: once in
   the capture body and once in the emptiness guard. A third fixture added to
   one and not the other would be captured but unguarded. Not worth a redesign
-  now; `check-fixtures.sh` is the real backstop, and it is exhaustive.
+  now; `check-fixtures.sh` is the real backstop, and with `KEYS.txt` it is now
+  genuinely exhaustive rather than merely thorough.
+- `SPEC.md` §3.5 cited `docs/playback-state.md`, a file that has never existed.
+  Repointed at `docs/server-api.md`'s "Resume semantics" section, which is where
+  the rules actually live. Found while fixing F6; a citation to a missing file
+  is the same class of defect as a citation to the wrong line.
+- The review reported `SPEC.md:102` citing `server.go:456` for the `authResult`
+  *shape*. Both readings are half right: the struct is `server.go:447-453` and
+  `:456` is `authResultOf`, which builds it. The sentence now names both, since
+  a reader following the citation wants the struct.

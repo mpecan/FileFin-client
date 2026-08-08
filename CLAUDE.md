@@ -30,7 +30,18 @@ Denominator is non-blank lines, excluding generated files (`*.g.dart`,
 `*.freezed.dart`). Comments that pay rent: why a non-obvious choice was made,
 what invariant holds, which server quirk a workaround exists for. Comments
 that don't: what the code already says.
-*Enforced by: `just comments`.*
+
+**This budget governs Dart, and `just comments` measures Dart only.** The shell
+under `tool/` is deliberately exempt, and the exemption is a decision rather
+than an oversight: by §2's own arithmetic 12 of the 21 M0 shell scripts are past
+the 25% error line and all 21 are past the warn line. Every one of those
+comments is the kind §2 calls rent-paying — *why* process substitution instead
+of a pipe, *why* each constitutional check ends in `|| true`, *why* the seed's
+`meta.json` must be `version: 2`, *why* a guard keys on `pubspec.yaml` rather
+than on the source list. A gate script is read once a year, by someone deciding
+whether it can be weakened; the prose explaining why it cannot is the most
+valuable text in the file. Do not apply §2 literally to `tool/` and delete it.
+*Enforced by: `just comments` (Dart under `packages/*/lib`, `apps/*/lib`).*
 
 **§3 — Tests first.** TDD: red → green → refactor. Coverage floor 50%, target
 80%. Every bug fix adds a regression test. `filefin_core` tests are
@@ -49,11 +60,18 @@ Version constraints carry a one-line reason when they are tighter than caret
 default. Pre-1.0 packages are pinned exactly.
 
 Tooling packages are consumed by configuration or by a gate recipe and are
-never imported by anything (`very_good_analysis`, `build_runner`, `freezed`,
-`json_serializable`, `mutation_test`, `coverage`). For those the import
-requirement is satisfied instead by an entry in `tool/dep-allowlist.txt` naming
-what consumes it. The rent comment is required either way — the allowlist
+never imported by anything (`very_good_analysis`, `mutation_test`, `coverage`
+today; `build_runner`, `freezed`, `json_serializable` from M1.4). For those the
+import requirement is satisfied instead by an entry in `tool/dep-allowlist.txt`
+naming what consumes it. The rent comment is required either way — the allowlist
 waives the import, never the justification.
+
+"Consumed by a gate recipe" means *today*, not eventually. A tooling package
+whose consumer does not exist yet is a §1 violation wearing §4's clothes, and an
+allowlist entry naming a consumer that has not been written is not a reason, it
+is a promise. That is why `build_runner` is not in the pubspec at M0: its
+allowlist entry claimed `just codegen-check` invoked it, and `codegen-check`
+short-circuited before ever reaching it.
 *Enforced by: `just deps` (unused/undeclared scan), review of the pubspec diff.*
 
 **§5 — No dead branches.** Error variants must be constructed somewhere.
@@ -146,7 +164,19 @@ only ever fall:
 - `just constitution` holds a per-rule violation baseline in
   `tool/constitution-baseline.txt`. A count above baseline is an error. A
   count below prints a notice — run `just constitution-accept` to lock the
-  improvement in so it can never regress.
+  improvement in so it can never regress. `constitution-accept` **refuses** to
+  write a raised baseline: a ratchet with a one-command release valve is not a
+  ratchet.
+- Three environment overrides exist, and they are the complete list. Each
+  refuses by default, names itself in its own error message, and requires the
+  reason to be written down where a reviewer sees it —
+  `FILEFIN_ACCEPT_NEW_DEBT` (raise a constitution baseline; say so in
+  STATE.md), `FILEFIN_ACCEPT_FIXTURE_KEY_LOSS` (record a captured JSON key
+  disappearing; say so in the commit), `FILEFIN_MUTANTS_ALLOW_ZERO` (accept a
+  diff that produced no mutants; say which of the two causes it was). Nothing
+  else in `tool/` reads the environment except `FILEFIN_MUTANTS_BASE`, which
+  chooses a diff base rather than relaxing a threshold. An undocumented lever
+  that quietly lowers a bar is a gate you have already lost.
 - Gate warnings (`just file-size`, `just comments`) may fall or hold, never rise.
 - Coverage may fall or hold, never drop below the floor.
 
@@ -168,12 +198,12 @@ does not exist.
 | Comment budget | `just comments` | 15% warn / 25% error, `//` only (§2) |
 | Constitution | `just constitution` | ratcheting debt baseline (§1, §5–§9) |
 | Dependencies | `just deps` | unused-in-pubspec / imported-but-undeclared (§4) |
-| Mutation | `just mutants` | `mutation_test`, diff-scoped vs `HEAD` |
+| Mutation | `just mutants` | `mutation_test`, diff-scoped vs `FILEFIN_MUTANTS_BASE` (default `HEAD`; CI passes a real base) |
 | Coverage | `just coverage-check` | lcov threshold; 50% floor, 80% target |
 | Duplication | `just dupes` | `jscpd` (Dart tokenizer), 5% threshold, 15 lines / 50 tokens |
 | Toolchain | `just toolchain-check` | fails when `dart` is absent or below 3.6 |
 | Hooks | `just hooks-status` | fails when the git hooks are not installed |
-| Fixtures | `just fixtures-verify` | SHA-256 manifest + structural assertions (§8) |
+| Fixtures | `just fixtures-verify` | SHA-256 manifest + captured-key ratchet + structural assertions (§8) |
 
 - `just check` — everything above. **Run this before claiming work is done.**
 - `just it` — integration tests against a real server (below). Arrives at M2;
@@ -195,6 +225,21 @@ suppresses scrutiny. Classic ways a shell gate silently always-passes:
   result is always 1 and the threshold is unreachable.
 - `grep -rql` — `-q` suppresses the file list `-l` asks for.
 - `flutter test` on a package with no test files exits 0.
+- an **unquoted** file list (`grep … $files`) — it word-splits on IFS, so one
+  path containing a space becomes two paths that do not exist, and a trailing
+  `|| true` swallows the complaint. Read into an array, expand as
+  `"${files[@]}"`.
+- a diff-scoped gate whose base **is** the working tree. CI checks out a
+  commit, so `git diff HEAD` is empty there and the gate measures nothing while
+  reporting success.
+- a denominator that omits what should sink it. `dart test --coverage` reports
+  only libraries the tests loaded, so an unimported file is absent from the
+  ratio rather than sitting at 0%.
+- a guard keyed on something the gate itself excludes. The M0-only branches
+  keyed on "no non-generated Dart", and generated Dart is excluded from every
+  gate — so a tree of `*.g.dart` turned them all green again.
+- an assertion satisfiable in prose. A check for `String toString(` matched the
+  comment saying the class deliberately has none.
 
 **When you add or change a gate, prove both directions.** Construct an input
 that must fail, run the gate, confirm non-zero exit; then confirm the clean
@@ -208,9 +253,13 @@ Unit tests never touch the network. Integration tests run against a **real
 to HLS, headers surviving that redirect, session loss on server restart — are
 exactly what a mock papers over.
 
-`just it` **fails** when the `filefin` binary is absent rather than skipping.
-A skipped integration suite that reports success is the gate-that-cannot-fail
-problem wearing a different hat.
+`just it` **will fail** when the `filefin` binary is absent rather than
+skipping. A skipped integration suite that reports success is the
+gate-that-cannot-fail problem wearing a different hat.
+
+The recipe does not exist yet — it arrives at **M2** with the first integration
+test, and a recipe over zero tests would report success for the same reason.
+STATE.md carries this as A4.
 
 ## Playback truths that keep biting
 

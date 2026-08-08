@@ -86,7 +86,7 @@ gates can never disagree about which files count:
 | `constitution` / `secret_tostring` | `dart_lib_sources` | §9 is about what ships and what logs. |
 | `deps` | every `pubspec.yaml`, sources = that package's `lib bin test tool example` | a dev-dependency used only by tests is used. |
 | `dupes` | `packages/` + `apps/`, `*.dart`, generated excluded | generated code is duplicative by construction and nobody can refactor it. |
-| `coverage` | `report-on` each package's `lib/` | test code covering itself is not evidence. |
+| `coverage` | `report-on` each package's `lib/`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. |
 | `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. |
 | `fixtures-verify` | `test/fixtures/**` | reads committed files only, so it runs in CI without a server. |
 
@@ -97,12 +97,20 @@ and the identical 700 lines renamed `*.g.dart` pass.
 ### The no-op paths, and why they cannot survive M1
 
 Three gates have a branch that exits 0 without measuring anything, because at
-M0 the tree contains no Dart at all: `test`, `coverage-check`, `dupes`. Each of
-those branches is guarded on `dart_sources` being **completely empty**, and each
-prints "(M0 only)". The first Dart file that lands anywhere under `packages/`
-or `apps/` makes them unreachable, and the gates then fail rather than skip —
-`run-tests.sh` fails when a package has no `*_test.dart`, `run-coverage.sh`
-fails when no package has a `test/` directory, `check-coverage.sh` fails on an
+M0 the tree contains no Dart package at all: `test`, `coverage-check`, `dupes`.
+Each prints "(M0 only)".
+
+Each of those branches is guarded on `no_dart_packages` — **no `pubspec.yaml`
+under `packages/` or `apps/`**. It used to be guarded on `dart_sources` being
+empty, and that guard did not hold: `dart_sources` excludes `*.g.dart` and
+`*.freezed.dart`, so a package whose only Dart was generated made all three
+branches reachable again, long after M0 and precisely over code nobody had
+written a test for. A `pubspec.yaml` cannot be excluded away.
+
+The first package makes them unreachable, and the gates then fail rather than
+skip — `run-tests.sh` fails when a package has no `*_test.dart`,
+`run-coverage.sh` fails when a package has no `test/` directory **and** when any
+`lib/` source produced no coverage record at all, `check-coverage.sh` fails on an
 lcov with zero `DA:` records.
 
 `codegen-check` has a fourth: it exits 0 when no package declares
@@ -126,6 +134,13 @@ record why not. It was evaluated, empirically:
 
 So the gate exists: `just dupes`, in `just check`.
 
+Every one of these is a literal in `tool/check-dupes.sh`. The version and the
+threshold were briefly readable from `FILEFIN_JSCPD_VERSION` and
+`FILEFIN_DUPES_THRESHOLD`, which nothing set and nothing documented — an
+environment variable that silently raises the threshold contradicts both "pinned"
+and "ratchets down, never up", and a gate-weakening lever left lying around gets
+pulled. Lowering the threshold is an edit here, reviewed in the diff.
+
 | Setting | Value | Reason |
 |---|---|---|
 | version | pinned `4.0.5` | a detector whose defaults move between patch releases turns "duplication rose" into "the tool changed its mind" |
@@ -141,15 +156,22 @@ gate-that-cannot-fail problem wearing a different hat.
 
 ## Version pinning policy
 
-Pinned **exactly** (no caret), each with a one-line reason in the pubspec:
+The policy for a package **when it is added**: pinned exactly (no caret), with
+a one-line reason in the pubspec. Only the first and last rows are in the tree
+today; the rest name the pin to apply at the milestone that introduces them, so
+the decision is made before the pressure to skip it.
 
-| Package | Why exact |
-|---|---|
-| `mutation_test` | a mutation result that changes with a patch release makes `just mutants` non-deterministic across machines |
-| `freezed`, `freezed_annotation` | generated output must be byte-identical or `just codegen-check` fails on a machine that merely resolved differently (M1) |
-| `json_serializable`, `json_annotation` | same (M1) |
-| `glados` | property-test shrinking and seeding must reproduce a reported failure (M1) |
-| `jscpd` (via `tool/check-dupes.sh`) | see above |
+| Package | In the tree | Why exact |
+|---|---|---|
+| `mutation_test` | yes | a mutation result that changes with a patch release makes `just mutants` non-deterministic across machines |
+| `jscpd` (literal in `tool/check-dupes.sh`) | yes | a detector whose defaults move between patch releases turns "duplication rose" into "the tool changed its mind" |
+| `freezed`, `freezed_annotation` | M1.4 | generated output must be byte-identical or `just codegen-check` fails on a machine that merely resolved differently |
+| `json_serializable`, `json_annotation` | M1.4 | same |
+| `glados` | M1 | property-test shrinking and seeding must reproduce a reported failure |
+
+`build_runner` is not in the pubspec at M0 either: nothing generates anything
+yet, so it paid no rent (§1, §4). It arrives at M1.4 with the first `@freezed`
+model, together with `just codegen`.
 
 `pubspec.lock` is **committed** and is not in `.gitignore`. The two gates above
 that must be reproducible are exactly the two that read resolved versions.
@@ -163,6 +185,22 @@ the target list itself: files changed against `FILEFIN_MUTANTS_BASE` (default
 `HEAD`), restricted to a package's `lib/`, non-generated, **plus untracked
 files** — a brand-new file is precisely the code that has never been tested, and
 `git diff` cannot see it.
+
+**The default base is right locally and fatal in CI**, and for a while CI ran
+with it. The working tree versus the last commit is what the commit about to be
+made is responsible for — but CI *checks out* a commit, so the tree IS `HEAD`,
+the diff is empty, and the gate printed "nothing to mutate" and exited 0 on
+every PR and every push. `.github/workflows/ci.yml` now passes the pull
+request's base sha, or `HEAD^` on a push, and `check-mutants.sh` refuses to
+report an empty diff when `$CI` is set and the base resolves to the current
+tree. The fix has two halves on purpose: dropping the variable from the
+workflow again fails loudly instead of going quietly green.
+
+**Zero mutants is a failure, not a pass.** `0 undetected out of 0` reads as
+100%. It happens when every mutable construct in a changed file is excluded, and
+it also happens if mutation_test's `Found N mutations` wording ever moves, since
+that string is scraped. `FILEFIN_MUTANTS_ALLOW_ZERO=1` accepts it for a genuinely
+declaration-only diff, and the commit message has to say which cause it was.
 
 Two properties of the tool drove the design and were verified against the
 pinned 1.7.1 rather than assumed:
@@ -195,8 +233,21 @@ surfaces in review as a manifest diff next to a stated upstream version.
 A checksum cannot tell a rich payload from a degenerate one, so the same script
 also asserts the set still exercises the shapes the models need: populated
 `metadata`/`ratings`/`technical`/`actors`/`genres`/`tags`, a two-file item, a
-non-zero `continueIndex`, and both playback branches. Both halves were proven
-to fail independently.
+non-zero `continueIndex`, both playback branches, and — for
+`resume_vectors.json` — the full grid, all three `Refs` branches, and at least
+one stale-ref vector.
+
+Those named assertions cover about twenty fields; the payloads carry hundreds.
+So there is a third half: `test/fixtures/KEYS.txt` records **every** JSON path
+ever captured, and behaves like the constitution ratchet. `accept` may add keys
+— §8 says a server upgrade that adds a field must not break us — and refuses to
+drop one. Without it, deleting thirteen keys and re-running `accept` left a
+gutted payload passing both other halves, because `accept` regenerated the only
+thing that would have noticed.
+
+`PROVENANCE.md` is inside the manifest, not exempt from it: the record of how a
+fixture was produced is part of the fixture set. All three halves were proven to
+fail independently.
 
 ---
 
