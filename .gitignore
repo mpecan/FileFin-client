@@ -4,17 +4,22 @@
 .pub-cache/
 .pub/
 build/
-pubspec.lock          # apps pin it; packages don't — re-evaluate at M0 per package
 .flutter-plugins
 .flutter-plugins-dependencies
 doc/api/
 
 # Generated code is COMMITTED, not ignored — see CLAUDE.md §10.
 # Do not add *.g.dart or *.freezed.dart here.
+#
+# pubspec.lock is COMMITTED too, and for the same reason: `just codegen-check`
+# and `just mutants` must produce the same bytes on every machine, and they
+# cannot if the resolved versions of freezed or mutation_test drift.
 
 # Coverage / gate output
 coverage/
 *.lcov
+lcov.info
+.mutation-output/
 mutation-test-report/
 
 # Android

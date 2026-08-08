@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Post-commit tripwire (CLAUDE.md §12).
+#
+# `git commit --no-verify` skips pre-commit — but NOT post-commit. So this is
+# the one hook a bypassed commit still runs, and its whole job is to make the
+# bypass audible, naming the SHA so it can be found and amended.
+#
+# It cannot and must not block: the commit already exists, and git ignores
+# post-commit exit codes. It always exits 0 and shouts instead.
+#
+# The gate list is not re-listed here. It lives in exactly one place
+# (pre-commit) and this hook delegates to it, so the two cannot drift.
+# Pre-commit reads the working tree, which at this point is what was just
+# committed, so the re-gate checks exactly what landed.
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    TARGET="$(readlink "$SOURCE")"
+    case "$TARGET" in
+        /*) SOURCE="$TARGET" ;;
+        *) SOURCE="$DIR/$TARGET" ;;
+    esac
+done
+HOOKS_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+LOG="/tmp/filefin-post-$$.log"
+if ! "$HOOKS_DIR/pre-commit" > "$LOG" 2>&1; then
+    sha=$(git rev-parse --short HEAD)
+    echo
+    echo "WARNING: commit $sha landed with failing gates — the pre-commit hook"
+    echo "         was bypassed or is not installed (CLAUDE.md §12)."
+    echo
+    tail -20 "$LOG" | sed 's/^/  /'
+    echo
+    echo "  Fix and amend:  just check && git commit --amend --no-edit"
+    echo
+fi
+
+rm -f "$LOG"
+exit 0

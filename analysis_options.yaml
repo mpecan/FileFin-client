@@ -1,0 +1,16 @@
+include: package:very_good_analysis/analysis_options.9.0.0.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/.dart_tool/**"
+    - "**/build/**"
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # Generated code is committed (CLAUDE.md §10) but never analysed; a stale
+    # reference to an excluded file must not be silently downgraded.
+    unused_import: error

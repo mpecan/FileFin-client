@@ -1,0 +1,29 @@
+name: filefin_workspace
+description: >-
+  Workspace root for the FileFin client. Holds no code — it exists so pub
+  resolves every package against one shared lockfile and so the gate recipes
+  have a single place to run from.
+publish_to: none
+
+environment:
+  # 3.6 is the floor for pub workspaces (`workspace:`); the toolchain gate
+  # enforces the same number so a too-old SDK fails loudly rather than
+  # producing a confusing resolution error.
+  sdk: ^3.6.0
+
+# Members join here as they are created; M1.1 adds packages/filefin_core.
+# Listing a member that does not exist yet fails `dart pub get` outright.
+workspace: []
+
+dev_dependencies:
+  # Drives freezed/json_serializable codegen; `just codegen-check` invokes it.
+  build_runner: ^2.4.13
+  # `format_coverage` turns `dart test --coverage` output into the lcov file
+  # `just coverage-check` reads.
+  coverage: ^1.11.0
+  # The `just mutants` gate. Pinned exactly: a mutation result that changes
+  # with a patch release makes the gate non-deterministic across machines.
+  mutation_test: 1.7.1
+  # The lint set `just analyze` enforces; without it analysis_options.yaml
+  # includes a package that is not there and analysis silently degrades.
+  very_good_analysis: ^9.0.0

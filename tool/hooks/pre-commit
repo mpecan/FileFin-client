@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit gate (CLAUDE.md §12). Install with `just install-hooks`.
+#
+# Resolve this script's real location first: `just install-hooks` symlinks the
+# hook into .git/hooks/, and BASH_SOURCE[0] keeps the symlink path, whose
+# dirname is .git/hooks — a relative source would miss common.sh entirely.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    TARGET="$(readlink "$SOURCE")"
+    case "$TARGET" in
+        /*) SOURCE="$TARGET" ;;
+        *) SOURCE="$DIR/$TARGET" ;;
+    esac
+done
+HOOKS_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+. "$HOOKS_DIR/../common.sh"
+cd "$(repo_root)"
+
+# The cheap tier: everything that is a grep or a parse. `test`, `coverage-check`
+# and `mutants` are deliberately absent — they run code, and `mutants` rewrites
+# sources in place, which is not a thing to do to a tree mid-commit. All three
+# live in `just check`, which §12 requires before committing anyway.
+#
+# These gates read the WORKING TREE, not the staged index. For this repo's flow
+# — a milestone committed whole — that is the intended behaviour; stashing to
+# isolate the index risks losing work for a distinction that does not arise
+# here.
+#
+# Escape hatch: `git commit --no-verify`. It skips this hook, but not
+# post-commit, which is what makes the bypass audible.
+
+# A commit concluding a merge or rebase replays existing content; re-gating it
+# blocks conflict resolution without checking anything new.
+if [ -e .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+    echo "[pre-commit] merge/rebase in progress — skipping gates"
+    exit 0
+fi
+
+failed=()
+
+run pre-commit fmt           dart format --output=none --set-exit-if-changed .
+run pre-commit analyze       dart analyze --fatal-infos --fatal-warnings .
+run pre-commit file-size     bash tool/check-file-sizes.sh
+run pre-commit comments      bash tool/check-comment-budget.sh
+run pre-commit constitution  bash tool/check-constitution.sh
+run pre-commit deps          bash tool/check-deps.sh
+
+if [ ${#failed[@]} -gt 0 ]; then
+    echo
+    echo "[pre-commit] BLOCKED by: ${failed[*]}"
+    echo "             Fix the gate. --no-verify is for a broken hook or an"
+    echo "             unblocking rollback, not for getting past a red gate (§12)."
+    exit 1
+fi
+
+echo "[pre-commit] all gates passed"
