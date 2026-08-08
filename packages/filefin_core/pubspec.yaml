@@ -23,6 +23,10 @@ dependencies:
   # byte-identical across machines or `just codegen-check` fails on a diff
   # nobody made.
   json_annotation: 4.12.0
+  # @immutable on the hand-written value types (FileFinUrls, the resume state)
+  # that freezed does not generate. Without it the analyzer cannot warn when one
+  # of them grows a mutable field.
+  meta: ^1.15.0
 
 dev_dependencies:
   # Runs the two builders below; `just codegen-check` invokes it per package.

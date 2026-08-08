@@ -17,6 +17,8 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | M1.1 | `packages/filefin_core/` — pubspec (`resolution: workspace`), analysis options including the root, the `lib/filefin_core.dart` barrel, `test/support/fixtures.dart` |
 | M1.2 | `lib/src/ids.dart` — `MediaId`, `CategoryId`, `FileIndex`, `SubtitleIndex` as `extension type … implements Object` |
 | M1.3 | `lib/src/json_converters.dart` — one `JsonConverter` per ID type |
+| M1.5 | `lib/src/search_field.dart` — the full `db/search.go` field vocabulary as an enum |
+| M1.6 | `lib/src/urls.dart` — `ApiPaths` (every route as one full literal) and `FileFinUrls` |
 | M1.4 | Nine `@freezed` wire models under `lib/src/models/`, `build_runner` + `freezed` + `json_serializable` restored with their rent, `just codegen`, `build.yaml`, and the deferred `codegen-check` proof |
 
 ### Two M0 gate scripts had to change for the first package to land
@@ -84,6 +86,25 @@ that then failed would leave the tree gutted.
 | one character changed in a committed `*.g.dart`, unstaged | 1 | **1** |
 | the same edit, **`git add`ed** | **0**, "generated output is up to date" | **1**, prints the diff and names §10 |
 | reverted | 0 | 0 |
+
+### `Uri` does not save you from a path template
+
+M1.6's tests caught two things worth writing down, because both look like
+paranoia until they are not.
+
+**A path parameter containing `/` escaped its segment.** `ApiPaths` builds a
+route as a string and `_resolve` splits it on `/`, so `MediaId('a/b')` reached
+`Uri` as two segments and addressed `…/api/media/a/b`. `Uri` percent-encodes a
+segment it is *given*; it cannot know a `/` inside the template was meant to be
+data. Every interpolated value now goes through `Uri.encodeComponent` in
+`ApiPaths` and is decoded again in `_resolve` before `Uri` re-encodes it. This
+is not hypothetical for `hlsSegment`, whose segment name comes straight out of a
+server-supplied playlist.
+
+**An empty `q` goes on the wire as a bare `q`, not `q=`.** Dart's `Uri` omits
+the `=` for an empty value. Go's `url.ParseQuery` reads `q` as the key `q` with
+the value `""`, so the request is the same one — the test asserts what actually
+goes on the wire rather than normalising it away.
 
 ### Coverage now honours `// coverage:ignore-file`, and hand-written source may not carry it
 
