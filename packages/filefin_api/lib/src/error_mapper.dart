@@ -142,8 +142,17 @@ FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
 /// possibility of a proxy rewriting the header: the value survives verbatim so
 /// a human can see what arrived, and the parsed duration stays zero rather
 /// than becoming a number nobody measured.
+///
+/// **The list form, not `Headers.value`.** dio's `value` *throws* when a header
+/// arrived more than once, and a `429` is the worst possible moment for an
+/// exception to escape the sealed hierarchy: a caller doing
+/// `on FileFinApiException` gets a raw `_Exception` exactly when login is being
+/// rate limited. No malice is needed — any proxy that folds or duplicates
+/// `Retry-After` reaches it. Taking the first value keeps a duplicate a
+/// cosmetic problem, and [RateLimited.rawRetryAfter] still shows a human what
+/// arrived.
 RateLimited _rateLimited(Response<dynamic> response, Uri requested) {
-  final raw = response.headers.value('retry-after');
+  final raw = response.headers['retry-after']?.firstOrNull;
   final seconds = raw == null ? null : int.tryParse(raw.trim());
   return RateLimited(
     Duration(seconds: seconds ?? 0),

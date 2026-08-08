@@ -282,7 +282,8 @@ void main() {
       expect(NotFound(requested).toString(), 'NotFound: $url');
       expect(
         CacheUnavailable(requested).toString(),
-        'CacheUnavailable: the server cache is rebuilding ($url)',
+        'CacheUnavailable: the server cache is unavailable, possibly '
+        'rebuilding ($url)',
       );
       expect(
         RateLimited(

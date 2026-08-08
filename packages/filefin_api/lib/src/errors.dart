@@ -171,11 +171,18 @@ final class NotFound extends FileFinApiException {
   String toString() => 'NotFound: ${redactUserInfo(requested)}';
 }
 
-/// A `503`: the server's SQLite cache is being rebuilt or is unreadable.
+/// A `503`: the server's SQLite cache is unavailable.
 ///
-/// Transient and self-healing, which is why it is not folded into
-/// [ServerFailure] — the correct UI is "try again in a moment", not "something
-/// is broken".
+/// Usually transient and self-healing, which is why it is not folded into
+/// [ServerFailure] — the first thing to try really is trying again.
+///
+/// **The message says "unavailable", not "rebuilding", and the distinction is
+/// upstream's rather than ours.** `media.go:192-198` writes `cache unavailable`
+/// whenever `ensureDB` fails, for **any** reason, and a rebuild is only one of
+/// them: provoked live at M2 with `chmod 000` on the cache directory, a
+/// permanently broken cache produced this exact 503. A message promising a
+/// rebuild would tell a user to wait for something that is never going to
+/// finish, so it names what is known and suggests rather than promises.
 final class CacheUnavailable extends FileFinApiException {
   /// [requested] could not be served because the cache was unavailable.
   const CacheUnavailable(this.requested);
@@ -185,7 +192,7 @@ final class CacheUnavailable extends FileFinApiException {
 
   @override
   String toString() =>
-      'CacheUnavailable: the server cache is rebuilding '
+      'CacheUnavailable: the server cache is unavailable, possibly rebuilding '
       '(${redactUserInfo(requested)})';
 }
 

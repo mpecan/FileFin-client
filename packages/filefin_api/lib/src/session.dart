@@ -70,6 +70,7 @@ class SessionManager {
   DateTime? _blockedUntil;
   String? _rawRetryAfter;
   Future<void>? _inFlight;
+  bool _passwordRejected = false;
 
   /// Increments on every successful login.
   ///
@@ -88,6 +89,10 @@ class SessionManager {
   /// looking at.
   Future<AuthResult> login(Credentials credentials) async {
     _refuseWhileBlocked();
+    // A caller-driven login is the new password [_refuseWhileRejected] is
+    // waiting for, so it always gets its one attempt. `_renew` never reaches
+    // here while the latch is set, so this cannot clear a latch it just wrote.
+    _passwordRejected = false;
     final url = urls.login;
     final AuthResult result;
     try {
@@ -142,7 +147,19 @@ class SessionManager {
         requested: url,
       );
     } on DioException catch (e) {
-      throw mapDioException(e, requested: url, pinner: pinner);
+      final mapped = mapDioException(e, requested: url, pinner: pinner);
+      if (mapped is SessionExpired) {
+        // The server has told us this cookie is dead, so keeping it is keeping
+        // a value that can only ever be wrong (§13: our own format, no
+        // migration, no fallback). It also stops `restore()` from looking
+        // recoverable on the next cold start — without this, an app that
+        // retried `restore` would re-seed the jar with the same dead cookie
+        // forever. The PASSWORD stays: F3's silent renewal is what it is for,
+        // and this is the moment it is needed.
+        await secrets.delete(server, SecretKind.session);
+        await jar.delete(urls.base);
+      }
+      throw mapped;
     }
   }
 
@@ -191,11 +208,13 @@ class SessionManager {
       await secrets.delete(server, SecretKind.password);
       _username = null;
       _blockedUntil = null;
+      _passwordRejected = false;
     }
   }
 
   Future<void> _renew() async {
     _refuseWhileBlocked();
+    _refuseWhileRejected();
     final username = _username;
     final password = await secrets.read(server, SecretKind.password);
     if (username == null || password == null) {
@@ -215,9 +234,31 @@ class SessionManager {
     throw RateLimited(remaining, urls.login, rawRetryAfter: _rawRetryAfter);
   }
 
+  /// Throws without touching the network once the stored password is known bad.
+  ///
+  /// **The generation guard and the in-flight future bound concurrency;
+  /// nothing bounded repetition.** A renewal that fails with
+  /// `InvalidCredentials` used to leave no state at all, so the next 401
+  /// re-submitted the same known-bad password — and the server locks an
+  /// account after five failures in fifteen minutes (`loginlimit.go:15-27`).
+  /// Ten sequential calls sent ten logins and locked the account; the benign
+  /// cause is simply a password changed server-side while this client still
+  /// holds the old one. Measured at M2: ten calls, ten logins, before this
+  /// latch and one after.
+  ///
+  /// It is latched the way `_blockedUntil` is, and cleared by the same events:
+  /// a caller supplying credentials, and [logout]. There is no timer, because
+  /// unlike a 429 nothing about waiting makes a wrong password right.
+  void _refuseWhileRejected() {
+    if (_passwordRejected) throw InvalidCredentials(urls.login);
+  }
+
   FileFinApiException _loginFailure(DioException error, Uri url) {
     final mapped = mapDioException(error, requested: url, pinner: pinner);
-    if (mapped is SessionExpired) return InvalidCredentials(url);
+    if (mapped is SessionExpired) {
+      _passwordRejected = true;
+      return InvalidCredentials(url);
+    }
     if (mapped is RateLimited) {
       _blockedUntil = _now().add(mapped.retryAfter);
       _rawRetryAfter = mapped.rawRetryAfter;

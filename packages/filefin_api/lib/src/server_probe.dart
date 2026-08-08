@@ -29,6 +29,13 @@ const _versionKey = 'version';
 /// carrying both documented keys. Everything else — including a `200` — is
 /// "not a FileFin server", with a reason a person can read.
 ///
+/// **Every message below names the redacted address, never [FileFinUrls]'s
+/// own.** `ProbeResult` is F1's user-facing dialog text — the string most
+/// likely to reach a screenshot, a bug report or a log — and a *saved server*
+/// URL is typed by the user, so `https://sam:hunter2@host/` is a shape that
+/// reaches here. Every `FileFinApiException.toString()` applies
+/// `redactUserInfo`; until M2's review, none of these four verdicts did.
+///
 /// Every outcome is **returned**, with exactly one exception: a caller that
 /// cancels its own request gets `RequestCancelled` thrown (NF5). Turning that
 /// into a verdict would show "unreachable" for something the user did on
@@ -40,6 +47,7 @@ Future<ProbeResult> probe({
   CancelToken? cancelToken,
 }) async {
   final url = urls.state;
+  final safe = redactUserInfo(url);
   try {
     final response = await dio.getUri<dynamic>(url, cancelToken: cancelToken);
     final body = jsonObject(response, requested: url);
@@ -49,7 +57,7 @@ Future<ProbeResult> probe({
     ];
     if (missing.isNotEmpty) {
       return NotAFileFinServer(
-        'the JSON at $url is missing ${missing.join(' and ')}, so it is not '
+        'the JSON at $safe is missing ${missing.join(' and ')}, so it is not '
         'a FileFin state response',
       );
     }
@@ -59,11 +67,11 @@ Future<ProbeResult> probe({
         : FileFinServer(state.version);
   } on NotAFileFinServerResponse catch (e) {
     return NotAFileFinServer(
-      '$url answered ${e.contentType ?? 'no content type'} rather than '
+      '$safe answered ${e.contentType ?? 'no content type'} rather than '
       'application/json, which is what any web page answers',
     );
   } on MalformedResponse catch (e) {
-    return NotAFileFinServer('$url sent JSON we could not read: ${e.problem}');
+    return NotAFileFinServer('$safe sent JSON we could not read: ${e.problem}');
   } on DioException catch (e) {
     final mapped = mapDioException(e, requested: url);
     if (mapped is RequestCancelled) throw mapped;
@@ -74,6 +82,6 @@ Future<ProbeResult> probe({
     // problem from not reaching it, and the two must not be merged.
     return mapped is ConnectionFailed || mapped is RequestTimedOut
         ? ServerUnreachable(mapped)
-        : NotAFileFinServer('$url answered $mapped');
+        : NotAFileFinServer('$safe answered $mapped');
   }
 }

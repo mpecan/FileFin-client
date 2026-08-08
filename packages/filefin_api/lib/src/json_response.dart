@@ -103,8 +103,15 @@ T decodeModel<T>(
 /// error into "not a FileFin server" and F3 would never see a 401. dio throws
 /// on a non-2xx before this function is ever reached, and `error_mapper.dart`
 /// — which never looks at a content type — is what handles those.
+///
+/// The content type is read through the **list** form. dio's `Headers.value`
+/// throws when a header arrived twice, and an exception from here would escape
+/// the sealed hierarchy `errors.dart` exists to keep total — on a 2xx, which is
+/// the path a caller has no reason to guard. dart:io happens to collapse a
+/// duplicated `Content-Type` today, so this is defence against a dependency's
+/// accident rather than an observed payload.
 Object? _jsonBody(Response<dynamic> response, {required Uri requested}) {
-  final contentType = response.headers.value(Headers.contentTypeHeader);
+  final contentType = response.headers[Headers.contentTypeHeader]?.firstOrNull;
   if (!_isJson(contentType)) {
     throw NotAFileFinServerResponse(requested, contentType);
   }
