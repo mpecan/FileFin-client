@@ -31,6 +31,27 @@ cd "$(repo_root)"
 #
 # Usage: tool/check-fixtures.sh [verify|accept]
 
+# COLLATION IS PINNED, and this line is the difference between a gate that runs
+# in CI and one that cannot. Both halves of this script order their output with
+# `sort` and compare it with `diff`/`comm`, and `sort`'s collation is
+# locale-dependent: under `en_US.UTF-8` — a developer's macOS default —
+# `KEYS.txt` sorts between `home_rows_distinct.json` and `login.json`, while
+# under the C locale uppercase sorts first and it moves to the top. The
+# committed manifest was generated on a machine with the first collation, so a
+# byte-for-byte comparison in any C-locale environment failed on two lines that
+# had not changed.
+#
+# Measured at M7.0/E-9 in an `ubuntu:24.04` container: `just check` reached
+# `fixtures-verify` and died there, on unmodified fixtures. Reproduced on the
+# development machine as `LC_ALL=C bash tool/check-fixtures.sh` failing where
+# the same command with `LANG=en_US.UTF-8` passed. Since CI has never run (see
+# STATE.md), nothing had ever observed it.
+#
+# `C` rather than the developer's locale because it is the one collation every
+# machine has. Everything compared here is ASCII, so it changes no other
+# behaviour.
+export LC_ALL=C
+
 DIR="test/fixtures"
 MANIFEST="$DIR/SHA256SUMS"
 KEYS="$DIR/KEYS.txt"
