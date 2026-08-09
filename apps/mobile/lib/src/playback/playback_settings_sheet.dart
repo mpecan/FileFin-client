@@ -1,5 +1,4 @@
-import 'package:filefin_mobile/src/browse/media_detail_page.dart'
-    show humanSize;
+import 'package:filefin_mobile/src/browse/file_list.dart' show humanSize;
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 

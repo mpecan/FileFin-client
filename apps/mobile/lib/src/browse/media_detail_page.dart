@@ -4,6 +4,7 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
+import 'package:filefin_mobile/src/browse/file_list.dart';
 import 'package:filefin_mobile/src/browse/poster_image_provider.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
@@ -158,7 +159,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
               onPlay: (file, startAt) =>
                   unawaited(_afterPlaying(detail, file, startAt)),
             ),
-          _Files(
+          FileList(
             files: detail.files,
             onPlay: widget.onPlay == null
                 ? null
@@ -334,81 +335,4 @@ class PlayButtons extends StatelessWidget {
     final s = (seconds % perMinute).toString().padLeft(2, '0');
     return '${seconds ~/ perMinute}:$s';
   }
-}
-
-/// The item's files.
-class _Files extends StatelessWidget {
-  const _Files({required this.files, this.onPlay});
-
-  final List<FileInfo> files;
-  final void Function(FileIndex file)? onPlay;
-
-  @override
-  Widget build(BuildContext context) {
-    if (files.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Files', style: Theme.of(context).textTheme.titleSmall),
-          for (final file in files)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(fileLabel(file)),
-              // `path` is displayed AS-IS or not at all. It is relative to the
-              // server's data directory (M2's finding C3), so joining it with
-              // anything — a base URL, a local directory — produces a path
-              // that addresses nothing and looks like it should.
-              subtitle: file.path.isEmpty ? null : Text(file.path),
-              trailing: Text(humanSize(file.size)),
-              onTap: onPlay == null ? null : () => onPlay!(file.index),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// How one file is named in the list.
-///
-/// `season` and `episode` are **0 for a single-file item** (SPEC.md §3.3), not
-/// absent — so a row that always printed "S0E0" would put a season number on
-/// every film in the library.
-String fileLabel(FileInfo file) {
-  final ext = file.ext.isEmpty ? '' : ' (${file.ext})';
-  if (file.season == 0 && file.episode == 0) {
-    return file.name.isEmpty
-        ? 'File ${file.index.value}$ext'
-        : '${file.name}$ext';
-  }
-  return 'S${file.season}E${file.episode}$ext';
-}
-
-/// A byte count a person can read.
-///
-/// `size` is the only bandwidth signal the API gives (SPEC.md §3.3), so it is
-/// worth showing rather than hiding — F13's metered guard is built on the same
-/// number at M4.
-String humanSize(int bytes) {
-  // **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** It
-  // divided by 1024 under those labels until M4.R/P7, which understated every
-  // size by 2.4% per step: `PlaybackPrefs`' own default of `500 * 1000 * 1000`
-  // came out of the settings dropdown as **"477 MB"** — an option the user
-  // never chose, offered as if they had. The thresholds this renders are
-  // written in powers of 1000, so decimal is the base the values are already
-  // in; relabelling to KiB/MiB/GiB would have been correct arithmetic showing
-  // a unit nobody picked. Routed through one constant so the two divisions
-  // cannot disagree, exactly as `formatPosition`'s `perMinute` is.
-  const perUnit = 1000;
-  if (bytes < perUnit) return '$bytes B';
-  const units = ['kB', 'MB', 'GB', 'TB'];
-  var value = bytes / perUnit;
-  var unit = 0;
-  for (var step = 0; step < units.length - 1; step += 1) {
-    if (value < perUnit) break;
-    value /= perUnit;
-    unit += 1;
-  }
-  return '${value.toStringAsFixed(value < 10 ? 1 : 0)} ${units[unit]}';
 }

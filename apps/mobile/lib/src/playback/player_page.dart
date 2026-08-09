@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:filefin_core/filefin_core.dart';
-import 'package:filefin_mobile/src/browse/media_detail_page.dart'
-    show humanSize;
+import 'package:filefin_mobile/src/browse/file_list.dart' show humanSize;
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
