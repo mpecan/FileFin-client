@@ -188,9 +188,23 @@ class FixtureRun {
   ///
   /// Per-user state lives in the item's own `meta.json` under `state.<user>`
   /// (`importer.go`); the cache's `user_state` table is a projection the server
-  /// rebuilds from it, so this is the one place worth writing. Only `watched`
-  /// is touched — `progress` stays, because it is what moves `continueIndex`
-  /// off zero and a later milestone will want it.
+  /// rebuilds from it, so this is the one place worth writing.
+  ///
+  /// **The whole `state.<user>` block is REPLACED, not merged**, and that is
+  /// the second half of the reproducibility argument above rather than a
+  /// tidy-up. An earlier version preserved `progress` "because a later
+  /// milestone will want it", and the effect was that `just it` stopped being
+  /// idempotent with respect to `just fixtures-capture`:
+  /// `tool/testserver/capture_fixtures.sh` POSTs favourite, rating, watched
+  /// **and progress** against the shared seed, and those land permanently in
+  /// `meta.json`. Measured at M4.R — seed with `state: null` → 12/12 green;
+  /// run `just fixtures-capture` → the show gains `progress {file: "1x2"}` →
+  /// **10 pass, 2 fail on unmodified code**, because
+  /// `playback_test.dart` asserts absolute literals (`continueSeconds == 1`,
+  /// `continueIndex == 0`) that hold only when the pointer is unset. Exactly
+  /// the failure this method's own comment describes for `watched`, left open
+  /// for everything else. A copy that starts from a state it wrote itself is
+  /// the only kind that answers the same on two machines.
   static Future<void> _decorrelateWatched(Directory root) async {
     final metas = Directory('${root.path}/data')
         .listSync(recursive: true, followLinks: false)
@@ -198,12 +212,12 @@ class FixtureRun {
         .where((f) => f.path.endsWith('/meta.json'));
     for (final meta in metas) {
       final json = jsonDecode(meta.readAsStringSync()) as Map<String, Object?>;
-      final state = (json['state'] as Map<String, Object?>?) ?? {};
-      final user = (state[seededUser] as Map<String, Object?>?) ?? {};
-      user['watched'] = meta.path.contains('/Films/');
-      user['updated'] = user['updated'] ?? 1;
-      state[seededUser] = user;
-      json['state'] = state;
+      json['state'] = <String, Object?>{
+        seededUser: <String, Object?>{
+          'watched': meta.path.contains('/Films/'),
+          'updated': 1,
+        },
+      };
       meta.writeAsStringSync(jsonEncode(json));
     }
   }
