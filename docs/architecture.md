@@ -419,6 +419,24 @@ needs more than one `InheritedWidget`, or M4's player needs a listenable shared
 across three routes. Neither is true at M3, and building for either now would be
 §1's speculative construction.
 
+**Re-examined at M6, with the one design that would have tripped it.** F10
+writes watch state on the detail screen, and the home rows are derived from that
+same state — so the obvious shape is a `WatchStateBus` every screen listens to.
+That is *exactly* "a listenable shared across three routes", and adopting a
+framework to hold it would have been retirement by the back door. It was not
+built, and the reason is a measurement rather than a preference: the home rows
+come from the `user_state` mirror rather than from `meta.json`, the bucket
+predicates read a `has_progress` column that is not on the wire, and the order
+is `updated DESC` where **every** write re-stamps `updated` — so a rating
+re-orders the continue row (M6.0/E-3). A bus would have carried a state the
+rows cannot be computed from. The detail route answers "did anything get
+written" and the home tab re-reads; one bool and one method call.
+
+Search added the only genuinely new shape — a debounce — and it is a
+`dart:async` `Timer`. A debounce package would pay rent of "one timer" while
+shrinking what `just mutants` reaches, which is the same argument that decided
+D-Q1 in the first place. D9 stands.
+
 ## Where the app's live suite lives, and why it is not `integration_test/`
 
 `apps/mobile/test_live/`, run by `tool/run-integration.sh` as an ordinary

@@ -302,6 +302,38 @@ first by the per-user `updated` stamp.
 Anonymous struct at `media.go:237-241`. Served from the `user_state` mirror
 (three indexed queries), not a per-folder `meta.json` scan.
 
+The three buckets are `has_progress = 1 AND watched = 0`, `favorite = 1` and
+`watched = 1` (`db/user_state.go:100-108`), each `ORDER BY us.updated DESC`.
+
+### The mirror and the truth
+
+**`meta.json` is the source of truth and this route does not read it.** Two
+consequences the client has to live with, both measured at M6.0.
+
+**A `204` from a write does not prove what this will answer.** `writeState`
+(`media.go:166-181`) writes `meta.json` first and then mirrors the result with
+`s.bestEffort(db.UpsertUserState(...))` — best-effort by name and by
+behaviour. So the mirror can lag the truth, and the two can disagree in either
+direction. In a `FixtureRun` copy they disagree in BOTH at once (E-2): the copy
+rewrites `meta.json` and leaves the inherited `user_state` rows alone, so
+`GET /api/media/{id}` reported the film `watched:true` while `GET /api/home`
+had it in `continue` and `favorites`, and search and the category listing
+reported its `watched` flag as the opposite of the detail's. `MediaSummary.watched`
+in ANY listing comes from the mirror (`server/search.go:47-60`);
+`MediaDetail.watched` comes from `meta.json`. **They can disagree.**
+
+**Every state write re-stamps `updated`, whatever it changed.**
+`UpdateStateGet` (`importer/manager.go:79`) sets `us.Updated =
+time.Now().Unix()` after the fold, so `POST .../rating` re-orders the
+`continue` row — measured at E-3 with two items in the bucket, where a rating
+on the show moved it back to the top. Combined with `has_progress` not being on
+the wire, this is why a client refetches the home rows rather than predicting
+them.
+
+**One write repairs one row**, and `POST /api/admin/rebuild` re-derives the
+whole table from `meta.json` (E-8). C4 forbids the client calling either as a
+reconciliation strategy.
+
 Status `200`, `500` query failure, `503` cache unavailable.
 
 Fixture: `home_populated.json`.
@@ -338,9 +370,33 @@ Two consequences for the client:
 
 1. An unknown `field` **silently degrades to `all`** rather than erroring, so a
    typo produces plausible results. `SearchField` (M1.5) is an enum for exactly
-   this reason.
+   this reason. The comparison is **case-sensitive**: `TITLE` is an unknown
+   value, not a spelling of `title`. Measured at M6.0/E-7 with `q=sine`, which
+   is in the *plot* only — `all`, `TITLE` and `bogus` returned one row while
+   `title` and `description` returned none.
 2. `year` and `decade` are the only numeric scopes, and both fail closed on
    junk input.
+
+**Every text match is case-INSENSITIVE, a SUBSTRING, and escapes the LIKE
+wildcards.** `db/search.go:52` builds each predicate as
+`LOWER(<col>) LIKE ? ESCAPE '\'` and `likePattern` (`:88-93`) lowercases `q`
+and escapes `\`, `%` and `_` before wrapping it in `%…%`. Measured at
+M6.0/E-1: `movie`, `MOVIE`, `mOvIe` and `Movie` produced eight byte-identical
+bodies across `all` and `title`; `q=irect` matched *Direct Play Movie*; and
+`q=%`, `q=_`, `q=100%` and `q=M_vie` each returned `[]` — which is the proof
+rather than an absence, since an unescaped `%` would match every row.
+
+**The numeric scopes parse with `strconv.Atoi`, and Dart's `int.tryParse` is
+WIDER than that in exactly one place.** Measured at M6.0/E-4 against v0.20.3.
+The two agree on leading `+`, on leading zeros, on leading and trailing
+whitespace (including U+00A0), on rejecting `2e3`, `2_020`, `2020.0`, `٢٠٢٠`,
+`20 20` and `0b…`, and on the 64-bit range at `9223372036854775807` and above
+it. They part company on the **`0x` prefix**: `int.tryParse('0x7E4')` is 2020
+and `Atoi` refuses it — proven live, because `0x7E4` *is* 2020 and
+`field=year&q=0x7E4` came back `[]` where `q=2020` returned the row.
+`searchIsRunnable` therefore validates the `Atoi` grammar `^[+-]?[0-9]+$` and
+only then parses. `decade` strips **one** trailing `s` after lowering
+(`TrimSuffix`), so `2020s` is a decade and `2020ss` is not.
 
 Status `200`, `500` search failure, `503` cache unavailable.
 
@@ -720,6 +776,19 @@ disagree with the server.
 and both can return `503 cache unavailable` — every one of these routes resolves
 the folder through `folderFor` -> `userPool` (`media.go:382-385`).
 
+**Measured end to end at M6.0/E-5**, the first time anything in this repository
+exercised the difference rather than reading it. On the two-file show with the
+pointer at file 0, 45 seconds in: `POST {"watched":true}` moved it to
+`completed` with the pointer untouched; `POST {"watched":false}` moved it back
+to `continue` **still at 45 seconds**, in `meta.json` as well as in the detail
+payload; `DELETE` left it in no home row at all with the pointer gone (`0/0`).
+
+**The decode happens BEFORE the folder lookup, and so does the rating's range
+check.** A malformed body against a nonexistent id is `400`, not `404`; and
+`{"rating":99}` against a nonexistent id is `400 rating out of range` while
+`{"rating":5}` against the same id is `404` (E-6). A client mapping status to
+cause has to know that a `400` here can outrank a `404`.
+
 ### `POST /api/media/{id}/favorite`
 
 Handler `server/media.go:394`. Body `{"favorite": bool}`. `204`; `400`
@@ -734,6 +803,13 @@ anything outside `0..10` is `400 rating out of range` (`media.go:425`). Also
 
 The rating is independent of the resume engine: `Apply` never touches it and
 clearing `watched` never clears it (`state/state.go:25-28`).
+
+**It is validated on write and NOT clamped on read.** Measured at M6.0/E-6:
+`-1`, `11`, `99` and `-2147483648` are each `400` while `0`, `1` and `10` are
+`204` — and a `meta.json` hand-edited to `rating: 99`, after a restart, is
+served back as `"rating": 99`. So a payload can legitimately carry a value this
+API would refuse, which is why `WatchState.fromDetail` normalises it and why
+the detail screen renders an out-of-range value as itself.
 
 ---
 

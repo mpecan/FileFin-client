@@ -10,7 +10,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M3** — `apps/mobile`: the app shell, F1's add-server flow, F2's sign-in, and F4's category tree, virtualised poster grid and detail view; every gate's Flutter branch |
 | **Done** | **M4** — playback, the direct path: F7, F8, F9, F13, NF6, D10's TLS refusal, and the `PlaybackHost` seam that makes libmpv testable |
 | **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
-| **Next** | **M6** — search, home rows, favourite/rating/watched (F5, F6, F10) |
+| **Partial** | **M6** — F10 (favourite, rating, and the two un-watches) landed end to end, and so did every layer under F5 and F6: `searchIsRunnable`, `applyWatchState`, `home()`, `search()`, the port and the fake. **The home and search SCREENS did not**, and neither did the live suites. Said plainly in the M6 section below rather than implied |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -37,6 +37,371 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M6 — what was built
+
+**Search, home rows and F10 were the milestone; F10 and the layers underneath
+F5/F6 landed, and the three screens did not.** What is in the tree: the two
+pure functions M6 rests on, the six endpoints, the port and the fake, and F10
+on the detail screen end to end — including the POST/DELETE watched
+distinction, which M6.0 measured against the real binary for the first time in
+this repository's history. What is not: `home_page.dart`, `search_page.dart`,
+`library_shell.dart` and the live suites that would gate them. Said plainly
+here rather than implied by silence (DoD 7); "What M6 did NOT finish" below has
+the detail and the reason.
+
+### M6.0 — nine experiments, and three of the plan's own predictions were wrong
+
+Every answer was taken against a **private copy** of `$FILEFIN_RUN` started on
+a free port; the shared seed was never mutated.
+
+#### E-1 — search is case-INSENSITIVE, substring, and escapes LIKE wildcards
+
+`q ∈ {movie, MOVIE, mOvIe, Movie} × field ∈ {all, title}` produced **eight
+byte-identical bodies**. The brief's "case-sensitive, measured at M2" is not
+recorded anywhere in this repository and is wrong; `db/search.go:52` builds
+every text predicate as `LOWER(<col>) LIKE ? ESCAPE '\'` and `likePattern`
+lowercases `q`.
+
+The match is a **substring** (`q=irect` finds *Direct Play Movie*) and the
+wildcards are escaped: `q=%`, `q=_`, `q=100%` and `q=M_vie` each returned `[]`.
+Those empties are the proof rather than an absence — an unescaped `%` would
+match every row and an unescaped `_` would match any title with a character in
+it.
+
+All eleven scopes were exercised live and each returns rows for a matching
+query, so **SPEC §3.2's list of seven was wrong** and M6 fixes it.
+
+#### E-2 — the mirror is stale in a `FixtureRun` copy, and it is BACKWARDS
+
+Predicted: three empty home rows. Measured: worse, and it changes how any live
+F6 test has to be written. `FixtureRun._decorrelateWatched` rewrites `meta.json`
+and never touches the copied `user_state` table, so every copy starts
+internally inconsistent:
+
+| | film `e4285edb34d5` | show `919ac9caad25` |
+|---|---|---|
+| `meta.json` (the truth) | watched **true** | watched **false** |
+| `user_state` (the mirror) | watched 0, favorite 1, rating 8, has_progress 1 | watched **1** |
+| `GET /api/media/{id}` | `watched:true, favorite:false, rating:0` | `watched:false` |
+| `GET /api/home` | in `continue` **and** `favorites` | in `completed` |
+| search / category listing | `watched:false` | `watched:true` |
+
+So **every listing's `watched` flag is the opposite of the detail's**, in every
+copy on every machine — which silently defeats `_decorrelateWatched`'s own
+stated purpose for exactly the payloads a home screen renders. Three seconds
+later the answers were byte-identical: `discoveryInterval: 0` really does mean
+nothing reconciles.
+
+One write repairs one row. After `POST .../favorite` on the film the mirror row
+was rewritten from `meta.json` (`watched=1, favorite=1, rating=0,
+has_progress=0`) and home, search and the category listing all agreed with the
+detail.
+
+**Consequence:** a live home suite must create the state it asserts on, and
+`fixture_run.dart` has to write the mirror as well as `meta.json`. Neither is
+done — see "What M6 did NOT finish".
+
+#### E-3 — every write re-stamps `updated`, and that re-orders every bucket
+
+`UpdateStateGet` (`importer/manager.go:79`) stamps `us.Updated =
+time.Now().Unix()` whatever the fold did, and every bucket is
+`ORDER BY us.updated DESC`. Measured with both items in `continue`: progress on
+the show gave `[Show, Film]`; progress on the film gave `[Film, Show]`; and
+**`POST .../rating 7` on the show gave `[Show, Film]`** — a rating re-ordered a
+row that has nothing to do with ratings. The same held for `favorites`.
+
+This is what makes home rows unpredictable client-side, and it is why the
+detail route answers "did anything get written" rather than "what changed".
+
+#### E-4 — `int.tryParse` vs `strconv.Atoi`: ONE divergence, and not the predicted one
+
+Predicted: whitespace. **Wrong.** Dart's parser skips leading and trailing
+whitespace itself — for U+00A0 as well as for a space — and Go's `TrimSpace`
+trims the same set, so `.trim()` is belt-and-braces rather than the fix.
+
+The real divergence is the **`0x` prefix**: `int.tryParse('0x7E4')` is 2020 and
+`Atoi` refuses it. Proven live rather than inferred, because `0x7E4` *is* 2020:
+`field=year&q=0x7E4` came back `[]` where `q=2020` returned the row, so the
+empty answer can only be a refusal.
+
+Everything else agrees: `+2020`, `02020`, ` 2020 `, `\t2020\n` all parse both
+sides; `2e3`, `2_020`, `2020.0`, `٢٠٢٠`, `20 20`, `s` and `0b…` are refused
+both sides; and the 64-bit boundary matches exactly at `9223372036854775807`
+and above it. `decade` strips **one** trailing `s` after lowering, measured
+both ways (`2020s` → one row, `2020ss` → none).
+
+`searchIsRunnable` therefore validates the `Atoi` *grammar* — `^[+-]?[0-9]+$` on
+the trimmed string — and range-checks with `int.tryParse`.
+
+#### E-5 — the POST/DELETE watched distinction, exercised for the first time
+
+Six steps against v0.20.3 on the two-file show:
+
+| step | detail | home |
+|---|---|---|
+| `DELETE .../watched` (reset) | `watched:false, 0/0` | in no row |
+| `POST progress {file:0, 45/100}` | `watched:false, 0/45` | **continue** |
+| `POST watched {"watched":true}` | `watched:true, 0/45` | **completed** |
+| `POST watched {"watched":false}` | `watched:false, **0/45**` | **continue** |
+| `POST watched {"watched":true}` | `watched:true, 0/45` | completed |
+| `DELETE .../watched` | `watched:false, **0/0**` | **no row at all** |
+
+`meta.json` agreed at every step: the POST arm kept `progress {file:"1x1",
+seconds:45}` and the DELETE removed the key. So SPEC §3.5, `docs/server-api.md`
+and `filefin_core`'s `setWatched`/`clearWatched` doc comments are all correct,
+and the wording M6.4 ships describes something that actually happens.
+
+#### E-6 — a rating is validated on WRITE and not clamped on READ
+
+Write: `-1` → `400 rating out of range`, `0` → `204`, `1` → `204`, `10` →
+`204`, `11` → `400`, `99` → `400`, `-2147483648` → `400`.
+
+Read: `meta.json` hand-edited to `rating: 99`, server restarted, `GET
+/api/media/{id}` → **`"rating": 99`**. So `WatchState.fromDetail`'s
+normalisation is reachable, and so is the detail screen's out-of-range notice —
+which is not decoration but correctness, because a `DropdownButton` whose value
+is not among its items asserts rather than rendering.
+
+Two ordering facts fell out of the same run: `{"rating":99}` on a **nonexistent**
+id is `400` while `{"rating":5}` on it is `404` (the range check precedes the
+lookup), and a malformed body on a nonexistent id is `400` while a valid
+`favorite` body on it is `404` (`decodeJSON` precedes `folderFor`).
+
+#### E-7 — an unknown `field` degrades to `all`, and an empty `q` returns `[]`
+
+`field` absent, `''`, `bogus`, `TITLE` and `Title` all behave as `all`. Proven
+with `q=sine`, which appears in the *plot* only: `all` / `TITLE` / `bogus`
+returned one row and `title` / `description` returned none. So the switch is
+case-SENSITIVE and `TITLE` is an unknown value rather than a spelling of
+`title`. `q` absent or empty answers `200 []`, never the library.
+
+#### E-8 — `POST /api/admin/rebuild` does re-derive `user_state`
+
+The stale show row (`watched=1, has_progress=1, updated=1786248868`) became
+`watched=0, has_progress=0, updated=1` — exactly `meta.json` — and home and
+search then agreed with the detail. C4 still forbids the client calling it;
+`docs/verification-backlog.md` row G is the standing check per upstream bump.
+
+#### E-9 — the `flutter_tester` deaths do NOT correlate with concurrency
+
+Orphans killed first (there were none) and the tree clean. Twelve runs of the
+app suite at the default concurrency and twelve at `--concurrency=1`:
+
+| arm | failures | wall clock |
+|---|---|---|
+| default | **0 / 12** | 87 s (7.25 s per run) |
+| `--concurrency=1` | **0 / 12** | 328 s (27.3 s per run) |
+
+Neither arm reproduced a failure, so nothing here can attribute the four
+historical sightings to concurrency — and the proposed remedy costs **3.8×**,
+multiplied again by `just mutants`, which runs the suite once per mutant. **No
+gate change.**
+
+Two further sightings landed during M6's own `just check` runs, both
+`TestDeviceException(Shell subprocess crashed with unexpected exit code -10)`
+in `real_mpv_player_test.dart`, both green on an immediate re-run. Twenty-four
+standalone runs clean and two failures inside `just check` is a pattern the
+concurrency hypothesis does not explain; `docs/verification-backlog.md` row H
+carries the numbers.
+
+### What M6 built, step by step
+
+**M6.1 — `filefin_core`.** `applyWatchState(MediaDetail, WatchState)` folds a
+watch-state write back onto the payload it came from, through `deriveView` so a
+pointer past the end of the file list lands as `0`/`0` exactly as the server
+reports it — and it folds **every `files[i].watched`**, which
+`media_detail_page.dart` was not doing. That screen folded four fields and left
+the file rows carrying whatever the last fetch said: invisible while nothing
+drew them, wrong the moment something did.
+
+F10's optimistic update needs no divergence-refetch path, and the doc comment
+says why rather than asserting it. The four writes are total assignments in the
+server's own fold (`media.go:406/434/472/489`) and none of them reads or infers
+a pointer, so the `(0, 0)` ambiguity that forces
+`PlaybackOutcome.needsDetailRefetch` on F9 cannot arise. `PlaybackOutcome` was
+not extended and no second one was invented.
+
+`searchIsRunnable(query, field:)` answers whether the server will actually run
+a query. It validates the `Atoi` grammar rather than trusting `int.tryParse`,
+for the reason E-4 measured.
+
+Both directions on the fold, on real code rather than on a hypothetical:
+deleting `|| i < pointerIndex` from `deriveView` turns *"the file rows move too,
+and they are what the page was dropping"* red; reversing the per-file index
+turns that plus two properties red; deleting the `files:` fold entirely turns
+four tests red. Restored, green.
+
+**Scout fix, in its own commit.** `startSecondsFor` switched over sealed
+`ResumeChoice` and ended `_ => 0`, because its `ResumeAvailable` arm is
+*guarded* and a guarded pattern cannot make a switch exhaustive. Proven both
+ways: with a third variant added to the sealed class,
+`dart analyze --fatal-infos` reported "No issues found" against `_ => 0` and
+failed with `non_exhaustive_switch_expression` against the two explicit arms.
+
+**M6.2 — `filefin_api`.** `home()` and `search()` join `client_browse.dart`;
+F10's four writes are `client_watch_state.dart`, a `part` for the same reason
+`client_playback.dart` is one; `_sendDelete` joins `_send` and `_sendJson`, and
+exists because the VERB is what separates the two un-watch operations.
+
+`client.dart` was 363 lines and could not absorb six routes, so the read-only
+routes moved to `client_browse.dart` first, in a commit of their own — a pure
+move, all 178 tests untouched.
+
+`setRating` guards `0..10` locally and throws a `RangeError`, tested at −1, 0,
+10 and 11 with the stub asserting it saw **no request at all**. The matcher
+asserts the error's `invalidValue`, `start`, `end` and `name`: three mutants
+living inside `RangeError.range`'s own arguments survived a bare
+`isA<RangeError>()` and are killed by that.
+
+**M6.3 — the port and the fake.** Six abstract methods, six delegations, and
+the four writes deliberately NOT routed through `FakeLibraryApi._answer` —
+with `T` bound to `void` its throw arm is unreachable, so a fake set up to fail
+quietly succeeds (measured at M4; this is the third place the trap has to be
+named, and it matters most here because F10 reverts on failure). `_write` takes
+a `Completer` gate rather than a delay, because "one write in flight" needs a
+write provably still running when the second tap lands.
+
+`calls` records `setWatched(id, false)` and `clearWatched(id)` as two different
+strings — the tripwire a collapsing UI trips — and the port test asserts the
+wire sees `POST` then `DELETE` on ONE path, because the path alone cannot tell
+them apart.
+
+**M6.4 — F10 on the detail screen.** `watch_actions.dart` imports no widget, so
+every case is a plain `test()`. It publishes optimistically, reverts on a
+`FileFinApiException`, allows exactly one write in flight, and refuses a second
+with a sentence rather than by greying a control out — a greyed control has no
+way to say why. `busy` draws a progress bar; that is its only consumer, and it
+is a real one.
+
+The watched control is the honest surfacing of the asymmetry: an unwatched item
+gets *Mark watched*; a watched one gets a menu of two entries, each with its
+consequence written out — *"Keeps where you left off, so it goes back to
+Continue watching"* and *"Forgets the position too, so it leaves every list."*
+
+The rating is a whole-number picker with *Not rated* as its first entry,
+because 0 is how the server clears one. **The out-of-range branch survived
+E-6 and is correctness rather than polish**: the server does not clamp on read,
+and a `DropdownButton` whose value is not among its items asserts rather than
+rendering. Tested at −1, 0, 10, 11 and 99.
+
+**The centrepiece proof, run in both directions.** Pointing
+`markWatched(watched: false)` at `api.clearWatched` turns *"Mark as unwatched
+keeps the position: Continue 0:45 is back"* red, along with two more; pointing
+`clearWatchState` at `api.setWatched(false)` turns *"Clear watch state forgets
+it: no Continue anywhere"* red. Restored byte-for-byte and green.
+
+### Gate proof log — M6
+
+| Gate | Direction | Evidence |
+|---|---|---|
+| exhaustive switch | fail | a third `ResumeChoice` variant against `_ => 0`: `dart analyze` exit **0**, "No issues found" |
+| exhaustive switch | pass | the same probe against the two explicit arms: exit **3**, `non_exhaustive_switch_expression` |
+| `deriveView`'s per-file fold | fail | `|| i < pointerIndex` deleted: one named test red |
+| `applyWatchState`'s files fold | fail | index reversed: three tests red; fold deleted: four red |
+| `markWatched` / `clearWatched` | fail | each pointed at the other: the matching widget case and the matching `WatchActions` case red, both ways |
+| `setRating`'s guard | fail | three mutants inside `RangeError.range`'s arguments survived `isA<RangeError>()`; killed by asserting `invalidValue`, `start`, `end`, `name` |
+| mutation whole-run cap | fail | cap forced to 5 s: exit **1**, "exceeded its 5s whole-run cap" |
+| mutation whole-run cap | pass | real cap 1932 s: exit **0**, 137 mutations, 0 undetected, 19m30s |
+| `file-size` | ratchet | **6 warnings → 4** |
+| `comments` | ratchet | held at **1** — see the note below |
+| `MAX_UNCOVERED` | ratchet | held at **0**; coverage 100% |
+| constitution | ratchet | 0 across all seven, unchanged |
+
+**`comments` rose to 2 and was paid back inside the milestone.** Extracting
+`file_list.dart` carried its `//` rationale with it into a much smaller file,
+and 13 of 63 lines is 20% where the same comments were under the line inside a
+414-line page. Paid the way M3.R paid it: the rationale moved into the `///`
+doc comment of the declaration it describes. Recorded here rather than left for
+a reviewer to find, because the gate reports a warning and exits 0 — the
+"never rise" half of that ratchet is enforced by review, not by the script.
+
+### Two things the milestone found that were not on anyone's list
+
+**The mutation gate's whole-run cap counted FILES where it meant MUTANTS.**
+`run_cap` read `(n * cmd_timeout + baseline_secs) * 2` with `n` the number of
+changed files, so for any diff under eight files it collapsed to the 600-second
+floor. A four-file diff needing 19m30s was killed at 10:00 and reported as a
+wedge. Fixed to a per-mutant budget (40 per changed file at the measured
+baseline, doubled), proven both directions.
+
+**The kill left a live mutant on disk, and `dart analyze` passed on it.**
+`playback_settings_sheet.dart` was left carrying `500 * -1000 * 1000` in
+`meteredWarnChoices`. It was found by a test asserting the value, not by any
+gate — and `git diff --stat` did not reveal it either, because the mutant sat
+inside a hunk that had a legitimate change in it. CLAUDE.md already says "after
+any interrupted run diff the lib sources before doing anything else"; what M6
+adds is that **`--stat` is not diffing them**.
+
+### What M6 did NOT finish, stated plainly
+
+**F5 and F6 have no screen.** `home_page.dart`, `media_row.dart`,
+`media_grid.dart`, the four search files and `library_shell.dart` are not in
+the tree, and neither are the live suites (`watch_state_test.dart`,
+`search_test.dart`, `home_search_live_test.dart`) that would gate them. Both
+integration floors are unchanged at 43 / 25, and `just it` was not re-run
+against new suites because there are none.
+
+Everything below the UI **is** in the tree and tested: `home()`, `search()`,
+`searchIsRunnable`, the port's six methods and the fake's six, all with unit
+tests. What is missing is three screens, the shell that reaches them, and the
+live suites.
+
+The reason is wall clock rather than design. `just mutants` runs the whole app
+suite once per mutant, and a four-file `apps/mobile/lib` diff now measures at
+**137 mutants and 19m30s** — so each of the three remaining UI commits costs
+20-30 minutes of gate time, and the shell additionally rewires five existing
+test files because Home becomes tab 0 and every test that reaches the category
+tree has to select the Library tab first. That work is understood and drafted;
+it was not run. Nothing about it is blocked.
+
+**Consequences to carry into whoever picks this up:**
+
+1. **E-2 makes a live home suite harder than the plan assumed.** A `FixtureRun`
+   copy starts with `user_state` contradicting `meta.json` in both directions,
+   so a suite must create the state it asserts on. `fixture_run.dart` should
+   also write the mirror — the cheapest fix is a `DELETE FROM user_state` plus
+   an `INSERT` per item beside `_decorrelateWatched`'s `meta.json` write, since
+   `_repointCache` already runs `sqlite3` in that file.
+2. **The listing `watched` flag is untested against the real server in either
+   direction**, and E-2 shows it can be the opposite of the detail's.
+3. `tool/check-fixtures.sh` gained `need search_results.json 'length > 0'`, so
+   a re-capture that empties it fails rather than being laundered by
+   `fixtures-accept`.
+
+### Debt this milestone knowingly accepts
+
+- **F5 and F6 are not on screen** (above). The largest item by far.
+- Tags are still not built (A11 renewed): `GET /api/tags` is documented and
+  captured, the `tag` scope takes typed text rather than a vocabulary, and
+  building a `Tag` model now would be §1 speculation. Recorded again with the
+  reason so a third milestone need not re-derive it.
+- F10 is on the detail screen only. Nothing writes watch state from a grid tile
+  or a home row.
+- Home rows are refetched rather than predicted, and the reason is E-3 rather
+  than convenience.
+- One write in flight per screen; the queue was named and rejected because
+  "what does a failure revert to" has no predictable answer with three pending.
+- **The mirror-vs-truth divergence is exposed, not reconciled.** `docs/server-api.md`
+  gained "The mirror and the truth"; nothing in the client tries to repair it.
+- Search remembers nothing between visits, and there is no filter within a
+  category (no server route, C3).
+- Large-response behaviour and the debounce under real typing are unmeasured —
+  `docs/verification-backlog.md` rows E and F.
+- Backlog rows **A, B and C** are filed against M6 and are **not** retired by
+  it. A (libmpv and a `503` segment) and B (HLS seek latency, one ffmpeg per
+  session) both need a long seeded item, which is a seeding change that would
+  re-cut the captured fixtures for no M6 behaviour; C (`Media(start:)` on the
+  shipped Android and iOS libmpv) needs a device, which M6 never had. Each
+  re-filed here with its reason rather than slipped silently, as M5 re-filed
+  row 22.
+- **`FILEFIN_MUTANTS_TIMEOUT` is a fifth environment override that CLAUDE.md's
+  "three, and they are the complete list" does not mention.** It arrived at
+  M5.R and is a per-mutant timeout — it relaxes a bound, which is the class the
+  ratchet section is about. Not touched here; named so it is a decision next
+  time rather than an omission.
 
 ---
 

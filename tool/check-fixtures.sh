@@ -148,6 +148,7 @@ need media_detail_multifile_advanced.json '.continueIndex == 1' \
 need media_detail_multifile_advanced.json '.files[0].transcode == true' \
     "the HEVC item must report transcode=true; without it the HLS branch is uncovered"
 
+need search_results.json 'length > 0' "search_results.json has no results in it"
 need home_populated.json '(.continue | length) > 0' "the continue row is empty"
 need home_populated.json 'has("favorites") and has("completed")' "a home row key is missing"
 need categories.json 'length >= 2 and (.[0].id | type) == "number"' \
