@@ -51,7 +51,22 @@ class FixtureRun {
   );
 
   /// Copies the seeded run directory and rewrites the config for this suite.
-  static Future<FixtureRun> create() async {
+  ///
+  /// [transcoding] writes the server's own `transcodeEnabled` key beside the
+  /// port and the data directory. It is how the 415 arm of SPEC §3.4 gets a
+  /// real server behind it, and it is written **into the copy** — never into
+  /// `$RUN`, where a stray `false` would turn the 307 test red on unmodified
+  /// code, which is M4.R/T1 with a different key.
+  ///
+  /// The alternative is the admin route that toggles it, and C4 forbids
+  /// calling one. This is better anyway: no restart, no shared state, and two
+  /// suites can want opposite answers in the same run.
+  ///
+  /// `null` is the seeded value and means **enabled** — measured at M5.0/E-B,
+  /// where a `null` config 307s and a `false` config answers `415 transcoding
+  /// disabled` — so `transcoding: true` writes `true` rather than leaving the
+  /// key alone: a copy states what it needs rather than inheriting it.
+  static Future<FixtureRun> create({bool transcoding = true}) async {
     if (!Directory('${seeded.path}/data').existsSync()) {
       throw StateError(
         'no seeded run directory at ${seeded.path}. `just it` seeds one; '
@@ -67,6 +82,7 @@ class FixtureRun {
     json['port'] = port;
     json['dataDir'] = '${root.path}/data';
     json['bindAddress'] = '127.0.0.1';
+    json['transcodeEnabled'] = transcoding;
     await config.writeAsString(jsonEncode(json));
     await _repointCache(root, from: '${seeded.path}/data');
     await _decorrelateWatched(root);

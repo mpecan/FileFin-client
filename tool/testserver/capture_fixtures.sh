@@ -29,12 +29,47 @@ command -v curl >/dev/null 2>&1 || { echo "FATAL: curl not on PATH"; exit 2; }
 export HOME="$RUN/home"
 B="http://127.0.0.1:$PORT"
 C="$RUN/cookies-capture"
+CFG="$RUN/home/.filefin.json"
+CFG_BAK="$RUN/home/.filefin.json.capture-bak"
+CFG_PRISTINE="$RUN/home/.filefin.json.capture-pristine"
 mkdir -p "$OUT"
 
-"$BIN" serve > "$RUN/capture-server.log" 2>&1 &
-SRV=$!
-trap 'kill $SRV 2>/dev/null || true' EXIT
-for _ in $(seq 1 40); do curl -fsS "$B/api/state" >/dev/null 2>&1 && break; sleep 0.25; done
+# The 415 block below needs `transcodeEnabled: false`, which is a CONFIG key
+# rather than a request parameter, so this script edits the seeded config and
+# has to put it back. A `transcodeEnabled: false` left in $RUN turns
+# integration_test/playback_test.dart's 307 assertion red on unmodified code —
+# M4.R/T1 with a different key — so the restore is a trap rather than a line at
+# the end, and the script FAILS if the config does not come back byte-identical.
+#
+# What is compared at the end is the `transcodeEnabled` LINE, not the whole
+# file: the server rewrites `lastLoginAt` on every login and this script logs
+# in, so a byte comparison fails for a reason that has nothing to do with the
+# key. Measured on the first run of this code.
+cp "$CFG" "$CFG_PRISTINE"
+TRANSCODE_LINE="$(grep '"transcodeEnabled"' "$CFG")"
+SRV=
+cleanup() {
+  [ -n "$SRV" ] && kill "$SRV" 2>/dev/null
+  [ -f "$CFG_BAK" ] && mv -f "$CFG_BAK" "$CFG"
+  rm -f "$CFG_PRISTINE"
+  return 0
+}
+trap cleanup EXIT INT TERM
+
+start_server() {
+  "$BIN" serve > "$RUN/capture-server.log" 2>&1 &
+  SRV=$!
+  for _ in $(seq 1 40); do curl -fsS "$B/api/state" >/dev/null 2>&1 && return 0; sleep 0.25; done
+  echo "FATAL: the server did not become ready"; exit 1
+}
+stop_server() {
+  [ -n "$SRV" ] || return 0
+  kill "$SRV" 2>/dev/null || true
+  wait "$SRV" 2>/dev/null || true
+  SRV=
+}
+
+start_server
 
 get()  { curl -fsS -b "$C" "$B$1"; }
 save() { echo "  $1"; cat > "$OUT/$1"; }
@@ -51,6 +86,27 @@ get /api/tags       | save tags.json
 DIRECT=$(get "/api/category/1/media" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -1)
 TRANS=$(get  "/api/category/2/media" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$DIRECT" ] && [ -n "$TRANS" ] || { echo "FATAL: could not resolve both media items"; exit 1; }
+
+# RESET the per-user state FIRST, so the two payloads below really are the
+# ones with nothing on them.
+#
+# `meta.json` is filesystem truth and survives everything (`state/state.go`),
+# so the POSTs further down leave a favourite, a rating and a resume pointer
+# behind — and the NEXT run of this script captures them into
+# `media_detail_directplay.json`, whose entire job is to be the payload with no
+# state. Measured on the second consecutive run: `favorite:false rating:0
+# continueSeconds:0` became `true / 8 / 2`, and `media_detail_transcode.json`
+# picked up `watched:true` and `continueIndex:1`. That is the same
+# non-idempotence M4.R had to fix in `FixtureRun._decorrelateWatched`, in a
+# second place. DELETE .../watched clears the flag AND nils the pointer
+# (`media.go:485`), which is what makes it the right one of the two.
+del() { curl -fsS -b "$C" -X DELETE "$B$1" -o /dev/null -w "%{http_code}"; }
+for id in "$DIRECT" "$TRANS"; do
+  del "/api/media/$id/watched"   >/dev/null
+  del "/api/media/$id/progress"  >/dev/null
+  post "/api/media/$id/favorite" '{"favorite":false}' >/dev/null
+  post "/api/media/$id/rating"   '{"rating":0}'       >/dev/null
+done
 
 get "/api/category/1/media" | save category_media.json
 get "/api/media/$DIRECT"    | save media_detail_directplay.json
@@ -105,13 +161,71 @@ get "/api/media/$DIRECT/poster" | save poster.jpg
   curl -sS -b "$C" -r 0-49 -o /dev/null -D - "$B/api/media/$DIRECT/file/0" \
     | grep -Ei '^(HTTP|Content-Range|Content-Length|Accept-Ranges|Content-Type)'
   echo
+  echo "# 400 bad file index: POST /api/media/{id}/progress with file: 99"
+  curl -sS -b "$C" -X POST "$B/api/media/$TRANS/progress" \
+    -H 'Content-Type: application/json' \
+    -d '{"file":99,"position":1,"duration":10,"event":"stop"}' \
+    -o - -w '\nHTTP %{http_code}\n'
+  echo
+  echo "# 400 rating out of range: POST /api/media/{id}/rating with {\"rating\": 99}"
+  curl -sS -b "$C" -X POST "$B/api/media/$DIRECT/rating" \
+    -H 'Content-Type: application/json' -d '{"rating":99}' \
+    -o - -w '\nHTTP %{http_code}\n'
+  echo
+  echo "# 200 the sidecar subtitle route, converted SRT -> WebVTT per request"
+  curl -sS -b "$C" -D - "$B/api/media/$DIRECT/file/0/sub/0" | grep -Ev '^(Content-Security|Permissions|Referrer|X-|Date|Content-Length)'
+  echo
   echo "# login rate limiting: 8 bad passwords in a row"
   for _ in $(seq 1 8); do
     curl -sS -X POST "$B/api/login" -H 'Content-Type: application/json' \
       -d '{"username":"testuser","password":"wrong"}' -o /dev/null -w '%{http_code} '
   done
   echo
-} > "$OUT/error_shapes.txt" 2>&1
+} 2>&1 | tr -d '\r' > "$OUT/error_shapes.txt"
+
+# The 415 A CLIENT CAN ACTUALLY RECEIVE, and it is not the one that was already
+# captured. The hls route's `415 not transcodable` above is the symmetric half
+# of SPEC §3.4 and is unreachable from this client, because `PlaybackRequest.url`
+# is always the FILE route and libmpv follows the 307 itself. F12's 415 is the
+# file route's, it says `transcoding disabled`, and it exists only on a server
+# whose `transcodeEnabled` is off — so the server is stopped, the key is
+# rewritten, and both are put back by the EXIT trap whatever happens.
+stop_server
+cp "$CFG" "$CFG_BAK"
+sed -E 's/"transcodeEnabled"[[:space:]]*:[[:space:]]*[^,}]*/"transcodeEnabled": false/' "$CFG_BAK" > "$CFG"
+grep -q '"transcodeEnabled": false' "$CFG" || {
+  echo "FATAL: could not switch transcoding off in $CFG — the key has moved or changed shape"; exit 1; }
+start_server
+# A NEW LOGIN, because the restart killed the session. Server sessions are
+# in-memory and die with the process (SPEC.md L1) — without this every request
+# below answers 401 and the block captures nothing but the auth middleware.
+C2="$RUN/cookies-capture-415"
+curl -fsS -c "$C2" -X POST "$B/api/login" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$USER_NAME\",\"password\":\"$PASS\"}" -o /dev/null
+{
+  echo
+  echo "# 415 the FILE route on a server with transcoding disabled - F12's own."
+  echo "# transcodeEnabled: false. The hls route's 415 above is the OTHER one,"
+  echo "# and it is the one this client can never see (SPEC 3.4)."
+  curl -sS -b "$C2" "$B/api/media/$TRANS/file/0" -o - -w '\nHTTP %{http_code}\n'
+  echo
+  echo "# ...and the detail STILL reports transcode:true on that same server,"
+  echo "# which is what keeps the client-side guard firing."
+  curl -sS -b "$C2" "$B/api/media/$TRANS" \
+    | sed -n 's/.*"index":0[^}]*\("transcode":[a-z]*\).*/  file 0: \1/p'
+  echo
+  echo "# ...while the direct-play film is unaffected"
+  curl -sS -b "$C2" -o /dev/null -D - "$B/api/media/$DIRECT/file/0" \
+    | grep -Ei '^(HTTP|Accept-Ranges|Content-Type)'
+} 2>&1 | tr -d '\r' >> "$OUT/error_shapes.txt"
+rm -f "$C2"
+stop_server
+mv -f "$CFG_BAK" "$CFG"
+grep -qF "$TRANSCODE_LINE" "$CFG" || {
+  echo "FATAL: $CFG was not restored. Put transcodeEnabled back from $CFG_PRISTINE"
+  echo "       before running just it — a stray false turns the 307 test red."
+  exit 1; }
+start_server
 
 # Guard: a fixture set that is silently empty is worse than none, because the
 # round-trip tests would pass against nothing.
@@ -134,5 +248,35 @@ for key in metadata ratings technical actors genres tags; do
 done
 grep -q '"continueIndex":1' "$OUT/media_detail_multifile_advanced.json" || {
   echo "FATAL: the 90% crossing did not advance the pointer to file 1"; exit 1; }
+
+# The four blocks that used to be HAND-APPENDED to error_shapes.txt, asserted
+# here because this script rewrites that file WHOLESALE: a re-capture silently
+# deleted three real ones and kept a fourth that stated a retracted claim.
+# `-x`: each of these words also appears in the COMMENT above its block, so an
+# unanchored match passes against a file whose payload line is gone.
+for shape in 'bad file index' 'rating out of range' 'WEBVTT' 'transcoding disabled'; do
+  grep -qx "$shape" "$OUT/error_shapes.txt" || {
+    echo "FATAL: error_shapes.txt lost the '$shape' block"; exit 1; }
+done
+grep -q 'decided by EXTENSION' "$OUT/error_shapes.txt" && {
+  echo "FATAL: the retracted 'decided by EXTENSION' claim is back in error_shapes.txt"; exit 1; }
+
+# NO CARRIAGE RETURNS. `curl -D -` emits real HTTP headers, which end CRLF, and
+# `git config core.autocrlf=input` strips them ON COMMIT — so a manifest
+# accepted from a just-captured working tree would not match a fresh clone, and
+# `fixtures-verify` would go red in CI for a reason nobody could reproduce
+# locally. Measured: HEAD's committed error_shapes.txt carries 0 CRs and a
+# freshly captured one carried 13.
+! grep -q "$(printf '\r')" "$OUT/error_shapes.txt" || {
+  echo "FATAL: error_shapes.txt contains CR bytes; git would strip them on commit"; exit 1; }
+
+# The "no state" payloads really have none. Without this the reset above could
+# silently stop working and the next capture would quietly fold state into them.
+grep -q '"favorite":false' "$OUT/media_detail_directplay.json" || {
+  echo "FATAL: media_detail_directplay.json carries a favourite; the state reset did not run"; exit 1; }
+grep -q '"continueIndex":0' "$OUT/media_detail_transcode.json" || {
+  echo "FATAL: media_detail_transcode.json carries a resume pointer; the state reset did not run"; exit 1; }
+grep -qF "$TRANSCODE_LINE" "$CFG" || {
+  echo "FATAL: $CFG no longer carries the transcodeEnabled it started with"; exit 1; }
 
 echo "captured $(ls -1 "$OUT" | wc -l | tr -d ' ') fixtures into test/fixtures/"

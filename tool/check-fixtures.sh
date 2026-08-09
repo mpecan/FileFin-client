@@ -215,5 +215,36 @@ grep -q 'HTTP 415' "$DIR/error_shapes.txt" || \
     fail "error_shapes.txt has no 415 — F12's message has nothing to be written against"
 grep -q '^Location:.*hls/index.m3u8' "$DIR/error_shapes.txt" || \
     fail "error_shapes.txt has no 307 Location to the HLS playlist"
+# BOTH 415s, and they are different sentences from different routes (SPEC §3.4).
+# The file route's `transcoding disabled` is the only one a client can receive,
+# because `PlaybackRequest.url` is always the file route and libmpv follows the
+# 307 itself; the hls route's `not transcodable` is the symmetric half. Keeping
+# both captured is what stops a maintainer "fixing" F12's message to cover a
+# case that cannot reach it.
+#
+# `-x`, and that is not pedantry: the capture writes a COMMENT above each block
+# naming the same words, so an unanchored grep passed against a file whose
+# payload line had been deleted — measured while proving this gate in both
+# directions. An assertion satisfiable by prose is one CLAUDE.md names by name.
+grep -qx 'transcoding disabled' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 'transcoding disabled' — that is the FILE route's
+       415 and the only one this client can see. It needs a server with
+       transcodeEnabled off; capture_fixtures.sh does that and puts it back"
+grep -qx 'not transcodable' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 'not transcodable' — the HLS route's 415, the
+       symmetric half of SPEC §3.4"
+# A GATE AGAINST ONE SPECIFIC FALSEHOOD COMING BACK. The last block of this file
+# used to read "the browser-native verdict is decided by EXTENSION, not by probed
+# codecs" — the unprobed fallback read as the rule. It was retracted in four
+# other documents at M4 and left standing here, in a CAPTURED FIXTURE, which §8
+# treats as evidence. It is evidence for something untrue.
+if grep -q 'decided by EXTENSION' "$DIR/error_shapes.txt"; then
+    fail "error_shapes.txt states the RETRACTED claim that the browser-native
+       verdict is decided by the file extension. It is decided by the PROBED
+       container and codecs when the cache row has them (playback.go:78), and
+       falls back to the extension only when it does not — which is every row
+       in the seeded library, because seed.sh never probes. See CLAUDE.md
+       'Playback truths' and tool/spikes/e5_mkv_direct_play.sh."
+fi
 
 echo "fixtures: $(grep -c . "$MANIFEST") file(s) match the manifest, $(grep -c . "$KEYS") captured key path(s) are intact, and all structural assertions hold"

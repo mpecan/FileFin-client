@@ -27,8 +27,11 @@ class FileFinTestServer {
   Uri get baseUrl => run.baseUrl;
 
   /// Copies the seeded library and starts a server over it.
-  static Future<FileFinTestServer> start() async {
-    final run = await FixtureRun.create();
+  ///
+  /// [transcoding] is the server's own `transcodeEnabled` setting, written
+  /// into this copy's config — see [FixtureRun.create].
+  static Future<FileFinTestServer> start({bool transcoding = true}) async {
+    final run = await FixtureRun.create(transcoding: transcoding);
     final server = FileFinTestServer._(
       run,
       File('${run.root.path}/server.log'),

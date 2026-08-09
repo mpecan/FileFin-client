@@ -24,12 +24,16 @@ const seededCredentials = Credentials(
 /// Starts a real `filefin` over a private copy of the seeded library and
 /// returns an API signed in to it.
 ///
+/// [transcoding] is the server's own `transcodeEnabled` setting, written into
+/// this copy's config (`FixtureRun.create`). `false` is what gives F12's 415 a
+/// real server behind it.
+///
 /// Every caller must be in a **real** async zone — `setUpAll`, `setUp` or a
 /// plain `test()`. A request initiated inside a `testWidgets` body registers
 /// its timers in that body's `FakeAsync` zone and never completes, whatever
 /// `runAsync` does afterwards (measured at M3.0, re-learned at M3.7).
-Future<LibraryApi> liveApi() async {
-  final server = await FileFinTestServer.start();
+Future<LibraryApi> liveApi({bool transcoding = true}) async {
+  final server = await FileFinTestServer.start(transcoding: transcoding);
   final api = FileFinLibraryApi(
     FileFinClient.forServer(
       server: const ServerId('live'),
