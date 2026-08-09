@@ -178,15 +178,47 @@ for pkg in $packages; do
        for which test runner mutation_test should use. Add one here." ;;
     esac
 
+    # Time the suite on the UNMUTATED tree, once, and derive the per-mutant
+    # timeout from it. mutation_test validates this baseline itself before it
+    # mutates anything, so the run happens either way; measuring it here costs
+    # one extra pass and buys a timeout that tracks the suite instead of a
+    # number someone guessed in M0.
+    baseline_start=$(date +%s)
+    set +e
+    (cd "$pkg" && eval "$test_cmd") >/dev/null 2>&1
+    baseline_rc=$?
+    set -e
+    baseline_secs=$(( $(date +%s) - baseline_start ))
+    [ "$baseline_rc" -eq 0 ] || fail "$pkg — the suite fails on the UNMUTATED tree.
+       mutation_test would abort on its own baseline check and every mutant
+       would read as undetected. Fix the suite first."
+
+    cmd_timeout="${FILEFIN_MUTANTS_TIMEOUT:-}"
+    if [ -z "$cmd_timeout" ]; then
+        cmd_timeout=$(( baseline_secs * 6 ))
+        [ "$cmd_timeout" -lt 30 ] && cmd_timeout=30
+    fi
+    echo "mutants: $pkg — suite baseline ${baseline_secs}s, per-mutant timeout ${cmd_timeout}s"
+
     {
         echo '<?xml version="1.0" encoding="UTF-8"?>'
         echo '<mutations version="1.1">'
         echo '  <commands>'
         # working-directory "." is the package: the run below cds there first.
-        # The 300s timeout is the one the NOTE at the bottom of this script
-        # refers to — a mutant killed by it is counted "undetected" and reads
-        # like a real survivor.
-        printf '    <command group="test" expected-return="0" working-directory="." timeout="300">%s</command>\n' "$test_cmd"
+        #
+        # The timeout is DERIVED from this package's own clean-tree suite time,
+        # not a fixed number. A mutant that loops forever costs exactly this
+        # much wall clock, and it is charged once per looping mutant — so the
+        # figure is the difference between a gate that reports in a minute and
+        # one that appears to hang. It was 300s against suites that run in 1-7s;
+        # a `||` rewritten to `&&` in front of a recursive retry burned the full
+        # 300 and aborted every mutant behind it.
+        #
+        # 6x the measured baseline, floor 30s: generous enough for a loaded
+        # machine or a cold VM, tight enough that a loop is obvious. Override
+        # with FILEFIN_MUTANTS_TIMEOUT when a genuinely slow suite needs it, and
+        # say why in the commit.
+        printf '    <command group="test" expected-return="0" working-directory="." timeout="%s">%s</command>\n' "$cmd_timeout" "$test_cmd"
         echo '  </commands>'
         echo '  <files>'
         printf '%s\n' "$changed" | while IFS= read -r f; do
@@ -208,10 +240,34 @@ for pkg in $packages; do
     # rules are transcribed into mutation_rules.xml instead and this flag is
     # gone. Restoring it silently re-opens the hole; mutation_rules.xml carries
     # the retirement condition.
-    (cd "$pkg" && dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
+    # A whole-run cap on top of the per-mutant one. Even with a tight per-mutant
+    # timeout, N looping mutants cost N times it, and a wedge inside
+    # mutation_test itself is charged to nobody. Budget: the per-mutant timeout
+    # once per mutant plus the baseline, doubled for slack, floored at 10
+    # minutes. `timeout` sends TERM then KILL, so a wedged run FAILS rather than
+    # holding the gate open until someone notices.
+    run_cap=$(( (n * cmd_timeout + baseline_secs) * 2 ))
+    [ "$run_cap" -lt 600 ] && run_cap=600
+    (cd "$pkg" && timeout --kill-after=30s "${run_cap}s" \
+        dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
         > "$log" 2>&1
     rc=$?
     set -e
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "ERROR: $pkg — the mutation run exceeded its ${run_cap}s whole-run cap"
+        echo "       and was killed. This is NOT a surviving mutant: the run did"
+        echo "       not finish, so it measured nothing after the point it wedged."
+        echo "       Usual cause: a mutant that makes the code loop forever — a"
+        echo "       bound written as a condition in front of a recursive call,"
+        echo "       where flipping the operator removes the bound. Find it with:"
+        echo "         while :; do git -C $pkg diff --stat; sleep 10; done"
+        echo "       and look for the source that stays mutated. The fix is to"
+        echo "       make the recursion structurally bounded (pass the budget as"
+        echo "       an argument) rather than to widen this cap."
+        status=1
+        rm -rf "$tmpdir"
+        continue
+    fi
     cat "$log"
 
     # Zero mutants is NOT a pass, and this block used to say so in a comment
@@ -242,20 +298,43 @@ for pkg in $packages; do
     fi
 
     if [ "$rc" -ne 0 ]; then
-        echo "ERROR: $pkg — surviving mutant(s). Each is a change to your code that"
-        echo "       no test objects to. Add the assertion; exclude it in"
-        echo "       mutation_rules.xml only if it is genuinely equivalent, with a"
-        echo "       reason and a retirement condition."
-        # mutation_test's own per-file report cannot tell the two apart, and a
-        # remediator who reads "1/62 undetected" as a real survivor goes looking
-        # for a missing assertion that does not exist. Observed: a run killed by
-        # the 300s command timeout reported exactly that; the same tree run to
-        # completion reported 62/62. Failing safe when interrupted is right —
-        # this line is so the reader knows which happened.
-        echo "NOTE:  a mutant killed by the 300s command timeout (set above) is"
-        echo "       also counted 'undetected'. If the log above shows a timeout, the"
-        echo "       run was interrupted rather than a mutant surviving — re-run"
-        echo "       on a quiescent machine before hunting for a missing test."
+        # mutation_test counts a timed-out mutant as "undetected", so the two
+        # opposite meanings — "no test objected" and "the suite never finished"
+        # — arrive as one number. This used to be a NOTE asking the reader to
+        # work out which; a remediator who reads "1/62 undetected" as a real
+        # survivor goes hunting for an assertion that does not exist. Scrape the
+        # count and say which, because the gate knows and the reader does not.
+        timeouts=$(grep -oE 'Timeouts: [0-9]+' "$log" | grep -oE '[0-9]+' | head -1 || echo 0)
+        # mutation_test validates the suite on unmutated code before it mutates
+        # anything, and aborts if that fails. Nothing was mutated, so there are
+        # no survivors and no timeouts to scrape — and the first version of this
+        # block printed "these are real survivors" over exactly that, which is
+        # the confident-wrong-diagnosis this whole change exists to remove.
+        # Found by proving the negative direction, not by reading the code.
+        if grep -q 'failed with unmodified code' "$log"; then
+            echo "ERROR: $pkg — the suite failed on UNMUTATED code, so mutation_test"
+            echo "       aborted before mutating anything. There are no survivors and"
+            echo "       no timeouts here: nothing was measured at all."
+            echo "       Usual causes: the per-mutant timeout (${cmd_timeout}s) is"
+            echo "       shorter than the suite's own runtime, or the suite is"
+            echo "       genuinely red. Run the suite by hand first."
+        elif [ "${timeouts:-0}" -gt 0 ]; then
+            echo "ERROR: $pkg — ${timeouts} mutant(s) hit the ${cmd_timeout}s per-mutant"
+            echo "       timeout. That is a HANG, not a survivor: the suite never"
+            echo "       finished, so nothing was measured for those mutants."
+            echo "       Do NOT go looking for a missing assertion. Find the mutant"
+            echo "       that loops — most often a bound written as a condition in"
+            echo "       front of a recursive call, where flipping the operator"
+            echo "       removes the bound — and make the recursion structurally"
+            echo "       bounded. Widening the timeout hides it and costs the gate"
+            echo "       ${cmd_timeout}s per looping mutant, every run, forever."
+        else
+            echo "ERROR: $pkg — surviving mutant(s). Each is a change to your code that"
+            echo "       no test objects to. Add the assertion; exclude it in"
+            echo "       mutation_rules.xml only if it is genuinely equivalent, with a"
+            echo "       reason and a retirement condition."
+            echo "       (Timeouts: 0 — so these are real survivors, not a wedged run.)"
+        fi
         status=1
     fi
     rm -rf "$tmpdir"
