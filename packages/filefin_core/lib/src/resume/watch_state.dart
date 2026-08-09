@@ -75,15 +75,30 @@ abstract class WatchState with _$WatchState {
   /// reporter is the first consumer this binds; STATE.md carries it as a known
   /// limitation.
   ///
-  /// [MediaDetail.rating] is **not** clamped by the server on read — only on
-  /// write — so a hand-edited `meta.json` can serve `rating: 99` while
-  /// `POST .../rating {"rating": 99}` answers `400 rating out of range`.
-  /// Copying it through unchecked would build a `WatchState` that this
-  /// library's own `setRating` refuses, so anything outside `0..10` is read as
-  /// **0, unrated** — upstream's own word for "no rating"
-  /// (`state/state.go:29`). The wire model keeps the raw value; §8 tolerance
-  /// belongs there, and the invariant that every state we construct is one
-  /// every mutator accepts belongs here.
+  /// [MediaDetail.rating] is **copied through exactly as the server reports
+  /// it**, including a value outside `0..10`.
+  ///
+  /// The server validates a rating on write and not on read, so a hand-edited
+  /// `meta.json` really does serve `rating: 99` while
+  /// `POST .../rating {"rating": 99}` answers `400 rating out of range`
+  /// (M6.0/E-6). This class mirrors upstream's `UserState`
+  /// (`state/state.go:20-38`), and what upstream is storing in that case is 99.
+  ///
+  /// **It used to read anything outside `0..10` as 0, and that lost data.**
+  /// `applyWatchState` folds `state.rating` back onto the payload, and all of
+  /// `setFavorite`, `setWatched` and `clearWatched` round-trip through here —
+  /// so on an item the server reports as 99, tapping the heart made the screen
+  /// say *Not rated* and deleted the notice explaining the value, while the
+  /// server still held 99 (M6.R/P1.4). The write it followed is a total
+  /// assignment to `favorite` in the server's own fold and touches no rating at
+  /// all, so the prediction was simply wrong.
+  ///
+  /// The invariant it was defending — "every state we construct is one every
+  /// mutator accepts" — did not need defending. `setRating` range-checks its
+  /// **argument**, not `state.rating`, and no other mutator reads the rating,
+  /// so no mutator refuses a state carrying 99. The only caller that could have
+  /// tripped it was `setRating(state, rating: state.rating)`, which nothing
+  /// does: the picker offers `0..10` and nothing else.
   factory WatchState.fromDetail(MediaDetail detail) => WatchState(
     pointer: detail.continueIndex == 0 && detail.continueSeconds == 0
         ? null
@@ -93,13 +108,7 @@ abstract class WatchState with _$WatchState {
           ),
     watched: detail.watched,
     favorite: detail.favorite,
-    // `isNegative` rather than `>= 0`, and that is not a style choice. With the
-    // fallback also being 0, `rating >= 0` and `rating > 0` produce the same
-    // answer for every input — the mutation gate reported it as a survivor and
-    // it is genuinely equivalent, so the operator was removed rather than
-    // excluded. An exclusion is a piece of code the gate stops asking about; a
-    // predicate with no boundary to get wrong is better.
-    rating: detail.rating.isNegative || detail.rating > 10 ? 0 : detail.rating,
+    rating: detail.rating,
   );
 }
 

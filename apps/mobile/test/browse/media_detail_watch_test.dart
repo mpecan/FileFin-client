@@ -232,6 +232,28 @@ void main() {
     }
   });
 
+  testWidgets('favouriting does not wipe an out-of-range rating off screen', (
+    tester,
+  ) async {
+    // M6.R/P1.4, end to end. The server reports 99 (it validates on write and
+    // not on read, M6.0/E-6) and `POST .../favorite` is a total assignment to
+    // `favorite` that never touches a rating — so the number and the sentence
+    // explaining it must both survive the tap. They did not:
+    // `WatchState.fromDetail` read 99 as 0 and `applyWatchState` wrote that
+    // back, so the heart turned the screen's rating into *Not rated* and
+    // deleted the explanation, while the server still held 99.
+    api.mediaDetailResult = _watchedAt45.copyWith(rating: 99);
+    await pump(tester);
+    expect(find.textContaining('outside 1-10'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Add to favourites'));
+    await tester.pumpAndSettle();
+
+    expect(api.calls.last, 'setFavorite(e4285edb34d5, true)');
+    expect(find.textContaining('This server reports 99'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('honesty about failure and about being busy', () {
     testWidgets('a refused write reverts the control and says why', (
       tester,

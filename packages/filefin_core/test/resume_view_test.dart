@@ -99,37 +99,44 @@ void main() {
       },
     );
 
-    test('every state it builds is one setRating would accept', () {
+    test('the rating is carried through EXACTLY as the server sent it', () {
       // The server rejects a write outside 0-10 but does NOT clamp on read:
       // verified live at v0.20.3 by editing meta.json to `rating: 99` —
       // `POST .../rating {"rating":99}` answered 400 while `GET .../media/<id>`
-      // still served `"rating": 99`. Copied through unchecked, that builds a
-      // WatchState whose own `setRating(state, rating: state.rating)` throws.
-      // Out of range is read as 0, upstream's own value for "unrated".
-      for (final entry in {
-        0: 0,
-        1: 1,
-        5: 5,
-        10: 10,
-        -1: 0,
-        11: 0,
-        99: 0,
-      }.entries) {
-        final state = WatchState.fromDetail(
-          MediaDetail(rating: entry.key),
-        );
-        expect(state.rating, entry.value, reason: 'server sent ${entry.key}');
+      // still served `"rating": 99`. This class mirrors upstream's `UserState`,
+      // and what upstream is storing in that case is 99.
+      //
+      // It read out-of-range as 0 until M6.R, to keep an invariant that turned
+      // out not to need keeping — and that normalisation lost data, because
+      // `applyWatchState` folds the rating back onto the payload after a
+      // favourite or a watched write that never touched it.
+      for (final sent in [0, 1, 5, 10, -1, 11, 99]) {
         expect(
-          () => setRating(state, rating: state.rating),
-          returnsNormally,
-          reason: 'server sent ${entry.key}',
+          WatchState.fromDetail(MediaDetail(rating: sent)).rating,
+          sent,
+          reason: 'server sent $sent',
         );
       }
     });
 
+    test('no mutator refuses a state carrying an out-of-range rating', () {
+      // The invariant the old normalisation was defending, checked rather than
+      // assumed. `setRating` range-checks its ARGUMENT, not `state.rating`, and
+      // the other three never read the rating at all — so the only call that
+      // could have thrown is `setRating(state, rating: state.rating)`, which
+      // nothing makes: the picker offers 0-10 and nothing else.
+      final state = WatchState.fromDetail(const MediaDetail(rating: 99));
+
+      expect(setFavorite(state, favorite: true).rating, 99);
+      expect(setWatched(state, watched: true).rating, 99);
+      expect(clearWatched(state).rating, 99);
+      expect(setRating(state, rating: 5).rating, 5);
+      expect(() => setRating(state, rating: state.rating), throwsRangeError);
+    });
+
     test('the wire model still carries the raw value, tolerantly (§8)', () {
-      // §8 tolerance belongs at the wire boundary; the normalisation belongs in
-      // WatchState. Asserting both keeps them from drifting into each other.
+      // §8 tolerance belongs at the wire boundary, and now the state agrees
+      // with it rather than quietly disagreeing one layer up.
       expect(
         MediaDetail.fromJson(const {'rating': 99}).rating,
         99,

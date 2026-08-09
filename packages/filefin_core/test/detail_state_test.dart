@@ -136,16 +136,29 @@ void main() {
     });
 
     test(
-      'it is NOT a render-time normaliser: a server rating of 99 survives',
+      'an UNRELATED write leaves a server rating of 99 exactly where it was',
       () {
-        // The server validates a rating on write and not on read — measured at
-        // M6.0/E-6, where a hand-edited `meta.json` served `rating: 99`. This
-        // function is applied only after a real mutation, so a payload nobody
-        // has mutated keeps what the server said. Folding on every build would
-        // turn that 99 into "unrated" through `WatchState.fromDetail`.
+        // M6.R/P1.4, and the case that was missing. The server validates a
+        // rating on write and not on read (M6.0/E-6: a hand-edited `meta.json`
+        // really does serve 99), and `setFavorite` is a total assignment to
+        // `favorite` in the server's own fold — it does not read or change a
+        // rating. So the folded payload must still say 99.
+        //
+        // It said 0, because `WatchState.fromDetail` normalised the rating away
+        // and this function writes `state.rating` back. The screen said *Not
+        // rated* and dropped the line explaining the value, while the server
+        // still held 99. The old case asserted that normalisation and called
+        // the fold "applied only after a real mutation" — but a real mutation
+        // of *favourite* is exactly what dragged it along.
         final served = base.copyWith(rating: 99);
-        expect(served.rating, 99);
-        expect(WatchState.fromDetail(served).rating, 0);
+
+        final folded = applyWatchState(
+          served,
+          setFavorite(WatchState.fromDetail(served), favorite: true),
+        );
+
+        expect(folded.rating, 99);
+        expect(folded.favorite, isTrue);
       },
     );
   });

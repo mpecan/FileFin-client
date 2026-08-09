@@ -32,11 +32,17 @@ import 'package:filefin_core/src/resume/watch_state.dart';
 /// rows carrying whatever the last fetch said. Invisible while nothing drew
 /// them, and wrong the moment anything did.
 ///
-/// It is applied **only after a real mutation**, never as a render-time
-/// normaliser. `WatchState.fromDetail` reads an out-of-range rating as 0
-/// ([MediaDetail.rating]), and the server does not clamp on read (M6.0/E-6: a
-/// hand-edited `meta.json` really does serve `rating: 99`), so folding on every
-/// build would turn a server-reported 99 into "unrated" on screen.
+/// **An out-of-range rating survives this fold, and that took a fix rather than
+/// a rule about when to call it.** The doc here used to say the fold is applied
+/// only after a real mutation, so a server-reported `rating: 99` (M6.0/E-6, and
+/// the server does not clamp on read) could never be turned into "unrated" by
+/// it. That was the wrong ground: `setFavorite`, `setWatched` and
+/// `clearWatched` all round-trip through [WatchState.fromDetail], which
+/// normalised the rating
+/// away, so *a real mutation of favourite* dragged the clamped rating along
+/// with it and wiped the 99 off the screen (M6.R/P1.4). `fromDetail` now copies
+/// the rating through exactly as the server reports it, and its doc comment
+/// carries the reasoning.
 MediaDetail applyWatchState(MediaDetail detail, WatchState state) {
   final view = deriveView(state, fileCount: detail.files.length);
   return detail.copyWith(
