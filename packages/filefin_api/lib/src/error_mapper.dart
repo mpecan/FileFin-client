@@ -132,11 +132,39 @@ FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
     // F12's, and it is the file route's 415 rather than the HLS route's: this
     // client never requests `.../hls/index.m3u8` itself (`errors_playback.dart`
     // says why), so `transcoding disabled` is the only shape that reaches here.
-    415 => TranscodingDisabled(requested),
+    //
+    // **Scoped to that route, because the sentence names a file.** Mapped
+    // globally it told the LOGIN and DETAIL screens "This file needs
+    // transcoding": `filefin` itself answers 415 nowhere else, but a reverse
+    // proxy in front of it answers one for a content type it dislikes on any
+    // route at all, and self-hosters put reverse proxies in front of things.
+    // Off the file route a 415 is a status we have no reading of, which is
+    // what `ServerFailure` is for.
+    415 when _isFileRoute(requested) => TranscodingDisabled(requested),
     429 => _rateLimited(response, requested),
     503 => CacheUnavailable(requested),
     final status => ServerFailure(status ?? 0, body, requested),
   };
+}
+
+/// Whether [url] is the media FILE route — the one route whose 415 SPEC §3.4
+/// gives a meaning.
+///
+/// Matched on the LAST segments rather than on the whole path, so a FileFin
+/// mounted under a reverse proxy's path prefix still matches — which matters,
+/// because a proxy is exactly what produces the 415s this predicate exists to
+/// keep out. The two routes that extend this one, `.../hls/...` and
+/// `.../sub/{k}`, end elsewhere and do not match.
+///
+/// Segment comparison rather than a regular expression, because a pattern
+/// spelling the path out is indistinguishable from an endpoint to
+/// `just constitution`'s `undocumented_endpoint` scan.
+bool _isFileRoute(Uri url) {
+  final parts = url.pathSegments;
+  return parts.length >= 5 &&
+      parts[parts.length - 2] == 'file' &&
+      parts[parts.length - 4] == 'media' &&
+      parts[parts.length - 5] == 'api';
 }
 
 /// Reads `Retry-After` as whole seconds, keeping the raw value when it is not.
