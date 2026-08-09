@@ -264,6 +264,22 @@ which **two survived the first pass** and both are worth keeping:
   before capturing and asserts the result, and two consecutive captures produce
   byte-identical fixtures.
 
+### What a review pass found, and what was done about it
+
+- **`next()` does not pause the engine when the new file's pre-flight
+  refuses.** `_switchTo` zeroes the position bookkeeping and `_open()` fails
+  before `host.open`, so mpv is still holding — and still playing — the
+  *previous* episode behind a full-screen panel that says nothing can play.
+  This is not new: every `_open()` failure since M4 has left the old media
+  loaded, including a `playbackHeaders` throw. What M5 changed is how visible
+  it is, because the panel replaces the controls a user would reach for.
+  Recorded rather than patched: pausing on the failure path is a behaviour
+  change that wants its own test on both sides, and inventing it at the end of
+  a milestone is how an untested branch gets shipped. It is reachable only by
+  turning transcoding off between two episodes of one item.
+- A dead position collector in `hls_live_test.dart`'s resume arm — written and
+  never read — was deleted.
+
 ### Checked and found already consistent
 
 CLAUDE.md §4 and `docs/architecture.md` on version pinning. The M5 plan listed

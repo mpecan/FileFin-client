@@ -149,15 +149,12 @@ Future<_Run> _measure() async {
   );
 
   // ---- the resume arm first, so F8's number is taken on a fresh open -------
-  final resumePositions = <Duration>[];
-  final resumeWatch = host.position.listen(resumePositions.add);
   await host.open(request(const Duration(milliseconds: 1200)));
   await host.play();
   final firstAfterResume = await host.position
       .firstWhere((p) => p > Duration.zero)
       .timeout(const Duration(seconds: 40));
   await host.pause();
-  await resumeWatch.cancel();
 
   // ---- everything else on a second open, from zero ------------------------
   final durationSeen = host.duration.firstWhere((d) => d > Duration.zero);
