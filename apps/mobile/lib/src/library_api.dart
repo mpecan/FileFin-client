@@ -81,6 +81,16 @@ abstract base class LibraryApi {
   /// The headers libmpv must carry, after proving the session is alive.
   Future<PlaybackSessionHeaders> playbackHeaders({CancelToken? cancelToken});
 
+  /// `HEAD .../file/{n}` — refuses before the engine opens, or returns (F12).
+  ///
+  /// Throws `TranscodingDisabled` for the `415` libmpv could only report as
+  /// "failed to open". Returns for `2xx` and for the `307` to HLS alike.
+  Future<void> requirePlayable(
+    MediaId id,
+    FileIndex file, {
+    CancelToken? cancelToken,
+  });
+
   /// The absolute URL libmpv should open for one file.
   Uri fileUrl(MediaId id, FileIndex file);
 
@@ -160,6 +170,13 @@ final class FileFinLibraryApi extends LibraryApi {
   @override
   Future<PlaybackSessionHeaders> playbackHeaders({CancelToken? cancelToken}) =>
       _client.playbackHeaders(cancelToken: cancelToken);
+
+  @override
+  Future<void> requirePlayable(
+    MediaId id,
+    FileIndex file, {
+    CancelToken? cancelToken,
+  }) => _client.requirePlayable(id, file, cancelToken: cancelToken);
 
   @override
   Uri fileUrl(MediaId id, FileIndex file) => _client.fileUrl(id, file);

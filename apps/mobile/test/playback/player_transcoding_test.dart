@@ -1,6 +1,25 @@
 import 'package:filefin_api/filefin_api.dart';
+import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
+import 'package:filefin_mobile/src/playback/player_controls.dart';
+import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/fake_playback_host.dart';
+import '../support/fakes.dart';
+
+const _id = MediaId('919ac9caad25');
+
+MediaDetail _show({bool transcode = true, int files = 2}) => MediaDetail(
+  id: _id,
+  title: 'Transcode Show',
+  files: [
+    for (var i = 0; i < files; i++)
+      FileInfo(index: FileIndex(i), size: 10, transcode: transcode),
+  ],
+);
 
 /// F12 on the player screen: the 415, from the variant to the sentence.
 ///
@@ -8,6 +27,37 @@ import 'package:flutter_test/flutter_test.dart';
 /// `file-size`'s warning count may fall or hold, never rise.
 void main() {
   final url = Uri.parse('https://media.example/api/media/abc/file/0');
+
+  late FakeLibraryApi api;
+  late FakePlaybackHost host;
+
+  setUp(() {
+    api = FakeLibraryApi()
+      ..playbackHeadersResult = const PlaybackSessionHeaders({
+        'Cookie': 'filefin_session=sess-1',
+      })
+      ..meResult = const AuthResult(user: 'sam');
+    host = FakePlaybackHost();
+  });
+
+  PlayerController controllerFor(MediaDetail detail) {
+    final controller = PlayerController(
+      api: api,
+      host: host,
+      network: FakeNetworkStatus(),
+      detail: detail,
+      server: SavedServer(
+        id: const ServerId('home'),
+        name: 'Home',
+        baseUrl: Uri.parse('http://nas.local'),
+      ),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+    return controller;
+  }
 
   group('describeApiFailure names transcoding (F12)', () {
     test('the one line over the video is pinned exactly', () {
@@ -93,6 +143,196 @@ void main() {
         );
       }
       expect(describeApiFailure(SessionExpired(url)).$2, isTrue);
+    });
+  });
+
+  group('the pre-flight refuses before the engine is ever opened', () {
+    test('a 415 becomes F12s sentence and host.open is NEVER called', () async {
+      // The whole point of running it eagerly. `_recover` cannot help with a
+      // 415 — it is permanent — so a lazy classification would put a black
+      // surface in front of the user first and explain afterwards, which is
+      // exactly M5.0/E-I's "before".
+      api.requirePlayableResult = TranscodingDisabled(url);
+      final controller = controllerFor(_show());
+
+      await controller.start();
+
+      expect(
+        controller.failure,
+        'This file needs transcoding and the server has it turned off.',
+      );
+      expect(controller.unplayable, isA<TranscodingDisabled>());
+      expect(controller.needsSignIn, isFalse);
+      expect(host.calls, isNot(contains('open')));
+      expect(host.opened, isEmpty);
+    });
+
+    test('when it returns, the open happens exactly as before', () async {
+      final controller = controllerFor(_show());
+
+      await controller.start();
+
+      expect(api.calls, contains('requirePlayable(919ac9caad25, 0)'));
+      expect(host.opened, hasLength(1));
+      expect(controller.failure, isNull);
+      expect(controller.unplayable, isNull);
+    });
+
+    test('a direct-play file is NOT pre-flighted', () async {
+      // The other side of the guard, and the reason it exists: §3.4 makes a
+      // 415 on the file route reachable only for a file that needs
+      // transcoding, so a pre-flight on a direct-play open would be a round
+      // trip that can never answer anything. M4.R/T9's lesson — a boundary
+      // tested on one side only had an off-by-one in its own fix.
+      final controller = controllerFor(_show(transcode: false));
+
+      await controller.start();
+
+      expect(
+        api.calls.where((c) => c.startsWith('requirePlayable')),
+        isEmpty,
+      );
+      expect(host.opened, hasLength(1));
+    });
+
+    test(
+      'next() pre-flights the file it is about to open, not the old one',
+      () async {
+        final controller = controllerFor(_show());
+        await controller.start();
+
+        await controller.next();
+
+        expect(api.calls, contains('requirePlayable(919ac9caad25, 0)'));
+        expect(api.calls, contains('requirePlayable(919ac9caad25, 1)'));
+        expect(host.opened, hasLength(2));
+      },
+    );
+
+    test('transcoding turned off mid-session stops at one retry', () async {
+      // `_recover` spends its retry on the first engine error and re-opens;
+      // the pre-flight refuses that re-open, and nothing loops. Without the
+      // bound, a permanently-415 file would re-open forever behind a banner.
+      final controller = controllerFor(_show());
+      await controller.start();
+      expect(host.opened, hasLength(1));
+
+      api.requirePlayableResult = TranscodingDisabled(url);
+      host.emitError('Failed to open http://nas.local/…/file/0.');
+      await pumpEventQueue();
+
+      expect(host.opened, hasLength(1), reason: 'the re-open was refused');
+      expect(
+        controller.failure,
+        'This file needs transcoding and the server has it turned off.',
+      );
+
+      host.emitError('Failed to open http://nas.local/…/file/0.');
+      await pumpEventQueue();
+
+      expect(host.opened, hasLength(1), reason: 'the retry is spent, no loop');
+    });
+
+    test('an ordinary failure leaves `unplayable` null', () async {
+      // The absence half. `unplayable` gates a full-screen panel, and a panel
+      // that appeared for a timeout would hide the video for a problem that
+      // resolves itself.
+      api.requirePlayableResult = CacheUnavailable(url);
+      final controller = controllerFor(_show());
+
+      await controller.start();
+
+      expect(controller.failure, isNotNull);
+      expect(controller.unplayable, isNull);
+    });
+
+    test('a successful re-open clears the refusal', () async {
+      api.requirePlayableResult = TranscodingDisabled(url);
+      final controller = controllerFor(_show());
+      await controller.start();
+      expect(controller.unplayable, isNotNull);
+
+      api.requirePlayableResult = null;
+      await controller.next();
+
+      expect(controller.unplayable, isNull);
+      expect(controller.failure, isNull);
+    });
+  });
+
+  group('the panel F12 asks for, and where it must NOT appear', () {
+    Future<void> pumpPlayer(
+      WidgetTester tester, {
+      required MediaDetail detail,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PlayerPage(
+            api: api,
+            hostFactory: () => host,
+            network: FakeNetworkStatus(),
+            detail: detail,
+            server: SavedServer(
+              id: const ServerId('home'),
+              name: 'Home NAS',
+              baseUrl: Uri.parse('http://nas.local'),
+            ),
+            prefs: const PlaybackPrefs(),
+            initialFile: const FileIndex(0),
+            startAt: Duration.zero,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the refusal is a full-screen panel, worded exactly', (
+      tester,
+    ) async {
+      api.requirePlayableResult = TranscodingDisabled(url);
+
+      await pumpPlayer(tester, detail: _show());
+
+      expect(
+        find.text(
+          'This file needs transcoding, and "Home NAS" has it '
+          'turned off.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'The server converts formats a player cannot read as they '
+          'are. With that turned off there is nothing to play — nothing '
+          'this app can change will help, so someone with admin access to '
+          'the server has to turn it back on.',
+        ),
+        findsOneWidget,
+      );
+      // Nothing behind it: the engine was never opened, so the surface would
+      // be a black rectangle and the controls would drive nothing.
+      expect(find.byKey(const ValueKey('fake-surface')), findsNothing);
+      expect(find.byType(PlayerControls), findsNothing);
+    });
+
+    testWidgets('it is ABSENT on an ordinary failure', (tester) async {
+      // M4.R/T5: dropping the D10 banner's guard left all 358 tests green
+      // because nothing asserted absence. This is that assertion.
+      api.requirePlayableResult = CacheUnavailable(url);
+
+      await pumpPlayer(tester, detail: _show());
+
+      expect(find.textContaining('needs transcoding'), findsNothing);
+      // The ordinary failure banner is what shows instead, over a live player.
+      expect(find.byKey(const ValueKey('fake-surface')), findsOneWidget);
+      expect(find.byType(PlayerControls), findsOneWidget);
+    });
+
+    testWidgets('it is ABSENT on a successful open', (tester) async {
+      await pumpPlayer(tester, detail: _show());
+
+      expect(find.textContaining('needs transcoding'), findsNothing);
+      expect(find.byKey(const ValueKey('fake-surface')), findsOneWidget);
     });
   });
 }

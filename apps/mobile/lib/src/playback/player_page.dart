@@ -136,6 +136,15 @@ class _PlayerPageState extends State<PlayerPage> {
         onCancel: () => Navigator.of(context).maybePop(),
       );
     }
+    // F12's whole surface, and a PANEL rather than the banner below because
+    // there is nothing behind it: the pre-flight refused before the engine was
+    // ever opened, so the video surface would be a black rectangle and the
+    // controls would drive a player holding no file. The "before" this
+    // replaces is mpv's own `Failed to open <url>.` over exactly that black
+    // rectangle (measured verbatim, M5.0/E-I).
+    if (_controller.unplayable != null) {
+      return _UnplayablePanel(server: widget.server);
+    }
     return Column(
       children: [
         // Keyed on the TRANSPORT and not only on the setting. With the flag on
@@ -234,6 +243,56 @@ class MeteredPrompt extends StatelessWidget {
           const SizedBox(height: 20),
           FilledButton(onPressed: onConfirm, child: const Text('Play anyway')),
           TextButton(onPressed: onCancel, child: const Text('Not now')),
+        ],
+      ),
+    ),
+  );
+}
+
+/// F12's answer to a `415`: name the cause, name who can change it.
+///
+/// It says what transcoding IS, because "transcoding is disabled" means
+/// nothing to most people looking at a film that will not play, and it says
+/// plainly that no setting in this app will help — the alternative is a user
+/// hunting through their own settings for something that is not there.
+class _UnplayablePanel extends StatelessWidget {
+  const _UnplayablePanel({required this.server});
+
+  final SavedServer server;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.movie_filter_outlined,
+            size: 48,
+            color: Colors.white70,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'This file needs transcoding, and "${server.name}" has it '
+            'turned off.',
+            textAlign: TextAlign.center,
+            // No explicit size, matching `_RefusalPanel` and `MeteredPrompt`.
+            // A hard-coded `fontSize: 18` also fixed the type scale against the
+            // system font setting, which is exactly what backlog row 13 exists
+            // about — and it was the one surviving mutant in this file, because
+            // nothing can assert a point size that carries no meaning.
+            style: const TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'The server converts formats a player cannot read as they are. '
+            'With that turned off there is nothing to play — nothing this app '
+            'can change will help, so someone with admin access to the server '
+            'has to turn it back on.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70),
+          ),
         ],
       ),
     ),

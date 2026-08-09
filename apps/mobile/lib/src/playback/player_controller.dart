@@ -75,6 +75,7 @@ class PlayerController extends ChangeNotifier {
   PlaybackDecision? _decision;
   NetworkType? _sample;
   String? _failure;
+  TranscodingDisabled? _unplayable;
   var _needsSignIn = false;
   var _retrySpent = false;
   var _disposed = false;
@@ -108,6 +109,14 @@ class PlayerController extends ChangeNotifier {
 
   /// Whatever went wrong, phrased for a person, or null.
   String? get failure => _failure;
+
+  /// The 415, when that is why nothing is playing (F12). Null otherwise.
+  ///
+  /// Separate from [failure] because the two drive different surfaces: an
+  /// ordinary failure is a banner over a video that may still be playing,
+  /// while this one means the engine was never opened and there is nothing
+  /// behind the banner to see. `PlayerPage` shows a full-screen panel for it.
+  TranscodingDisabled? get unplayable => _unplayable;
 
   /// Whether the user has to sign in again before anything else can work.
   bool get needsSignIn => _needsSignIn;
@@ -276,9 +285,30 @@ class PlayerController extends ChangeNotifier {
     super.dispose();
   }
 
+  /// Opens the current file, refusing first if the server will not serve it.
+  ///
+  /// **The pre-flight is the FIRST statement, and it is eager rather than a
+  /// classification of a failure that already happened.** libmpv surfaces no
+  /// status code, so a `415` arrives on [PlaybackHost.errors] as
+  /// `Failed to open <url>.` and nothing else — measured verbatim at
+  /// M5.0/E-I, over a black surface, which is the opposite of what F12 asks
+  /// for. A 415 is also deterministic and permanent, so there is nothing for
+  /// `_recover`'s retry to achieve; weaving a second question into that
+  /// three-line function is what M4.R had to fix three defects in.
+  ///
+  /// **Guarded on `file.transcode`**, because SPEC §3.4 makes a 415 on the
+  /// file route reachable only for a file that needs transcoding — a
+  /// direct-play open would spend a round trip on a question with one possible
+  /// answer. The flag is the server's own verdict and it stays `true` when
+  /// transcoding is disabled (measured, M5.0/E-B), which is exactly what makes
+  /// the guard fire in the case it exists for. It can be stale — the detail
+  /// was fetched earlier — and that is accepted debt: a file that became
+  /// direct-playable meanwhile simply answers `200` and the pre-flight passes.
   Future<void> _open() async {
     _failure = null;
+    _unplayable = null;
     try {
+      if (file.transcode) await api.requirePlayable(detail.id, _current);
       final headers = await api.playbackHeaders();
       _subtitles = await _fetchSubtitles();
       await _listen();
@@ -415,6 +445,7 @@ class PlayerController extends ChangeNotifier {
     final described = describeApiFailure(error);
     _failure = described.$1;
     _needsSignIn = described.$2;
+    _unplayable = error is TranscodingDisabled ? error : null;
     _notify();
   }
 

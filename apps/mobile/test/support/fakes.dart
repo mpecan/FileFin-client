@@ -94,6 +94,9 @@ base class FakeLibraryApi extends LibraryApi {
   /// What `playbackHeaders()` answers with, or throws.
   Object? playbackHeadersResult;
 
+  /// What `requirePlayable()` throws, or `null` for "the server will serve it".
+  Object? requirePlayableResult;
+
   /// What `playbackTransport()` answers. Not a failure path — it does no I/O.
   PlaybackTransport transport = PlaybackTransport.plainHttp;
 
@@ -230,6 +233,28 @@ base class FakeLibraryApi extends LibraryApi {
     'playbackHeaders',
     cancelToken,
   );
+
+  @override
+  Future<void> requirePlayable(
+    MediaId id,
+    FileIndex file, {
+    CancelToken? cancelToken,
+  }) async {
+    // Both arguments in the record: a pre-flight that checked file 0 while the
+    // player opened file 1 would pass a fake that only counted calls, and the
+    // guard M5.4 puts in front of this is per FILE.
+    calls.add('requirePlayable(${id.value}, ${file.value})');
+    tokens.add(cancelToken);
+    final failure = requirePlayableResult;
+    // NOT `_answer<void>`, for the trap `postProgress` names above: with `T`
+    // bound to `void`, `result is! T` is false for every value, so the throw
+    // arm is unreachable and a fake set up to refuse quietly succeeds.
+    if (failure != null) {
+      // The field holds whatever the real API threw, which is an Exception.
+      // ignore: only_throw_errors
+      throw failure;
+    }
+  }
 
   @override
   Uri fileUrl(MediaId id, FileIndex file) {

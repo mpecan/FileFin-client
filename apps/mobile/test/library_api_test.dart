@@ -194,6 +194,20 @@ void main() {
     },
   );
 
+  test('requirePlayable HEADs the file route, and nothing else', () async {
+    // The method matters as much as the path. A `GET` here would move media
+    // bytes on the direct-play arm and 81 bytes of Go's redirect HTML on the
+    // other (M5.0/E-A); a mismatched method would also be answered `200
+    // text/html` by the SPA catch-all rather than with a 405, so it would look
+    // like a success.
+    await api.requirePlayable(
+      const MediaId('e4285edb34d5'),
+      const FileIndex(0),
+    );
+
+    expect(seen, ['HEAD /api/media/e4285edb34d5/file/0']);
+  });
+
   test('fileUrl and subtitleUrl are absolute and correctly shaped', () {
     expect(
       api.fileUrl(const MediaId('abc'), const FileIndex(2)).path,
