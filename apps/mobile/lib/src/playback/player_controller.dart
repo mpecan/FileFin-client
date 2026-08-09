@@ -146,6 +146,11 @@ class PlayerController extends ChangeNotifier {
   PlaybackOutcome get outcome => PlaybackOutcome(
     state: _reporter.state,
     needsDetailRefetch: _reporter.needsDetailRefetch,
+    // `lastSent` is set only after a `204`, so this is "the server accepted
+    // something" rather than "the player tried". A session that opened and
+    // closed without reaching a reporting trigger must not reload the home
+    // rows, because nothing re-stamped `updated`.
+    wrote: _reporter.lastSent != null,
   );
 
   /// Whether there is another file after this one (F7's Next).

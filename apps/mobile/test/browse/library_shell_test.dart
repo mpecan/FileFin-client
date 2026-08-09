@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/category_tree_page.dart';
 import 'package:filefin_mobile/src/browse/home_page.dart';
@@ -10,62 +8,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
+import '../support/shell_harness.dart';
 
-/// The three tabs, what a cold start costs, and the one reload.
+/// The three tabs, and what a cold start costs.
 ///
 /// Nothing in `test/browse/` can prove any of it: each of those suites builds
 /// one screen on its own, and every claim here is about what happens *between*
-/// them.
+/// them. The reload — what a route that WROTE does on its way back — is
+/// `library_shell_reload_test.dart`, split off at M6.R when this file crossed
+/// `file-size`'s soft warning.
 void main() {
   late FakeLibraryApi api;
 
-  const film = MediaSummary(
-    id: MediaId('e4285edb34d5'),
-    title: 'Direct Play Movie',
-  );
+  const film = shellFilm;
 
   setUp(() {
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
-    api = FakeLibraryApi()
-      ..posterResult = null
-      ..homeResult = const HomeRows(continueRow: [film])
-      ..searchResult = const <MediaSummary>[]
-      ..categoriesResult = const [
-        Category(id: CategoryId(1), leaf: 'Films', name: 'Films', media: 1),
-      ]
-      ..categoryMediaResult = const [film]
-      ..mediaDetailResult = const MediaDetail(
-        id: MediaId('e4285edb34d5'),
-        title: 'Direct Play Movie',
-        year: 2020,
-      );
+    resetImageCache();
+    api = shellApi();
   });
 
   Future<void> show(
     WidgetTester tester, {
     VoidCallback? onSettings,
     Size surface = const Size(800, 1400),
-  }) async {
-    await tester.binding.setSurfaceSize(surface);
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MaterialApp(
-        home: LibraryShell(
-          api: api,
-          title: 'Attic NAS',
-          onSettings: onSettings,
-        ),
-      ),
-    );
-    await tester.pump();
-  }
+  }) => showShell(tester, api, onSettings: onSettings, surface: surface);
 
-  Future<void> tab(WidgetTester tester, String label) async {
-    await tester.tap(find.text(label));
-    await tester.pumpAndSettle();
-  }
+  Future<void> tab(WidgetTester tester, String label) =>
+      selectTab(tester, label);
 
   testWidgets('a cold start issues ONE request, and it is the home rows', (
     tester,
@@ -280,92 +249,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(MediaDetailPage), findsOneWidget);
-  });
-
-  testWidgets('a detail that WROTE reloads the home rows exactly once', (
-    tester,
-  ) async {
-    // The whole reason the detail route returns a bool. Every write re-stamps
-    // `updated` and every bucket is ordered by it (M6.0/E-3), so "something
-    // changed" is the most the screen can honestly say and a refetch is the
-    // only correct answer.
-    await show(tester);
-    await tester.tap(find.text('Direct Play Movie'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Add to favourites'));
-    await tester.pumpAndSettle();
-    expect(api.calls, contains('setFavorite(e4285edb34d5, true)'));
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    expect(api.calls.where((c) => c == 'home'), hasLength(2));
-  });
-
-  testWidgets('a write still in flight when Back is tapped STILL reloads', (
-    tester,
-  ) async {
-    // The release-mode half of M6.R/P1.3, and a dispose guard alone does not
-    // fix it: the pop value is read the instant the screen closes, so a write
-    // that had not answered yet popped `false` and Home never reloaded even
-    // though the write landed. Tap favourite on a slow link, go Back: the rows
-    // must still be refetched.
-    final gate = Completer<void>();
-    api.writeGate = gate;
-    await show(tester);
-    await tester.tap(find.text('Direct Play Movie'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Add to favourites'));
-    await tester.pump();
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    gate.complete();
-    await tester.pumpAndSettle();
-
-    expect(api.calls, contains('setFavorite(e4285edb34d5, true)'));
-    expect(api.calls.where((c) => c == 'home'), hasLength(2));
-    expect(
-      tester.takeException(),
-      isNull,
-      reason:
-          'and nothing notified a '
-          'disposed WatchActions on the way out',
-    );
-  });
-
-  testWidgets('a detail that wrote NOTHING does not reload — the other side', (
-    tester,
-  ) async {
-    await show(tester);
-    await tester.tap(find.text('Direct Play Movie'));
-    await tester.pumpAndSettle();
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    expect(api.calls.where((c) => c == 'home'), hasLength(1));
-  });
-
-  testWidgets('a write reloads home even when home was never on screen', (
-    tester,
-  ) async {
-    // Opened from the Library tab, so the reload cannot be a side effect of
-    // the home tab rebuilding.
-    await show(tester);
-    await tab(tester, 'Library');
-    await tester.tap(find.text('Films'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Direct Play Movie').first);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Add to favourites'));
-    await tester.pumpAndSettle();
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    expect(api.calls.where((c) => c == 'home'), hasLength(2));
   });
 
   testWidgets('the settings sheet is reachable from the landing tab', (

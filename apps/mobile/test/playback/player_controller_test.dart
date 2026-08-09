@@ -359,6 +359,25 @@ void main() {
       expect(api.reports.last.event, ProgressEvent.ended);
       expect(api.reports.last.position, 100.0);
       expect(controller.outcome.state.watched, isTrue);
+      expect(controller.outcome.wrote, isTrue);
+    });
+
+    test('outcome.wrote is what the SERVER accepted, all three ways', () async {
+      // It is what reloads the home rows (M6.R/P1.2): a report the server took
+      // re-stamps `updated`, which orders all three buckets (M6.0/E-3). So it
+      // is `lastSent != null` — set only after a 204 — rather than "the player
+      // opened" or "the reporter tried".
+      final controller = await playing();
+      expect(controller.outcome.wrote, isFalse, reason: 'nothing reported yet');
+
+      api.progressResult = CacheUnavailable(Uri.parse('http://nas/api'));
+      await controller.seekTo(const Duration(seconds: 40));
+      expect(api.reports, isNotEmpty, reason: 'it was attempted');
+      expect(controller.outcome.wrote, isFalse, reason: 'and refused');
+
+      api.progressResult = null;
+      await controller.seekTo(const Duration(seconds: 55));
+      expect(controller.outcome.wrote, isTrue);
     });
 
     test('closing the route reports a stop, awaited', () async {

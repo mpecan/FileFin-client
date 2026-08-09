@@ -63,10 +63,22 @@ class MediaSearchController extends ChangeNotifier {
   Future<void> start() => _results.load();
 
   /// A keystroke. **Debounced**, so a word is one request.
+  ///
+  /// **Except a box that has just been emptied, which is immediate.** There is
+  /// nothing to coalesce: [_fetch] refuses a blank query before it reaches the
+  /// network, so the debounce bought no round trip and cost the user 300 ms of
+  /// the *previous* query's results sitting under an empty box — while
+  /// [_fetch]'s own doc claimed clearing "abandons the request it was about"
+  /// (M6.R). It does now, at the keystroke rather than a third of a second
+  /// later.
   void setText(String text) {
     _query = _query.withText(text);
     notifyListeners();
     _timer?.cancel();
+    if (_query.isBlank) {
+      unawaited(_results.load());
+      return;
+    }
     _timer = Timer(_debounce, () => unawaited(_results.load()));
   }
 

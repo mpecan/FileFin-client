@@ -32,6 +32,9 @@ void main() {
 
   const found = [MediaSummary(id: MediaId('aaaaaaaaaaaa'), title: 'Ada')];
 
+  /// The debounce the app actually ships, for the cases that are about it.
+  const shipped = Duration(milliseconds: 300);
+
   Future<MediaSearchController> controller(
     WidgetTester tester, {
     Duration? debounce,
@@ -126,6 +129,32 @@ void main() {
 
     expect(searches(), isEmpty);
     expect(api.calls, isEmpty);
+  });
+
+  testWidgets('clearing the box abandons the old results IMMEDIATELY', (
+    tester,
+  ) async {
+    // `_fetch`'s doc says clearing "abandons the request it was about", and it
+    // did — 300 ms later, because `setText` restarted the debounce for a query
+    // that can never reach the network. So the previous query's results sat
+    // under an empty box for a third of a second (M6.R). There is nothing to
+    // coalesce when the box is empty.
+    api.searchResult = found;
+    final search = await controller(tester, debounce: shipped);
+    search.setText('ada');
+    await tester.pump(shipped + const Duration(milliseconds: 1));
+    expect(
+      (search.results.state as UiData<SearchOutcome>).value.results,
+      found,
+    );
+
+    search.setText('');
+    await tester.pump();
+
+    final state = search.results.state as UiData<SearchOutcome>;
+    expect(state.value.results, isEmpty);
+    expect(state.value.query.text, isEmpty);
+    expect(searches(), ['search(ada, all)'], reason: 'and no new request');
   });
 
   testWidgets('clearing the box mid-search cancels the search it clears', (

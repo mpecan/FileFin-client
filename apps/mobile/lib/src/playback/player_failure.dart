@@ -19,6 +19,7 @@ class PlaybackOutcome {
   const PlaybackOutcome({
     required this.state,
     required this.needsDetailRefetch,
+    this.wrote = false,
   });
 
   /// The optimistic watch state, folded through the server's own engine.
@@ -31,6 +32,22 @@ class PlaybackOutcome {
   /// on the wire. Everywhere else the prediction IS the server's answer, which
   /// is what makes the no-refetch half of F9 honest rather than optimistic.
   final bool needsDetailRefetch;
+
+  /// Whether the SERVER accepted at least one progress report this session.
+  ///
+  /// Distinct from [state], which is the optimistic fold and exists whether or
+  /// not anything was posted. This one is `lastSent != null`, which the
+  /// reporter sets only after a `204` — so it means the server re-stamped
+  /// `updated`, and `updated` is the ordering key of all three home rows
+  /// (M6.0/E-3). The detail route pops it, and it is the reason watching
+  /// something now moves it out of *Continue watching* on Home rather than
+  /// leaving it there in its pre-playback position for the rest of the session
+  /// (M6.R/P1.2).
+  ///
+  /// Defaulted rather than required: a test constructing an outcome to exercise
+  /// F9's fold is not making a claim about the home rows, and the two cases
+  /// that ARE about them say so explicitly.
+  final bool wrote;
 }
 
 /// The sentence a playback failure shows, and whether it needs a sign-in.

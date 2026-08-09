@@ -66,6 +66,14 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
 
   final _posterToken = CancelToken();
 
+  /// Whether a playback session on this screen wrote progress to the server.
+  ///
+  /// Kept here rather than folded into [WatchActions] because it is not one of
+  /// F10's writes: it is F9's, made by the player route this screen pushed. It
+  /// has the same consequence — the server re-stamped `updated`, and `updated`
+  /// orders all three home rows (M6.0/E-3) — so it has to reach the same pop.
+  bool _playbackWrote = false;
+
   @override
   void initState() {
     super.initState();
@@ -100,6 +108,12 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   ) async {
     final outcome = await widget.onPlay!(detail, file, startAt);
     if (outcome == null || !mounted) return;
+    // Before the two returns below, because both are about THIS screen and the
+    // home rows need reloading either way. Watching past 90% moves an item from
+    // `continue` to `completed` on the server; without this Home kept showing
+    // it under *Continue watching*, in its pre-playback position, for the rest
+    // of the session (M6.R/P1.2).
+    _playbackWrote = _playbackWrote || outcome.wrote;
     if (outcome.needsDetailRefetch) {
       await _controller.load();
       return;
@@ -129,7 +143,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       // `wroteOrWriting`, not `wrote`: this is read the instant the screen
       // closes, so a write still on the wire would otherwise pop `false` and
       // leave the rows stale for the rest of the session (M6.R/P1.3).
-      Navigator.of(context).pop(_watch.wroteOrWriting);
+      //
+      // `_playbackWrote` is the other half. F10's four writes are not the only
+      // things that re-stamp `updated` — a progress report does too, and F9's
+      // are the ones a user makes without touching a control.
+      Navigator.of(context).pop(_watch.wroteOrWriting || _playbackWrote);
     },
     child: _scaffold(context),
   );
