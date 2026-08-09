@@ -242,11 +242,32 @@ for pkg in $packages; do
     # the retirement condition.
     # A whole-run cap on top of the per-mutant one. Even with a tight per-mutant
     # timeout, N looping mutants cost N times it, and a wedge inside
-    # mutation_test itself is charged to nobody. Budget: the per-mutant timeout
-    # once per mutant plus the baseline, doubled for slack, floored at 10
-    # minutes. `timeout` sends TERM then KILL, so a wedged run FAILS rather than
-    # holding the gate open until someone notices.
-    run_cap=$(( (n * cmd_timeout + baseline_secs) * 2 ))
+    # mutation_test itself is charged to nobody. `timeout` sends TERM then KILL,
+    # so a wedged run FAILS rather than holding the gate open.
+    #
+    # **The budget is per MUTANT, and it used to be per FILE.** `n` is the
+    # number of changed files, and the old line read
+    # `(n * cmd_timeout + baseline_secs) * 2` while its own comment said "the
+    # per-mutant timeout once per mutant" — so for any diff under eight files
+    # the cap collapsed to the 600 s floor whatever the diff contained.
+    # Measured at M6.4: extracting `file_list.dart` touched FOUR files, the
+    # suite baseline was 7 s, and the run was killed at 600 s having not
+    # finished — more than 85 mutants at ~7 s each, against a cap sized for
+    # four. A gate that fails a healthy run is worse than no gate: it teaches
+    # people to re-run it until it passes.
+    #
+    # A changed file yields tens of mutants, so the allowance is 40 per file at
+    # the MEASURED baseline (a normal mutant costs one suite run; only a
+    # looping one costs `cmd_timeout`), doubled for slack and still floored at
+    # 10 minutes. The wedge this exists to catch is bounded either way; what
+    # changes is that a large legitimate diff is no longer.
+    mutant_budget=$(( n * 40 ))
+    run_cap=$(( (mutant_budget * baseline_secs + baseline_secs) * 2 ))
+    #
+    # There is deliberately NO environment override for this number. An
+    # undocumented lever that quietly raises a bound is a gate you have already
+    # lost (CLAUDE.md's ratchet section), and raising it is an edit here that a
+    # reviewer sees in the diff.
     [ "$run_cap" -lt 600 ] && run_cap=600
     (cd "$pkg" && timeout --kill-after=30s "${run_cap}s" \
         dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
