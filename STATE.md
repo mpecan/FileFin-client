@@ -12,6 +12,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
 | **Done** | **M6** — F5, F6 and F10: search with a debounce and eleven scopes, the three home rows, favourite/rating/the two un-watches, and a three-tab shell whose tabs are built only when they are selected. All three proven against the real binary |
 | **Done** | **M6.R** — remediated against three adversarial reviews: six product defects (one of them data loss), nine test holes that were surviving mutants, and six gate defects — including a mutation gate that reported seven survivors as a hang and a §7 clause enforced by nobody |
+| **In progress** | **M7** — multi-server, the platform secure store, F15's accept-and-pin loop, F14, and the full-spec audit. M7.0–M7.3 and M7.5 landed first; **M7.4, the live suites and M7.7 are written up below.** M7.6, M7.8 and M7.9 are not built, and **M7.9 owes this file the write-up of M7.0–M7.3 and M7.5**, which their commits carry and this file does not |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -38,6 +39,195 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M7.4, the live suites, E-8 and M7.7 — what was built
+
+The steps this run covered. M7.0–M7.3 and M7.5 landed before it and are
+recorded in their own commits; M7.9 owes them a section here.
+
+### M7.4 — F11's switching UI
+
+**The mechanism landed at M2 and had no way in.** `FileFinClient.forServer`
+gives every `ServerId` its own cookie jar, secret namespace and certificate
+pinner; `AppSettings.servers` is a list and `upsert` is id-keyed. What was
+missing was a screen. `apps/mobile/lib/src/servers/server_list_page.dart` is
+it: the saved servers with their **addresses** as well as their names, a mark
+on the selected one, removal, and a way to add another.
+
+Four decisions worth keeping:
+
+- **`LibraryShell` is keyed on the server id, and that is measured rather than
+  guessed.** Its tabs are `Offstage`, not disposed, so a shell that survived a
+  switch keeps the previous server's rows on screen under the new server's
+  name and never asks the new client for anything. Deleting the `ValueKey` was
+  run: exactly one test goes red — *"the new server gets its own library, not
+  the old one on show"*. The M7 plan flagged this as a guess to measure first;
+  the guess was right and is now pinned.
+- **Removal deletes all three secrets before it touches `settings.json`, and
+  the order is the §9 decision.** If the settings write then fails, the entry
+  survives with no credentials and the next sign-in prompts. The other order
+  leaves a password in the Keychain for a server no screen can reach, keyed by
+  an id nothing holds any more, with nothing left that could ever delete it.
+- **`AppSettings.remove` clears the selection when it names the server being
+  removed.** `selectedServer`'s fallback already stops a dangling id stranding
+  a launch, so leaving it looks harmless — until the user re-adds a server at
+  the same address, because the id **is** the origin, and the server they
+  deleted silently becomes the one every launch opens.
+- **Adding a server from the picker pops the picker first.** `_signInRoute`
+  pops exactly once on success, which is correct only while sign-in sits
+  directly on the launch screen; pushing the add flow on top of the picker
+  would leave the picker over a freshly signed-in library.
+
+**Two servers, not one, in every case that can tell them apart.** M7.3's
+mutation run already showed why: `selectedServer`'s `==` survived with one
+saved server because the fallback returns the object a match would have
+returned. `app_servers_test.dart` uses an `apiFactory` keyed on the server, so
+a switch that ignored its argument cannot pass.
+
+**A scout fix found on the way, and it is an F2 defect rather than a tidy-up.**
+`_resume` built its client with `apiFactory` directly, so the **cold start was
+the one path M7.5 did not wire the pin into**. A self-signed server — F15's
+stated common case — failed `restore()` with `CertificateNotTrusted` on every
+launch, landed on *"Signed out"*, and asked for a password the store already
+held. It now goes through `apiForServer`, with a test that asserts the parsed
+fingerprint reaches the factory.
+
+`app.dart` reached 404 lines with the picker wired in, one over `just
+file-size`'s soft limit, so `pushPlayer` moved to
+`lib/src/playback/player_route.dart` — it touches no state, and warnings must
+fall or hold. The same arithmetic split `settings_store_test.dart`'s selection
+group into `settings_selection_test.dart`. Warnings are back at **4**.
+
+### The live suites, and the two floors
+
+`just it` went from 86 tests to **102**: `packages/filefin_api` 56 → **63**,
+`apps/mobile/test_live` 30 → **39**. Both floors were raised in
+`tool/run-integration.sh` and **both raises were proven to refuse** by deleting
+one test each — `only 62 tests ran … the committed floor is 63` and `only 38
+tests ran … the committed floor is 39`, each exit 1.
+
+**`integration_test/multi_server_test.dart` — two real servers, two accounts,
+one process.** The second account costs **one JSON edit and no new
+dependency**, which is worth recording because the M7 plan predicted otherwise:
+it expected the account to live in the SQLite cache and reached for `sqlite3`,
+and the cache's `users` table holds no password at all. Accounts live in
+`$HOME/.filefin.json`, which `FixtureRun.create` already rewrites, so
+`secondUser` / `secondPassword` and a committed bcrypt hash are the whole cost.
+
+The test that earns the second account is **"F3 renews from THIS server's
+password, not the other's"**. Both servers are copies of one seed, so both
+accept `testuser`: a client that read the wrong server's stored password would
+renew against the other server *successfully*, and every status-code assertion
+would stay green. What it could not do is come back as the right **user**. Both
+servers are restarted, so the assertion holds whichever login wrote last.
+Proven red by making `secretKeyFor` ignore its `ServerId`: **four of the seven
+tests in that file go red**.
+
+**`test_live/cold_start_live_test.dart` — F2's cold start against the real
+binary**, which nothing had ever done. Building a second client over the same
+store *is* the app restart from `filefin_api`'s side: the jar, the interceptor
+and the generation are all per client, and only the store survives.
+
+It found something no unit test could. **`SessionManager._renew` reads the
+username from memory**, so a relaunched client needs `settings.json`'s
+`lastUser` as well as the stored password — `main.dart` passes it and the fake
+in the unit suite never needed it. F2's silent renewal therefore depends on the
+settings file surviving alongside the Keychain, and losing `settings.json`
+costs a password prompt with the credential intact. Both arms are now tests:
+with the username the restart is silent, without it the same restart is a
+`SessionExpired`.
+
+**`test_live/multi_server_live_test.dart`** signs into two real servers with
+two accounts over one `SecretStore`, writes a favourite through one, and
+asserts the other's home rows are untouched — then renders both servers' real
+rows through `HomePage` and asserts the second shows its own empty library
+rather than the first's contents.
+
+### E-8 — the `real_mpv_player_test.dart` death rate, measured
+
+Run in a `git worktree` copy with nothing else touching lib sources.
+
+| Arm | Runs | Crashes |
+|---|---|---|
+| `flutter test` (plain) | 12 + 51 | **2** — one `exit code -10` (SIGBUS), one segmentation fault |
+| `flutter test --coverage` | 12 | 0 |
+
+Both crashes were **confined to `real_mpv_player_test.dart`** and took the
+whole file down: every test in it reported "did not complete", including ones
+that had not started. `ps -eo pid,etime,command | grep flutter_tester` was
+sampled before every iteration and reported **zero** processes every time, so
+`CLAUDE.md`'s orphaned-tester hypothesis is not what this is. Two more landed
+during M7.4's own gate proofs.
+
+So the rate is **~4% per app-suite run**, and M6.0/E-9's "0 failures in 24
+standalone runs" was **underpowered rather than wrong** — P(0 of 24 at 4%) is
+0.38. That single number also explains the "one gate run in four" figure
+without any hypothesis about `just check` being special: `just check` runs this
+suite for `test`, again for `coverage`, and once per mutant for `mutants`.
+
+### M7.7 — the flake tax, and why it is a retry
+
+The plan offered three options and deliberately did not pick one. Given the
+measurement:
+
+- **isolating the file into its own `flutter test`** makes a human re-run
+  cheap. It does not stop the gate going red, and "re-run on red" is the habit
+  the step exists to remove. Rejected.
+- **fixing the cause** means fixing a crash inside libmpv's teardown or
+  `media_kit`'s FFI finalizers. Nothing here reproduces it on demand and
+  neither library is ours. Not available.
+- **a bounded retry** is what landed: `run_tests_retrying_known_crash` in
+  `tool/common.sh`, used by `run-tests.sh` and by `run-coverage.sh`'s Flutter
+  branch.
+
+It retries **once**, and only when the output carries `Shell subprocess
+crashed` **and** the only file named on an `[E]` line is
+`real_mpv_player_test.dart`. The `[E]` lines are read rather than the "Failing
+tests:" summary, because that summary truncates with `... and N more`. Every
+retry prints a loud NOTICE, so the rate stays measurable instead of becoming
+folklore.
+
+**Proven in four directions**, with a deliberate
+`Pointer<Uint8>.fromAddress(1).value = 1`:
+
+| Input | Expected | Measured |
+|---|---|---|
+| assertion failure in that file, no crash | red, no retry | exit 1, 0 retries, `ERROR: apps/mobile: flutter test exited 1` |
+| crash in a **different** file | red, no retry | exit 1, 0 retries |
+| crash on the first run only | NOTICE, retry, green | exit 0, 1 retry |
+| crash on every run | NOTICE, retry, red | exit 1, 1 retry |
+
+**A defect the negative direction caught, which is the whole reason to prove
+it.** The first version used `set +e; cmd; rc=$?; set -e` inside the helper.
+`set -e` is **shell-wide, not scoped to a function**, so it re-armed errexit
+inside a caller that had deliberately disarmed it, and `return "$rc"` then
+killed the script on the spot: the gate exited 1 for the right reason and
+`fail`'s message never printed. `cmd || rc=$?` is the fix.
+
+### What was seen fail, and the ratchets
+
+| Claim | Kind | Evidence |
+|---|---|---|
+| `LibraryShell`'s `ValueKey(server.id)` | fail | key deleted: exactly one test red — *"the new server gets its own library, not the old one on show"* |
+| per-`ServerId` secret keys | fail | `secretKeyFor` made to ignore its `ServerId`: **4 of 7** `multi_server_test.dart` cases red, including *"F3 renews from THIS server's password, not the other's"* |
+| the cold start carries F15's pin | fail | assertion written first against `apiFactory`, seen red before `_resume` moved to `apiForServer` |
+| every new file | fail | all four new test files failed to load, and the pin case failed its assertion, before a line of the feature existed |
+| integration floor, api | fail | one test deleted: exit **1**, *"only 62 tests ran … the committed floor is 63"* |
+| integration floor, app | fail | one test deleted: exit **1**, *"only 38 tests ran … the committed floor is 39"* |
+| the crash retry, four ways | fail | see the table above — assertion / other file / transient / permanent |
+| `file-size` | ratchet | rose to **5** when `app.dart` hit 404 and `settings_store_test.dart` 420; paid by extracting `player_route.dart` and `settings_selection_test.dart`. Back at **4** |
+| `comments` | ratchet | held at **1** |
+| `MAX_UNCOVERED` | ratchet | held at **0**; coverage **100% (2897/2897)**, up from 2814 |
+| constitution | ratchet | 0 across all seven, unchanged |
+
+**Two mutants survived the first `just mutants` run and were paid, not
+excluded**: `app.dart`'s `saved.isEmpty ? null : …` and `launch_pages.dart`'s
+`if (onServers != null)` — the picker's reachability from the *signed-out*
+screen, which no test asserted in either direction. Both arms are now tests,
+and they are the arms that matter: without them a user signed out of their
+second server can only ever reach their first.
 
 ---
 
@@ -3319,6 +3509,28 @@ both-directions proof on real code.
 ## Debt this milestone knowingly accepts
 
 Said out loud, per CLAUDE.md. Silence would read as "there was none".
+
+### M7.4 and M7.7 — what was left owing
+
+- **The picker has no confirmation on removal.** A tap on the bin forgets a
+  server, its three secrets and its selection with no undo. It is recoverable —
+  re-add the address and sign in — and a dialog is more surface than F11 asked
+  for, so it was not built. Named here rather than discovered.
+- **Only the `filefin_api` half of a password surviving a restart is proven.**
+  `cold_start_live_test.dart` builds a second client over the same store against
+  the real binary, which is the app restart from that package's side. Whether
+  the *Keychain* hands the value back after a real force-quit and a reboot is
+  `docs/verification-backlog.md` rows 12 and J, and only a device answers it.
+- **The retry in `tool/common.sh` does not fix the crash, and cannot.** The
+  fault is inside libmpv's teardown or `media_kit`'s FFI finalizers; nothing
+  here reproduces it on demand. What the retry buys is that a ~4%-per-run crash
+  stops turning a green tree red, and — the point — stops teaching everyone to
+  re-run on red. It is narrow enough that a crash in any other file, or a
+  second crash in the same one, still fails. Backlog row H carries it.
+- **`E-10` (two clients on one file), `M7.6`, `M7.8` and `M7.9` were not
+  started**, and `SPEC.md` is therefore unamended: the picker exists in code
+  and §10's M7 row still reads as a plan. M7.9 owns that, and it also owes this
+  file the write-up of M7.0–M7.3 and M7.5.
 
 ### Ten of fourteen gates measure zero Dart today
 
