@@ -39,10 +39,11 @@ void main() {
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     FileFinScope(
       dependencies: AppDependencies(
+        secrets: InMemorySecretStore(),
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
         settings: settings,
-        apiFactory: (_) => api,
+        apiFactory: (_, {pin}) => api,
       ),
       child: MaterialApp(
         home: SignInPage(
@@ -100,10 +101,11 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
+          secrets: InMemorySecretStore(),
           network: FakeNetworkStatus(),
           playbackHostFactory: fakeHostFactory(),
           settings: SettingsStore(Directory('${blocker.path}/settings')),
-          apiFactory: (_) => api,
+          apiFactory: (_, {pin}) => api,
         ),
         child: MaterialApp(
           home: SignInPage(
@@ -189,10 +191,11 @@ void main() {
       await tester.pumpWidget(
         FileFinScope(
           dependencies: AppDependencies(
+            secrets: InMemorySecretStore(),
             network: FakeNetworkStatus(),
             playbackHostFactory: fakeHostFactory(),
             settings: settings,
-            apiFactory: (_) => slow,
+            apiFactory: (_, {pin}) => slow,
           ),
           child: MaterialApp(
             home: SignInPage(server: server, onSignedIn: (_, _) {}),

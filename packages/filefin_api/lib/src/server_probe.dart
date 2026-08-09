@@ -3,6 +3,7 @@ import 'package:filefin_api/src/error_mapper.dart';
 import 'package:filefin_api/src/errors.dart';
 import 'package:filefin_api/src/json_response.dart';
 import 'package:filefin_api/src/probe_result.dart';
+import 'package:filefin_api/src/tls/certificate_pinner.dart';
 import 'package:filefin_core/filefin_core.dart';
 
 /// The two keys `GET /api/state` is documented to carry (`install.go:24`).
@@ -36,14 +37,25 @@ const _versionKey = 'version';
 /// reaches here. Every `FileFinApiException.toString()` applies
 /// `redactUserInfo`; until M2's review, none of these four verdicts did.
 ///
-/// Every outcome is **returned**, with exactly one exception: a caller that
-/// cancels its own request gets `RequestCancelled` thrown (NF5). Turning that
-/// into a verdict would show "unreachable" for something the user did on
-/// purpose, and would leave a caller no way to tell its own cancellation from
-/// a real failure.
+/// Every outcome is **returned**, with two exceptions, and both are questions
+/// rather than verdicts about what is at this address.
+///
+/// A caller that cancels its own request gets `RequestCancelled` thrown (NF5).
+/// Turning that into a verdict would show "unreachable" for something the user
+/// did on purpose, and would leave a caller no way to tell its own
+/// cancellation from a real failure.
+///
+/// **A certificate problem is thrown too, and until M7.5 it was not.** [pinner]
+/// was not passed here at all, so `mapDioException` could not build one:
+/// F15's `CertificateNotTrusted` collapsed into `ConnectionFailed` and came
+/// back as `ServerUnreachable`, which F1 renders as *"Nothing answered at that
+/// address"*. A self-signed server — F15's stated common case — answered
+/// perfectly well and was reported as the one thing it was not, with no way
+/// for a user to accept it. `CertificatePinMismatch` had the same fate.
 Future<ProbeResult> probe({
   required Dio dio,
   required FileFinUrls urls,
+  CertificatePinner? pinner,
   CancelToken? cancelToken,
 }) async {
   final url = urls.state;
@@ -73,8 +85,14 @@ Future<ProbeResult> probe({
   } on MalformedResponse catch (e) {
     return NotAFileFinServer('$safe sent JSON we could not read: ${e.problem}');
   } on DioException catch (e) {
-    final mapped = mapDioException(e, requested: url);
+    final mapped = mapDioException(e, requested: url, pinner: pinner);
     if (mapped is RequestCancelled) throw mapped;
+    // F15. Neither of these says anything about whether FileFin is here — the
+    // handshake never got far enough to ask — and both are things only a
+    // person can answer.
+    if (mapped is CertificateNotTrusted || mapped is CertificatePinMismatch) {
+      throw mapped;
+    }
     // A 401, 404 or 5xx here is still "not FileFin": `GET /api/state` is
     // unauthenticated and always answers 200 (`install.go:24`), so anything
     // else proves the thing at this URL is not FileFin's state route.

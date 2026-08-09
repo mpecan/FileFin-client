@@ -26,10 +26,11 @@ void main() {
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
+      secrets: InMemorySecretStore(),
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
       settings: SettingsStore(dir),
-      apiFactory: (_) => api,
+      apiFactory: (_, {pin}) => api,
     ),
     child: const FileFinApp(),
   );
@@ -93,10 +94,11 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
+          secrets: InMemorySecretStore(),
           network: FakeNetworkStatus(),
           playbackHostFactory: fakeHostFactory(),
           settings: SettingsStore(dir),
-          apiFactory: (_) => api,
+          apiFactory: (_, {pin}) => api,
         ),
         child: FileFinApp(key: key),
       ),

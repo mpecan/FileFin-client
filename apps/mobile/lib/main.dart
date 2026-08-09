@@ -46,15 +46,22 @@ Widget buildApp(Directory support) {
   return FileFinScope(
     dependencies: AppDependencies(
       settings: SettingsStore(support),
+      secrets: secrets,
       network: ConnectivityNetworkStatus(),
       // A NEW engine per player screen. libmpv holds a position and a loaded
       // file, so two screens sharing one context would fight over both.
       playbackHostFactory: () => MediaKitPlaybackHost(RealMpvPlayer()),
-      apiFactory: (server) => FileFinLibraryApi(
+      // `pin` is F15's accepted fingerprint, resolved by `apiForServer` before
+      // this is called: TLS's callbacks are synchronous and cannot await a
+      // store read, so a client is built for one pin and a NEW one is built
+      // when that pin changes. Until M7.5 nothing passed it and every shipped
+      // client ran `CertificatePinner(pin: null)`.
+      apiFactory: (server, {pin}) => FileFinLibraryApi(
         FileFinClient.forServer(
           server: server.id,
           baseUrl: server.baseUrl,
           secrets: secrets,
+          pin: pin,
           username: server.lastUser.isEmpty ? null : server.lastUser,
         ),
       ),

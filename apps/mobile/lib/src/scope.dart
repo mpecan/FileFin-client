@@ -1,3 +1,4 @@
+import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
@@ -11,16 +12,20 @@ import 'package:flutter/widgets.dart';
 /// a locator is global mutable state that a widget test has to reset between
 /// cases, and forgetting to reset it makes one test's fake leak into the next.
 ///
-/// **There is no `secrets` field.** M3 carried one and nothing ever read it:
-/// `main()` builds the `SecretStore` and closes over it in [apiFactory], which
-/// is the only consumer there is, so the field was written once and read
-/// never — §1 and §5's definition of dead. Its two "consumers" were a test
-/// asserting a non-nullable final field was not null and a test copying it.
+/// **`secrets` was deliberately absent until M7.5, and its return is a §5
+/// story rather than a reversal.** M3 removed it because nothing read it:
+/// `main()` built the `SecretStore` and closed over it in [apiFactory], so the
+/// field was written once and read never. F15's accept-and-pin loop is what
+/// finally reads it — the pin has to be resolved into memory *before* a client
+/// is built, because TLS's callbacks are synchronous and cannot await a store
+/// read — and accepting a certificate is what writes one.
 @immutable
 class AppDependencies {
-  /// Holds the settings store, the API factory and playback's two ports.
+  /// Holds the settings store, the secret store, the API factory and
+  /// playback's two ports.
   const AppDependencies({
     required this.settings,
+    required this.secrets,
     required this.apiFactory,
     required this.network,
     required this.playbackHostFactory,
@@ -29,13 +34,27 @@ class AppDependencies {
   /// Where `settings.json` lives. Holds no secrets.
   final SettingsStore settings;
 
-  /// Builds the API for one saved server.
+  /// Where the session, the password and F15's pin live (§9).
+  ///
+  /// Read to resolve a pin before a client is built, and written when a user
+  /// accepts a certificate. Nothing else in `apps/mobile` may touch it: every
+  /// other secret is `filefin_api`'s to write, which is what keeps the
+  /// password out of this layer entirely.
+  final SecretStore secrets;
+
+  /// Builds the API for one saved server, at the certificate it was trusted
+  /// with.
   ///
   /// A factory rather than a single client because F11 is one client per
   /// `ServerId`, each with its own cookie jar, secret namespace and pin —
   /// sharing any of the three between servers is how one server's session
   /// cookie reaches another.
-  final LibraryApi Function(SavedServer server) apiFactory;
+  ///
+  /// `pin` is F15's accepted fingerprint. `apiForServer` is what reads it out
+  /// of [secrets] and hands it over; callers should use it rather than this
+  /// directly, so the read happens in one place.
+  final LibraryApi Function(SavedServer server, {CertificateFingerprint? pin})
+  apiFactory;
 
   /// F13's connection sample, as a port so a widget test can set it.
   final NetworkStatus network;

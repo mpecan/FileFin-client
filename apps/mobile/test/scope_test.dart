@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
@@ -9,10 +10,11 @@ import 'support/fakes.dart';
 
 void main() {
   final deps = AppDependencies(
+    secrets: InMemorySecretStore(),
     network: FakeNetworkStatus(),
     playbackHostFactory: fakeHostFactory(),
     settings: SettingsStore(Directory.systemTemp),
-    apiFactory: (_) => FakeLibraryApi(),
+    apiFactory: (_, {pin}) => FakeLibraryApi(),
   );
 
   testWidgets('a screen under the scope reads the dependencies', (
@@ -65,6 +67,7 @@ void main() {
     final same = FileFinScope(dependencies: deps, child: child);
     final other = FileFinScope(
       dependencies: AppDependencies(
+        secrets: InMemorySecretStore(),
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
         settings: deps.settings,

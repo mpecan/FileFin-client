@@ -133,7 +133,7 @@ class FileFinClient {
   /// Runs on [authDio], which carries no `AuthInterceptor`: the probe is
   /// unauthenticated and must never be able to provoke a re-auth.
   Future<ProbeResult> probeServer({CancelToken? cancelToken}) =>
-      probe(dio: authDio, urls: urls, cancelToken: cancelToken);
+      probe(dio: authDio, urls: urls, pinner: pinner, cancelToken: cancelToken);
 
   /// `POST /api/login` — stores the session and the password (F2).
   Future<AuthResult> login(Credentials credentials) =>

@@ -5,6 +5,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:filefin_api/filefin_api.dart';
+import 'package:filefin_core/filefin_core.dart';
 import 'package:test/test.dart';
 
 import 'support/tls_stub.dart';
@@ -35,6 +36,45 @@ void main() {
       return mapDioException(e, requested: url, pinner: pinner);
     }
   }
+
+  test('F1 s probe hands a certificate question to the USER (F15)', () async {
+    // Until M7.5 `probe()` was never given a pinner, so `mapDioException`
+    // could not build a certificate error and the refusal collapsed into
+    // `ConnectionFailed` -> `ServerUnreachable`. F1 renders that as "Nothing
+    // answered at that address" — about a self-signed server that answered
+    // perfectly well, which is F15's stated common case, with no way to accept
+    // it. Every shipped client had this defect.
+    final stub = await TlsStub.serving('a');
+    addTearDown(stub.close);
+    final client = FileFinClient.forServer(
+      server: const ServerId('tls'),
+      baseUrl: stub.baseUrl,
+      secrets: InMemorySecretStore(),
+    );
+    addTearDown(client.close);
+
+    await expectLater(
+      client.probeServer(),
+      throwsA(isA<CertificateNotTrusted>()),
+    );
+    // Thrown rather than returned, and nothing was sent: the refusal happened
+    // inside the handshake.
+    expect(stub.bytesReceived, 0);
+  });
+
+  test('a pinned certificate lets the probe through (F15)', () async {
+    final stub = await TlsStub.serving('a');
+    addTearDown(stub.close);
+    final client = FileFinClient.forServer(
+      server: const ServerId('tls'),
+      baseUrl: stub.baseUrl,
+      secrets: InMemorySecretStore(),
+      pin: derFingerprint('a'),
+    );
+    addTearDown(client.close);
+
+    expect(await client.probeServer(), isA<FileFinServer>());
+  });
 
   test('no pin: an untrusted certificate blocks and names itself', () async {
     final stub = await TlsStub.serving('a');

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/browse/home_page.dart';
@@ -29,10 +30,11 @@ void main() {
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
+      secrets: InMemorySecretStore(),
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
       settings: SettingsStore(dir),
-      apiFactory: (_) => api,
+      apiFactory: (_, {pin}) => api,
     ),
     child: const FileFinApp(),
   );

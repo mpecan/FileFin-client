@@ -4,6 +4,8 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/certificate_prompt.dart';
+import 'package:filefin_mobile/src/servers/server_api.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -48,9 +50,48 @@ class _SignInPageState extends State<SignInPage> {
     super.dispose();
   }
 
+  /// F2's sign-in, with F15's accept-and-pin loop around it.
+  ///
+  /// **Exactly two attempts, written out.** A retry expressed as recursion —
+  /// or as a loop whose bound is a condition — is the shape CLAUDE.md names as
+  /// a mutation-gate hang: rewrite the condition and the recursion is
+  /// unbounded, `mutation_test` times the run out at 300 s and reports the
+  /// mutant as *undetected*. Two statements cannot be rewritten into a loop.
   Future<void> _signIn() async {
+    final untrusted = await _attempt();
+    if (untrusted == null || !mounted) return;
+    if (!await promptToTrust(context, untrusted)) {
+      // Declining is a decision, not an error to retry. The panel says what
+      // was refused and why, and nothing is stored.
+      if (mounted) setState(() => _problem = _describe(untrusted));
+      return;
+    }
+    if (!mounted) return;
+    // The pin is integrity data and belongs in the secure store rather than in
+    // `settings.json`, which is a plain file any app on a rooted device can
+    // edit (`secret_store.dart:16-22`). Writing it is what makes the NEXT
+    // client — built by `apiForServer` below — carry it.
+    await FileFinScope.of(context).secrets.write(
+      widget.server.id,
+      SecretKind.certificatePin,
+      untrusted.fingerprint,
+    );
+    final again = await _attempt();
+    if (again != null && mounted) {
+      setState(() => _problem = _describe(again));
+    }
+  }
+
+  String _describe(FileFinApiException error) {
+    final message = describeApiError(error);
+    return '${message.title}. ${message.detail}';
+  }
+
+  /// One attempt. Returns the untrusted certificate when that is what stopped
+  /// it, and null for every other outcome — success included.
+  Future<CertificateNotTrusted?> _attempt() async {
     final deps = FileFinScope.of(context);
-    final api = deps.apiFactory(widget.server);
+    final api = await apiForServer(deps, widget.server);
     setState(() {
       _busy = true;
       _problem = null;
@@ -75,18 +116,25 @@ class _SignInPageState extends State<SignInPage> {
       );
       if (!mounted) {
         api.close();
-        return;
+        return null;
       }
       widget.onSignedIn(widget.server, api);
+      return null;
+      // F15's prompt, and the ONLY exception this screen hands back rather
+      // than renders: it is a question for the user, not a failure to report.
+    } on CertificateNotTrusted catch (error) {
+      api.close();
+      return error;
     } on FileFinApiException catch (error) {
       api.close();
-      if (!mounted) return;
-      final message = describeApiError(error);
-      setState(() => _problem = '${message.title}. ${message.detail}');
+      if (!mounted) return null;
+      setState(() => _problem = _describe(error));
+      return null;
     } on FileSystemException catch (error) {
       api.close();
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() => _problem = describeSettingsWriteFailure(error));
+      return null;
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/certificate_prompt.dart';
+import 'package:filefin_mobile/src/servers/server_api.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -77,7 +79,34 @@ class _AddServerPageState extends State<AddServerPage> {
     // rather than here: they are properties of a saved server, and a screen
     // that reimplemented either would be a second place to get §9 wrong.
     final candidate = SavedServer.fromTypedUrl(parsed);
-    final api = FileFinScope.of(context).apiFactory(candidate);
+    final untrusted = await _check(candidate);
+    if (untrusted == null || !mounted) return;
+    if (!await promptToTrust(context, untrusted)) {
+      if (mounted) setState(() => _problem = _describe(untrusted));
+      return;
+    }
+    if (!mounted) return;
+    await FileFinScope.of(context).secrets.write(
+      candidate.id,
+      SecretKind.certificatePin,
+      untrusted.fingerprint,
+    );
+    // EXACTLY one more, for the reason `SignInPage._signIn` records: a bounded
+    // retry written as two statements cannot be rewritten into a loop.
+    final again = await _check(candidate);
+    if (again != null && mounted) {
+      setState(() => _problem = _describe(again));
+    }
+  }
+
+  String _describe(FileFinApiException error) {
+    final message = describeApiError(error);
+    return '${message.title}. ${message.detail}';
+  }
+
+  /// One probe. Returns the untrusted certificate when that is what stopped it.
+  Future<CertificateNotTrusted?> _check(SavedServer candidate) async {
+    final api = await apiForServer(FileFinScope.of(context), candidate);
     final token = CancelToken();
     _token = token;
     setState(() {
@@ -86,7 +115,7 @@ class _AddServerPageState extends State<AddServerPage> {
     });
     try {
       final result = await api.probeServer(cancelToken: token);
-      if (!mounted) return;
+      if (!mounted) return null;
       switch (result) {
         case FileFinServer():
           FileFinScope.of(context).settings.write(
@@ -114,17 +143,23 @@ class _AddServerPageState extends State<AddServerPage> {
                 'on the same network as the server. ($cause)',
           );
       }
+      // F15's prompt: a question for the user rather than a verdict about
+      // what is at this address. Until M7.5 the probe swallowed it into
+      // `ServerUnreachable` and this screen said "Nothing answered at that
+      // address" about a server that had answered.
+    } on CertificateNotTrusted catch (error) {
+      return error;
     } on FileFinApiException catch (error) {
-      if (!mounted) return;
-      final message = describeApiError(error);
-      setState(() => _problem = '${message.title}. ${message.detail}');
+      if (!mounted) return null;
+      setState(() => _problem = _describe(error));
     } on FileSystemException catch (error) {
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() => _problem = describeSettingsWriteFailure(error));
     } finally {
       api.close();
       if (mounted) setState(() => _busy = false);
     }
+    return null;
   }
 
   @override

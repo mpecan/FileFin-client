@@ -16,12 +16,16 @@ void main() {
   late Directory dir;
   late SettingsStore settings;
   late FakeLibraryApi api;
+  late InMemorySecretStore secrets;
+  late List<CertificateFingerprint?> pins;
   SavedServer? added;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('filefin-add-');
     settings = SettingsStore(dir);
     api = FakeLibraryApi();
+    secrets = InMemorySecretStore();
+    pins = [];
     added = null;
     addTearDown(() => dir.deleteSync(recursive: true));
   });
@@ -29,10 +33,14 @@ void main() {
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     FileFinScope(
       dependencies: AppDependencies(
+        secrets: secrets,
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
         settings: settings,
-        apiFactory: (_) => api,
+        apiFactory: (_, {pin}) {
+          pins.add(pin);
+          return api;
+        },
       ),
       child: MaterialApp(
         home: AddServerPage(onAdded: (server) => added = server),
@@ -106,10 +114,11 @@ void main() {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
+          secrets: InMemorySecretStore(),
           network: FakeNetworkStatus(),
           playbackHostFactory: fakeHostFactory(),
           settings: wedged,
-          apiFactory: (_) => api,
+          apiFactory: (_, {pin}) => api,
         ),
         child: MaterialApp(
           home: AddServerPage(onAdded: (server) => added = server),
