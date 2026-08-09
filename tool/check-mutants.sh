@@ -193,10 +193,30 @@ for pkg in $packages; do
        mutation_test would abort on its own baseline check and every mutant
        would read as undetected. Fix the suite first."
 
+    # THE MULTIPLIER IS SIZED FOR A FAILING RUN, NOT A PASSING ONE, and that
+    # distinction cost a false failure at M6.5. It was 6, and the assumption
+    # under it — that a killed mutant costs about what a green suite costs — is
+    # wrong whenever the mutant makes the render pipeline assert once per frame
+    # instead of failing one expectation.
+    #
+    # Measured: `ScrollCacheExtent.pixels(400)` negated to `-400` in
+    # `media_grid.dart` is DETECTED (eight tests fail), and the run takes
+    # **42.7 s against a 42 s timeout** — 483 lines of output become 2,448,073,
+    # of which 24,004 are "EXCEPTION CAUGHT BY SCHEDULER LIBRARY" with a full
+    # stack each. Clean baseline on the same machine, same minute: 7.1 s. So the
+    # ratio for a legitimately-detected mutant was 6.0 and the allowance was 6.
+    # The gate then reported it as a HANG and told the reader to go looking for
+    # an unbounded recursion that does not exist — a confidently wrong
+    # diagnosis, which is worse than no diagnosis.
+    #
+    # 12 is twice the worst legitimate ratio measured. It is NOT a way of
+    # hiding a loop: an infinite one burns the full timeout whatever it is, the
+    # whole-run cap below still bounds the total, and the error message
+    # distinguishes the two cases by pointing at the log size first.
     cmd_timeout="${FILEFIN_MUTANTS_TIMEOUT:-}"
     if [ -z "$cmd_timeout" ]; then
-        cmd_timeout=$(( baseline_secs * 6 ))
-        [ "$cmd_timeout" -lt 30 ] && cmd_timeout=30
+        cmd_timeout=$(( baseline_secs * 12 ))
+        [ "$cmd_timeout" -lt 60 ] && cmd_timeout=60
     fi
     echo "mutants: $pkg — suite baseline ${baseline_secs}s, per-mutant timeout ${cmd_timeout}s"
 
@@ -343,6 +363,12 @@ for pkg in $packages; do
             echo "ERROR: $pkg — ${timeouts} mutant(s) hit the ${cmd_timeout}s per-mutant"
             echo "       timeout. That is a HANG, not a survivor: the suite never"
             echo "       finished, so nothing was measured for those mutants."
+            echo "       CHECK WHICH OF TWO THINGS IT IS BEFORE HUNTING A LOOP. A"
+            echo "       mutant that is DETECTED but makes the render pipeline assert"
+            echo "       once per frame prints tens of thousands of stack traces, and"
+            echo "       the I/O alone can outrun this timeout — measured at M6.5, 483"
+            echo "       lines of output against 2.4 million. Re-run the mutant by hand"
+            echo "       and look at the line count: a loop produces almost none."
             echo "       Do NOT go looking for a missing assertion. Find the mutant"
             echo "       that loops — most often a bound written as a condition in"
             echo "       front of a recursive call, where flipping the operator"
