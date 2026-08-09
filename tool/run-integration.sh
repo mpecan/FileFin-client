@@ -31,8 +31,8 @@ cd "$(repo_root)"
 # per suite, and the floors are separate ratchets — a suite that lost tests
 # must not be covered by another that gained some.
 SUITES=(
-    "packages/filefin_api integration_test dart 56"
-    "apps/mobile test_live flutter 30"
+    "packages/filefin_api integration_test dart 63"
+    "apps/mobile test_live flutter 39"
 )
 BIN="${FILEFIN_BIN:-$HOME/development/filefin-test/filefin}"
 RUN="${FILEFIN_RUN:-$HOME/development/filefin-test/run}"

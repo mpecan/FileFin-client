@@ -29,6 +29,36 @@ import 'dart:io';
 /// The account `tool/testserver/seed.sh` installs, as `meta.json` keys it.
 const seededUser = 'testuser';
 
+/// A **second** account, written into every copy's config by [FixtureRun].
+///
+/// F11's live proof needs two servers whose credentials genuinely differ:
+/// without that, "each client used its own secrets" and "both clients used the
+/// same secrets" are the same green run, and `secretKeyFor` being handed the
+/// wrong `ServerId` is invisible.
+///
+/// **It costs one JSON edit and no new dependency**, which is worth recording
+/// because the M7 plan predicted otherwise. The plan expected the account to
+/// live in the SQLite cache and reached for `sqlite3`; the cache's `users`
+/// table holds no password at all. Accounts live in `$HOME/.filefin.json`
+/// (`internal/config/config.go`), which [FixtureRun.create] already rewrites
+/// for the port and the data directory.
+///
+/// The hash is committed rather than generated, because generating it needs
+/// bcrypt and this package has no other use for one (§4). It is bcrypt cost 10
+/// over [secondPassword], produced by `htpasswd -bnBC 10`; Go's bcrypt accepts
+/// the `$2y$` prefix as readily as the seed's `$2a$`. It is not a credential
+/// worth protecting — it opens a throwaway server on loopback holding three
+/// seconds of test video — and §9 governs *users'* passwords, not fixtures.
+const secondUser = 'second';
+
+/// [secondUser]'s password. Deliberately unlike the seeded account's, so a
+/// client that reached for the wrong server's stored password fails rather
+/// than succeeding by coincidence.
+const secondPassword = 'Second!Passw0rd';
+
+const _secondHash =
+    r'$2y$10$3dsLdvISKY09lHI82HHsnOiKryI8gZljZTVPiKHMK3Mf2pyOmy.ji';
+
 class FixtureRun {
   FixtureRun._(this.root, this.port);
 
@@ -83,6 +113,16 @@ class FixtureRun {
     json['dataDir'] = '${root.path}/data';
     json['bindAddress'] = '127.0.0.1';
     json['transcodeEnabled'] = transcoding;
+    // The second account, in every copy rather than in the shared seed: state a
+    // suite needs is written by the suite, for the reason `_decorrelateWatched`
+    // gives at length. It is inert for every suite that does not log in as it.
+    (json['users']! as Map<String, Object?>)[secondUser] = <String, Object?>{
+      'id': 2,
+      'hash': _secondHash,
+      'admin': false,
+      'createdAt': 1,
+      'lastLoginAt': 0,
+    };
     await config.writeAsString(jsonEncode(json));
     await _repointCache(root, from: '${seeded.path}/data');
     await _decorrelateWatched(root);
