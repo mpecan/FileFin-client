@@ -7,11 +7,18 @@ part 'progress_policy.freezed.dart';
 
 /// What the server was last told, in the arithmetic the server itself uses.
 ///
-/// [positionSeconds] is the **rounded** value, not the raw double, because that
-/// is what the server stored and what the next report has to be compared
-/// against. Keeping the double instead would let the client's idea of "30
-/// seconds since the last report" drift from the pointer by up to half a second
-/// each time.
+/// [positionSeconds] is the **rounded** value, not the raw double, because it
+/// is rounded the way the server rounds — Go's `int(x + 0.5)` — and the next
+/// report has to be compared against the same arithmetic. Keeping the double
+/// instead would let the client's idea of "30 seconds since the last report"
+/// drift from the pointer by up to half a second each time.
+///
+/// **It is what this client last SENT, not what the server stored**, and the
+/// distinction is worth the line (corrected at M4.R/P7). The two part company
+/// whenever the server's own engine does something other than store the number
+/// — a crossing report past 90% moves the pointer to the next file at zero, and
+/// `lastSent` still holds the position that caused it. The dedupe is right
+/// either way, because what it wants is precisely "the last thing we said".
 @freezed
 abstract class SentReport with _$SentReport {
   /// The last accepted report: [file], at [positionSeconds] whole seconds.

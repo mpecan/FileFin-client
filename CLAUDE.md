@@ -369,10 +369,27 @@ and each will look like a client bug when it happens:
   with no headers inherits the first one's — so a negative control that shares a
   process with its positive is **vacuous**. Measured: an open with no cookie
   "succeeded" in-process and failed correctly in a fresh one.
-- **`VideoController` does not construct under `flutter test`.** It awaits a
-  platform channel `flutter_tester` does not host: a probe that pumped a `Video`
-  never returned and was killed at five minutes. It is not slow, it does not
-  terminate.
+  **It is not reachable through this app's code, and saying so is the point of
+  keeping the entry** (M4.R/T6): the cache is consulted *only* when
+  `httpHeaders` is null, `MediaKitPlaybackHost.open` always passes
+  `request.headers`, and `PlaybackRequest.headers` is non-nullable — so the null
+  branch cannot be taken from here. The separate control file and its
+  distinguished URI stay as defence in depth against a future caller that stops
+  passing them; treat this as a trap in the library, not as a live defect.
+- **`VideoController` constructs fine under `flutter test`, and the thing that
+  hangs is DISPOSE.** The original entry said the constructor "does not
+  construct… it awaits a platform channel `flutter_tester` does not host", and
+  `tool/coverage-gate.sh` raised the coverage ratchet on that sentence.
+  Re-measured at M4.R in a plain `test()` body with a binding up:
+  `VideoController(player)` returns, `Video(controller: …)` returns, and
+  `player.dispose()` **never** returns. The constructor body is a fire-and-forget
+  `() async { … }()` whose first statement awaits `addPostFrameCallback`
+  (`video_controller.dart:71`), so it parks a closure rather than the caller —
+  but it also sets `isVideoControllerAttached`, and `Player.dispose()` then
+  awaits a completer only that parked closure completes. **Pumping** a `Video`
+  is the other non-terminating case and is the one M4.0 actually measured.
+  `real_mpv_player_test.dart` covers `buildSurface` by giving that test its own
+  `Player` and never disposing it.
 
 ## Commit conventions
 

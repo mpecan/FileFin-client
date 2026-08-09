@@ -54,15 +54,22 @@ that has never been committed.
 | M4.8 | `PlayerPage`, `PlayerControls`, the metered prompt, the D10 banner, Play/Continue on the detail screen and tappable file rows, and `PlaybackSettingsSheet` — reached from the signed-in tree's app bar, and the only thing that makes `wifiOnly` and `allowUnverifiedPlayback` **writable** rather than only readable |
 | M4.9 | `integration_test/playback_test.dart` and `test_live/playback_live_test.dart` + `playback_no_cookie_test.dart`, both `run-integration.sh` floors raised and proven |
 | M4.10 | This section, six verification-backlog rows, and the SPEC/CLAUDE.md corrections the measurements forced — including E5's retraction |
+| M4.R | Remediation of three adversarial reviews. **One user-visible data corruption**, one unnecessary ratchet raise resting on a false measurement, two vacuous live tests and a suite that was not reproducible against its own fixture capture — all below |
 
-**Numbers as measured.** `dart analyze --fatal-infos --fatal-warnings .` clean;
-**1371 unit tests** — 358 in `apps/mobile`, 155 in `filefin_api`, 858 in
-`filefin_core`, up from 1124. Coverage **99% (2165/2167)**, with `MAX_UNCOVERED`
-**raised from 0 to 2 for the first time in this project** — see below, and see
-the head of `tool/coverage-gate.sh`, which names the two lines. `file-size` and
-`comments` both report **0 errors and 0 warnings**, unchanged; `dupes` is
-**0.74%** against a 5% threshold. The constitution baseline is still **0 across
-seven checks**. `just it` is **53 tests across two live suites**.
+**Mutation after M4.R: 270 mutants over the remediation diff, all killed** —
+221 in `apps/mobile` across 7 files, 49 in `filefin_core` across 2, 0 timeouts.
+The first pass left exactly one survivor and it is recorded under T9 below,
+because it is the interesting one: a boundary guard tested on one side only.
+
+**Numbers as measured, and re-measured after M4.R.** `dart analyze
+--fatal-infos --fatal-warnings .` clean; **1385 unit tests** — 372 in
+`apps/mobile`, 155 in `filefin_api`, 858 in `filefin_core`. Coverage **100%
+(2201/2201)** with
+`MAX_UNCOVERED` **back at 0** — the M4 raise to 2 was unnecessary and its stated
+reason was false; see M4.R/G1. `file-size` and `comments` both report **0 errors
+and 0 warnings**, unchanged; `dupes` is under the 5% threshold. The constitution
+baseline is still **0 across seven checks**, now with two more greps under
+`app_no_raw_http`. `just it` is **53 tests across two live suites**.
 
 **Mutation: 576 mutants in the M4 diff, all killed** — 327 in `apps/mobile`,
 110 in `filefin_api`, 139 in `filefin_core`, 0 timeouts. That number was reached
@@ -266,12 +273,16 @@ was impossible — this repository has no git remote at all.**
 a 5% threshold.
 
 **E-video — an experiment the plan did not list, and it is the one that raised
-the ratchet.** `VideoController(player)` **does not construct** under
-`flutter test`: it awaits a platform channel `flutter_tester` does not host. A
-probe that built one and pumped a `Video` never returned and was killed at five
-minutes. It is not slow — it does not terminate. `buildSurface` therefore lives
-on `MpvPlayer` rather than in the translation layer, which confines the
-uncoverable expression to **two lines** in the thinnest file in the milestone.
+the ratchet. Its conclusion was overstated and M4.R reverted the raise.** What
+was measured is that a probe which built a `VideoController` and **pumped** a
+`Video` never returned and was killed at five minutes. What was written down was
+that `VideoController(player)` "does not construct", and `tool/coverage-gate.sh`
+raised `MAX_UNCOVERED` from 0 to 2 on that sentence. It constructs fine; what
+never returns is `Player.dispose()` afterwards. See M4.R/G1 for the three-way
+re-measurement. `buildSurface` still lives on `MpvPlayer` rather than in the
+translation layer, and that placement is still right — it keeps the one
+platform-channel expression out of the file holding every translation
+decision — but it is no longer uncovered.
 
 ### The gates, and what had to change
 
@@ -289,8 +300,9 @@ uncoverable expression to **two lines** in the thinnest file in the milestone.
 - **`ci.yml` installs `libmpv2` before resolving**, with E8's measurement as the
   reason and `libmpv-dev` explicitly ruled out.
 - **`tool/coverage-gate.sh`'s `MAX_UNCOVERED` rose from 0 to 2**, for the first
-  time in this project. The file names the two lines, the measurement that
-  forced them, and the backlog row that retires them.
+  time in this project — and **M4.R put it back to 0**, because the raise was
+  unnecessary and the measurement in its justification was wrong. The file keeps
+  the whole episode, including what actually does not terminate.
 
 ### Deviations from the plan, with the reason
 
@@ -329,8 +341,11 @@ the undo, and the file was rewritten.
 
 ### Debt this milestone knowingly accepts
 
-- **`MAX_UNCOVERED` is 2, raised from 0.** Both lines are `RealMpvPlayer.buildSurface`'s
-  `VideoController`, which does not construct headlessly. Backlog row 16.
+- ~~**`MAX_UNCOVERED` is 2, raised from 0.**~~ **Paid at M4.R**: the two lines
+  are covered by a direct-call test and the ratchet is back at 0. What genuinely
+  cannot run headlessly is disposing a `Player` a `VideoController` has attached
+  to, and what cannot be checked at all is what those lines DRAW — backlog row
+  16, still open.
 - **`just check` now requires libmpv**, exactly as it requires Flutter.
   `toolchain-check` refuses first so the failure names the cause.
 - **The headless player suite runs against Homebrew's libmpv, not the shipped
@@ -339,14 +354,19 @@ the undo, and the file was rewritten.
   (E6). D10 makes it a per-server choice defaulting to refuse, with a persistent
   banner rather than a dismissible dialog.
 - **A mid-playback session loss is detected indirectly** — mpv surfaces no status
-  code, so a non-401 failure costs one wasted `me()` round trip.
-- **F13 samples the network once, at start.** A switch to cellular mid-film is
-  not handled.
+  code, so a non-401 failure costs one wasted `me()` round trip. **One retry per
+  stretch of playback** (M4.R/P2): a file that errors, retries and never ticks
+  gets mpv's own sentence on screen rather than a second attempt, and a Next to
+  another file inherits that spent retry until the new file ticks.
+- **F13 samples the network once, at start**, and the sample is now memoised so
+  that re-deciding per file (M4.R/P4) does not quietly retire this. A switch to
+  cellular mid-film is still not handled.
 - **A metered Wi-Fi hotspot is classified unmetered.** `connectivity_plus`
   reports a transport, not a cost. Backlog row 21.
 - **No gapless next-file advance.** We open each file ourselves so that "which
   file is playing" — the key every progress report carries — has one source of
-  truth.
+  truth. Nothing is reported for a newly opened file until the engine has said
+  where it is, which is what M4.R/P1 cost to learn.
 - **Embedded subtitles stay deferred; embedded AUDIO is used**, because the API
   lists no audio tracks at all and nothing else can satisfy F7.
 - **Any pre-M4 `settings.json` is discarded** by the new strict `playback` block.
@@ -404,6 +424,274 @@ never reads). Measured: it waits out the full 15 s without a duration and mpv
 reports the failure on its error stream — which is all mpv can report, since it
 surfaces no status code.
 
+### M4.R — remediation of three adversarial reviews of M4
+
+Reviews P (playback correctness), G (gates and mutation work) and T (test
+genuineness). Everything below was re-proven in **both** directions: the fix
+green, the code broken, exactly the intended test red, the code restored.
+
+**P1 [CRITICAL] `next()` posted the previous file's position under the new
+file's index — user-visible data corruption.** `_position`/`_duration` are keyed
+on `_current`, and `next()` advanced `_current` while leaving them behind.
+Against real libmpv the first event after a second `open()` is deterministically
+`playing=false`, **before** any position or duration event
+(`playing=false / position=0 / duration=0 / playing=true / duration=3000ms`), and
+`playing == false` reports a pause. Replayed against the real v0.20.3 server on
+the seeded two-episode show:
+
+```
+POST {"file":0,"position":2.9,"duration":3,"event":"stop"}  -> 204
+POST {"file":1,"position":2.9,"duration":3,"event":"pause"} -> 204
+VIEW watched=True continueIndex=1 continueSeconds=0 perFile=[True, True]
+```
+
+**Tapping Next at the end of episode 1 marked the whole show watched**, and in
+general Next at *x* of file *n* wrote the resume pointer into file *n+1* at that
+same absolute second. It was **unpinned in both directions** — the review
+measured that applying the fix left all 145 `test/playback` tests green, twice.
+
+Fixed in two parts, because zeroing the fields is necessary and not sufficient:
+`_switchTo()` resets both, and `_positionIsCurrent` suppresses the `playing ==
+false` report until a position tick for the current file has arrived (a report
+of second 0 is still a claim about a file nothing has measured). Three tests
+now pin it, and each kills exactly one mutation and no other:
+
+| Mutation | Red |
+|---|---|
+| no reset in `_switchTo` | `the old position is never posted under the new file` |
+| `if (!p)` — suppression removed | `a duration alone does not say where the new file is` |
+| `_positionIsCurrent` never set true | `the new file reports normally once it has ticked` |
+
+Before the fix the first of those failed on `watchState.watched` — `Expected:
+false / Actual: <true>` — which is the corruption itself, not a proxy for it.
+
+**P2 [HIGH] mpv's error text never reached the user and every error after the
+first was swallowed.** `_recover(String message)` never read `message`, and
+`_recovering` latched `true` for the controller's whole life. A genuinely broken
+file therefore produced a **black player with no message** (the opposite of what
+F12 asks for), and a session dying mid-film after any earlier transient error
+never reached `me()` again and so never routed to sign-in. The guard is now "the
+retry is spent until playback demonstrably resumes", which a position tick says
+and nothing else does; `_failure` is set from `message` when the retry is spent.
+A third bug in the same three lines went with it: `_startAt = _position` with no
+tick yet threw away F8's resume offset when the very first open failed. Four
+mutations, four different tests red.
+
+**P3 [MED-HIGH] F9's local reflection had no production reader — WIRED, not
+deleted.** `ProgressReporter.state` and `needsDetailRefetch` were computed,
+validated against 601 captured vectors and thrown away: `app.dart` pushed the
+player with `unawaited(...push(...))` and `MediaDetailPage` loaded once in
+`initState`, so returning from the player showed the resume offset from before
+playback started and M1's divergence latch discharged nothing.
+
+**Deleting the members was the other option offered and it is the wrong one**:
+they are not speculative surface, they are SPEC F9's second clause ("reflect
+resulting watched/continue changes locally without a full refetch") and M1's
+named escape hatch. Removing them would have deleted a requirement's
+implementation and left §5 satisfied by subtraction. So the value now travels:
+`PlaybackOutcome` (state + `needsDetailRefetch`), popped by `PlayerPage` **after**
+the awaited final `stop`, returned by `app.dart`'s `_play`, and applied by
+`MediaDetailPage` — `deriveView` folded onto the loaded detail through the new
+`AsyncController.replace` in the ordinary case, and a real `load()` in the one
+input class `applyProgress` provably cannot match. Five mutations, five tests
+red, including `pop()` without the outcome.
+
+**P4 [MED] `next()` bypassed `decide()`, so F13 never saw any file but the
+first.** Measured: file 0 = 10 B, file 1 = 9 GiB, metered — file 1 opened with
+no prompt. `next()` now goes through `_decideAndOpen()`. **The network sample
+stays once per session** (that is documented debt, and re-taking it here would
+have retired it silently), so the sample is memoised with `??=` and only the
+*decision* is re-taken. Both halves are pinned: routing `next()` back to
+`_open()` and dropping the memo each redden the same test for different reasons.
+
+**P5/T5 [MED] the D10 banner was keyed on the setting, not the transport.** With
+`allowUnverifiedPlayback` on and `playbackTransport() == osTrustedTls` the
+controller passes `verifyTls: true` and **mpv does verify** — while the banner
+asserted "the player checks no certificate". Factually false, and the same
+over-fire on `plainHttp`. No under-fire, so D10's guarantee never depended on
+it; the defect was a cry-wolf banner. Now `pinnedTls && allowUnverifiedPlayback`.
+T5's other half was that **nothing asserted the banner's absence** — dropping
+the guard entirely passed all 358 mobile tests. Two negative arms now exist, and
+the plain-http one is deliberate: a *pinned* server with the flag off is
+**refused**, and the refusal panel replaces the column the banner sits in, so
+that arm would have passed for a reason unrelated to the guard.
+
+**P6/T10 [LOW-MED] the volume slider was write-only.** `value: 1` was a literal,
+so the thumb snapped back to full on the next rebuild while mpv held the dragged
+value; mutating the literal to `0` left all 149 playback tests green. The
+controller now holds the volume and the slider draws it. Both the literal and
+the controller's memory are pinned.
+
+**T9 [HAZARD] the subtitle menu indexed a later snapshot than it built from —
+the third instance of the clamp-before-guard class.** `itemBuilder` numbers one
+snapshot of `controller.subtitles`; `onSelected` read a later one, and
+`_open()` replaces `_subtitles` wholesale — on `next()`, and asynchronously from
+`_recover()` on any mpv error. The review could not reproduce it (it needs a UI
+race) and flagged it; the tests here **do** reproduce it, by leaving a menu open
+across an advance to a file with fewer sidecars.
+
+**It took two tests, and the mutation gate is what said so.** The first version
+shrank the list by exactly one — tapped index 1 into a list of 1 — which pins
+`>=` against `>` and leaves `>=` against `==` alive, and that mutant survived the
+whole 372-test suite. The second case tapped index 1 into an emptied list, which
+pins `==` and leaves `>` alive. Neither alone pins the operator; both together
+kill all 24 mutants in the file. A guard tested at only one side of its boundary
+is the same defect the guard exists to fix.
+
+**P7 [LOW] three wrong doc statements, one of which was showing users a number
+they never chose.** `decision.dart` said the three playback settings "are one
+per-server block on disk" — two are on `SavedServer` and two are the global
+`PlaybackPrefs`. `progress_policy.dart` described `SentReport.positionSeconds`
+as "what the server stored"; it is what the client last **sent**, and the two
+part company on every crossing report. And `humanSize` divided by **1024** under
+**kB/MB/GB** labels, so `PlaybackPrefs`' own default of `500 * 1000 * 1000` came
+out of the settings dropdown as **"476.8 MB"**. Fixed by making it decimal
+through one constant, and the choice list — which mixed `100 * 1024 * 1024` with
+`500 * 1000 * 1000` — is now four powers of 1000, so every option renders as the
+round number it claims to be.
+
+#### Gates
+
+**G1 [WEAKENING] `MAX_UNCOVERED` 0 → 2 was unnecessary, and its justification was
+false. REVERTED TO 0.** `tool/coverage-gate.sh` claimed `VideoController(player)`
+"**hangs** under `flutter test`". Re-measured three ways in a plain `test()` body
+with a binding up:
+
+```
+VideoController(player)      -> returns
+Video(controller: …)         -> returns
+player.dispose() afterwards  -> NEVER returns
+```
+
+The constructor body is a fire-and-forget `() async { … }()` whose first
+statement awaits `addPostFrameCallback` (`video_controller.dart:71`), so it parks
+a closure rather than the caller. M4.0's real measurement was that **pumping** a
+`Video` never returned; the gate generalised it from pumping to constructing,
+and coverage only ever needed the latter. **That sentence was the entire basis
+for the first ratchet raise in this project's history.**
+
+The review's own demo would have tripped over the third line, which nobody had
+measured: `VideoController` sets `isVideoControllerAttached`, and
+`Player.dispose()` then awaits a completer only that parked closure completes —
+so using the suite's shared player took four tests down with it. The test gives
+itself its own `Player` and never disposes it, and additionally pins the `??=`
+memo, which nothing tested before.
+
+```
+Coverage: 100% (2201/2201 lines), floor 50%, target 80%
+Uncovered: 0 line(s), ratchet 0
+```
+
+Both directions: dropping that one test → `ERROR: 2 uncovered line(s), ratchet
+allows 0` and exit 1. `check-coverage.sh`'s header now points at
+`coverage-gate.sh` for the value in force rather than stating one of its own.
+
+**G2 [FALSE REASON] the "seeded per process" sentence is gone from all three
+hashCode exclusions.** The fact is true and the inference was not: both sides of
+`expect(r.hashCode, Object.hash(a, b))` are computed in the **same** process.
+Measured over three runs — the value moved (458304581 / 435016163 / 508756647)
+and the assertion was stable and distinguished the swap every time. The mutants
+**are** killable; the honest reason to reject the test is the other one the
+comments already gave, that it copies the implementation into the test file. The
+exclusions stand; the wrong reason is replaced by the measurement, because a
+false premise inside an exclusion is how the next widening starts.
+
+**G5 [FRAGILE → STRUCTURAL] the three argument-swap rules can no longer match a
+run of closing parentheses.** M4 removed one unkillable whitespace-only mutant by
+*hoisting a local so `dart format` collapsed a call onto one line* — an exclusion
+enforced by formatting, with the same pathology still live at
+`_FailureBanner`. `)` is now excluded from every argument group, which loses
+nothing legitimate: an argument may not contain `(`, so an argument containing
+`)` is necessarily an enclosing call's. Measured, and this is the whole
+argument:
+
+| | wide rules | narrowed |
+|---|---|---|
+| `player_page.dart`, hoisted (as committed) | 33 | 30 |
+| `player_page.dart`, **un-hoisted** | **36** | **30** |
+| `playback_host.dart` with the `Object.hash` exclusion | 6 | 6 |
+| `playback_host.dart` **without** it | 8 | 8 |
+
+The formatting no longer changes the mutant count, and every existing exclusion
+still bites. Every mutant removed was inspected in the `--dry -v` diff and every
+one is source re-punctuation — `Map<String, Object?>` shuffled across a `),`
+run, `icon: const Icon(\n ,Icons.audiotrack));`. The one genuine neighbour in
+those files, `clamp(1 << 31, 0)`, survives the narrowing.
+
+**G6 [INCOMPLETE] the media_kit confinement now covers `export` and `part`, not
+only direct imports.** Both bypasses passed silently: a `part` file uses `Player`
+with no import line at all, and a re-export hands `Player`, `Media` and `Tracks`
+to any third file. Neither construct exists in `apps/mobile/lib`, so the correct
+count is 0 and the ratchet holds it there. Proven in both directions —
+`export 'package:media_kit/media_kit.dart';` in `mpv_player.dart` and
+`part 'mpv_part.dart';` in `media_kit_playback_host.dart` each fail the gate,
+naming the file and line; the clean tree passes.
+
+#### Test genuineness
+
+**T1 [HIGH] `just it` was not idempotent with respect to `just
+fixtures-capture`.** `capture_fixtures.sh` POSTs favourite, rating, watched
+**and progress** against the shared seed and they land permanently in
+`meta.json`; `_decorrelateWatched` normalised `watched` and deliberately
+preserved `progress`. Reproduced exactly: clean seed → `just it` exit 0, 53
+tests; `just fixtures-capture` → the show gains `progress {"file":"1x2"}` →
+**`just it` exit 1, two failures on unmodified code**
+(`a report is accepted and stored where the engine says`, `every event value is
+accepted`), both asserting absolute literals that hold only when the pointer is
+unset. `_decorrelateWatched` now replaces the whole `state.<user>` block. With
+the **same polluted seed** still on disk, `just it` is back to exit 0 and 53
+tests. A copy that starts from a state it wrote itself is the only kind that
+answers the same on two machines.
+
+**T2 [VACUOUS] the seek test proved nothing.** It seeked *forward* to 2 s and
+waited for `position >= 1.9 s`, which ordinary playback reaches on its own — so
+`seek()` replaced by a total no-op left all six tests green. It was also a
+tautology of the `firstWhere` that produced the value. It now plays past 2.5 s,
+**pauses**, seeks **back** to 0.5 s and asserts the next tick is under a second.
+Nothing but a real seek moves position backwards, and the no-op mutation now
+reddens the suite.
+
+**T3 [VACUOUS] the completed test proved nothing.** `expect(completedFired,
+isTrue)` cannot be false — `firstWhere((done) => done)` only completes with
+`true` — so `completed → Stream.value(true)` left all six green and collapsed
+the suite. It now asserts the position at completion is within 500 ms of the
+duration and that the stretch took non-trivial wall time. **The first attempt at
+this still passed under the mutation**, because the position high-water mark and
+the stopwatch had already been fed by the real playback up to 2.5 s; both are
+now reset immediately before the wait, and the constant `completed` fails with
+`Expected: a numeric value within <500> of <3000> / Actual: <0>`.
+
+**T4 [STRUCTURAL] one `setUpAll` for six live tests made per-test attribution
+illusory.** Every failure reported as `(setUpAll)`, and under one mutation the
+run was `+0 -1` — five tests silently did not run. The work is now a memoised
+`Future` awaited from each body: it still happens exactly once, and every test
+keeps its own name, pass and failure. Visible in the proofs above — the no-op
+seek reports `+0 -6` with each test named, and the constant `completed` reports
+`+5 -1`. One thing had to be preserved: the mpv context is torn down in
+`tearDownAll` and nowhere else, because disposing it from inside a test body
+while its streams still have listeners crashes `flutter_tester` outright
+(SIGBUS, measured).
+
+**T6 [DOC] the `Media` header-cache hazard is UNREACHABLE through this code.**
+`Media`'s constructor is `httpHeaders ?? cache[uri]?.httpHeaders`, so the cache
+is consulted only when `httpHeaders` is null — and `MediaKitPlaybackHost.open`
+always passes `request.headers`, which `PlaybackRequest` declares non-nullable.
+The null branch cannot be taken from here. CLAUDE.md and the live suite's own
+header stated it as live for this path; both now say what it is, a trap in the
+library rather than a defect in ours. **The control is kept**: the separate file
+and distinguished URI are defence in depth against a future caller that stops
+passing headers.
+
+#### One finding the reviews did not make
+
+`just fixtures-capture` is **destructive to `test/fixtures/error_shapes.txt`**:
+it rewrites the file with only the shapes the script itself captures, dropping
+four blocks a later hand-append had added (the 400s, the subtitle route, and —
+usefully — the now-retracted "the extension decides" note). It is caught:
+`just fixtures-verify` refuses on the SHA-256 manifest, naming the file. Recorded
+rather than fixed, because the gate closes it and the fix is a decision about
+where hand-recorded shapes should live.
+
 ### What M4 did NOT finish, stated plainly
 
 - **The MKV item is still not in the seed.** E5's correction proves an `.mkv`
@@ -416,6 +704,9 @@ surfaces no status code.
   zone and never completes, so `playback_live_test.dart` drives the host from
   plain `test()` bodies. Nothing here proves `PlayerPage` issuing the call
   itself; that is `docs/verification-backlog.md`'s row, not a claim rounded up.
+- **A player already running does not pick up a changed interval**, and the
+  detail screen behind it now DOES pick up what playback did — see M4.R/P3,
+  which is what F9's second clause needed and did not have.
 - **The settings sheet writes `settings.json` and nothing re-reads it mid-session
   except the two places that need it.** `app.dart` keeps the changed
   `SavedServer` in its own state and the player route reads

@@ -86,7 +86,12 @@ enum RefuseReason {
 ///
 /// [progressIntervalSecs] is not read by [decide] at all: it is the interval
 /// `decideReport` measures against, and it lives here because the three are one
-/// per-server block on disk and one sheet in the UI. Upstream's own player uses
+/// **sheet in the UI**. They are not one block on disk, and an earlier draft of
+/// this sentence said they were (corrected at M4.R/P7): `wifiOnly` and
+/// `allowUnverifiedPlayback` are fields on each `SavedServer`, while
+/// `meteredWarnBytes` and `progressIntervalSecs` are the global `PlaybackPrefs`
+/// block — which is exactly why the settings sheet reports the two halves
+/// separately and `app.dart` writes them separately. Upstream's own player uses
 /// **30 media seconds** (`web/src/views/library/Player.svelte`), which is the
 /// default `PlaybackPrefs` writes.
 @freezed
