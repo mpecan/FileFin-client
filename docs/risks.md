@@ -143,31 +143,132 @@ a reason that looks nothing like its cause.
 
 ---
 
-## R2 — iOS Picture-in-Picture. OPEN. *Spike before M7.*
+## R2 — iOS Picture-in-Picture. ❌ DECLINED at M7.6, not retired.
 
-iOS PiP is built around `AVPlayerLayer` / `AVSampleBufferDisplayLayer`. libmpv
-renders into its own surface, so the OS has no layer to hand to the PiP
-controller. PiP may be unavailable outright, or need custom platform work
-(feeding decoded frames into an `AVSampleBufferDisplayLayer`, which is a real
-project).
+**Spiked at M7.6/E-7**, as a static read of `media_kit_video` 2.0.1's iOS
+sources rather than a run, because the answer is decided by what is `private`
+and a run cannot make a sealed symbol reachable.
+**Harness:** `tool/spikes/e7_ios_pip_reachability.sh` — it asserts each fact in
+its own direction and exits 1 when any of them changes, so an upstream bump
+re-opens this rather than inheriting the verdict. Proven able to fail by making
+`VideoOutput.texture` public in a copy of the package: `CHANGED
+VideoOutput.texture: expected SEALED, found REACHABLE`, exit 1.
 
-**Affects:** F14.
-**Spike shape:** a minimal `media_kit` iOS app that attempts to enter PiP;
-record whether the system offers it at all, and if not, what the cheapest
-alternative costs. Result goes here and in `SPEC.md` §8.
+| Link | Verdict |
+|---|---|
+| `TextureGLESContext.pixelBuffer` (`gles/TextureGLESContext.swift:5`) | `public let CVPixelBuffer` — **reachable** |
+| `TextureHW.copyPixelBuffer()` (`TextureHW.swift:42`) | `public` — **reachable** |
+| pixel format (`gles/OpenGLESHelpers.swift:39`) | `kCVPixelFormatType_32BGRA`, which is what `AVSampleBufferDisplayLayer` takes |
+| `VideoOutput.texture` (`common/VideoOutput.swift:34`) | `private` — **sealed** |
+| `VideoOutputManager.videoOutputs` (`common/VideoOutputManager.swift:8`) | `private` — **sealed** |
+| `MediaKitVideoPlugin.videoOutputManager` (`common/MediaKitVideoPlugin.swift:35`) | `private`, and its `init` is internal — **sealed** |
+| any PiP vocabulary in the package | none, Dart or Swift — **sealed** |
+
+So the frame is exactly the right *type* and no instance of it is reachable.
+The only public entry point into the plugin is `MediaKitVideoPlugin.register(with:)`,
+which returns nothing.
+
+**Two second-order costs, recorded so nobody prices this as "just a fork".**
+The buffers come from a three-deep `SwappableObjectManager` pool that Flutter's
+own `copyPixelBuffer()` recycles, so a display layer holding one competes with
+the texture that draws the video; and the frames carry no presentation
+timestamps, which `AVSampleBufferDisplayLayer` requires — a `CMSampleBuffer`
+timing layer would be ours to invent.
+
+**Decision.** PiP is **not in F14's wording** (`SPEC.md:298` — "background audio
+and lock-screen transport controls"); it appeared only in SPEC §10's M7 row.
+That row is amended to match F14, and R2 is recorded as declined with the
+measurement that declined it. **What would reopen it:** `media_kit_video`
+exposing the texture or shipping PiP itself — which is what the harness watches
+for.
 
 ---
 
-## R3 — Lock-screen / MediaSession controls. OPEN. *Spike before M7.*
+## R3 — Lock-screen / MediaSession controls. ⚠️ PARTLY RETIRED at M7.6.
 
-`media_kit` is a playback engine, not a media-session integration. Background
-audio, the lock-screen transport, and the Android notification are separate
-platform surfaces (`MPNowPlayingInfoCenter` / `MPRemoteCommandCenter` on iOS,
-`MediaSession` on Android) that something has to drive.
+**Spiked at M7.6/E-6** against a scratch app (never `apps/mobile`, §1) on a real
+Android emulator (API 37) and the iOS simulator (iOS 26.5), five arms, each
+build separate because two of the three variables are build-time.
+**Harness:** `tool/spikes/e6_background_playback.sh <arm>`. The instrument is
+one line a second from Dart — `TICK wall=… pos=… playing=… life=…` — so `pos`
+advancing while `life=paused` is decoding in the background, measured rather
+than inferred.
+
+### The first finding is a client default, not an OS behaviour
+
+`media_kit_video`'s `Video` widget takes `pauseUponEnteringBackgroundMode` and
+it **defaults to `true`**: on `AppLifecycleState.paused` it calls
+`player.pause()` itself (`video_texture.dart:281-299`). With the default left
+alone every arm reads "playback stops when backgrounded" and the cause is a
+widget argument. That is arm `android-bare-pausebg`, and it is the negative
+control for the whole spike: `pos` froze at 18941 ms and stayed there for the
+full 60 s while the wall clock ran to 80 s.
+
+`resumeUponEnteringForegroundMode` defaults to `false`, so the same widget
+would also have left playback paused on return — which is NF6's second half.
+`apps/mobile` passed neither argument until M7.6.
+
+### Android — audio survives, but the OS mutes it without a session
+
+All measurements on one emulator, API 37, `dumpsys audio`'s `mutedState` field.
+
+| Arm | `pos` over a 60 s background | OS audio state, backgrounded |
+|---|---|---|
+| `android-bare-pausebg` (the default) | **frozen** at 18941 ms | `state:stopped` |
+| `android-bare` (`pauseUponEnteringBackgroundMode: false`) | **advanced 1:1 with the wall clock**, 19 s → 80 s | `state:started mutedState:opControlAudio` |
+| `android-service` (`audio_service`: MediaSession + foreground service) | advanced 1:1 | `state:started mutedState:none` |
+
+Read in the same run, both directions: foregrounded, the bare arm reports
+`mutedState:none`; backgrounded, `mutedState:opControlAudio`. So **decoding
+continues with no package at all, and the AppOps `CONTROL_AUDIO` restriction is
+what silences it** — which is precisely what a foreground service plus a
+`MediaSession` lifts.
+
+With `audio_service` running, `dumpsys media_session` showed a live session
+carrying our metadata (`description=E-6 spike clip, FileFin`), a
+`FOREGROUND_SERVICE|ONGOING_EVENT` notification with `category=transport`, and
+a registered `MediaButtonReceiver`. `adb shell input keyevent
+KEYCODE_MEDIA_PAUSE` produced `E6 REMOTE pause` **in Dart** and froze `pos` at
+91039 — a transport command reaching the player, measured end to end.
+
+### iOS — the process is suspended without the plist key, and the simulator cannot answer the audio half
+
+| Arm | Result |
+|---|---|
+| `ios-bare` (no `UIBackgroundModes`) | last `TICK` at `wall=20007`, immediately after `LIFECYCLE paused`. **The process is suspended**; the Dart timer stops with it |
+| `ios-plist` (`UIBackgroundModes: audio`, nothing else) | `TICK`s continue for the whole 60 s and `pos` advances 1:1, `life=paused` throughout |
+
+An `audio_session`-configured arm behaved identically to `ios-plist`, so the
+package added nothing — and the reason is in the shipped binary rather than in
+the app. `nm -u` on `media_kit_libs_ios_video` 1.1.4's **device** slice shows
+libmpv itself importing `_OBJC_CLASS_$_AVAudioSession`,
+`_AVAudioSessionCategoryPlayback`, `_AVAudioSessionModeMoviePlayback` and
+`setCategory:error:`. mpv's own `ao_audiounit` sets the category, so nothing on
+our side has to.
+
+**What the simulator cannot say, and it is a property of the binary rather than
+a hedge.** The same package ships libmpv twice with different audio outputs:
+
+```
+ios-arm64                   -Daudiounit=enabled
+ios-arm64_x86_64-simulator  -Daudiounit=disabled -Dcoreaudio=disabled -Dopensles=disabled
+```
+
+There is **no audio output compiled into the simulator build at all**, so
+playback there runs off the video clock and "the sound kept coming" is not a
+claim the simulator arms can make. The device arm was attempted and blocked:
+`devicectl` installed the spike onto a real iPhone (iOS 26.6) and the launch was
+refused — `FBSOpenApplicationErrorDomain error 7 … the device was not, or could
+not be, unlocked`. That half is `docs/verification-backlog.md` row L.
+
+### What it cost, and what R3 still owes
+
+F14's Android half needs `audio_service`; its iOS half needs one `Info.plist`
+key. **Not retired**, because two claims remain device-only and are rows L and M:
+whether audio is audible on the shipped iOS build, and whether the Android
+foreground service survives Doze over a long background.
 
 **Affects:** F14, NF6.
-**Spike shape:** establish what F14 actually costs on each platform — an
-existing package that composes with `media_kit`, or per-platform channel code.
 
 ---
 
