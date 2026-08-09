@@ -103,11 +103,14 @@ while IFS= read -r pubspec; do
     esac
 
     echo "test: $pkg_dir — ${runner[*]} ($count test file(s))"
+    # `run_tests_retrying_known_crash` prints the output itself and retries at
+    # most once, and only when the run died of the libmpv teardown crash in one
+    # named file (tool/common.sh, M7.7). A failed assertion is never retried.
     set +e
-    out=$( (cd "$pkg_dir" && "${runner[@]}" --reporter expanded) 2>&1 )
+    run_tests_retrying_known_crash "$pkg_dir" "${runner[@]}" --reporter expanded
     rc=$?
     set -e
-    printf '%s\n' "$out"
+    out="$LAST_TEST_OUT"
     [ "$rc" -eq 0 ] || fail "$pkg_dir: ${runner[*]} exited $rc"
 
     summary=$(printf '%s\n' "$out" | grep -E 'All tests passed!|Some tests failed' | tail -1)

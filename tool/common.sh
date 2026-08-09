@@ -78,6 +78,96 @@ no_dart_packages() {
     [ -z "$(find packages apps -mindepth 2 -maxdepth 2 -name pubspec.yaml 2>/dev/null)" ]
 }
 
+# --- the flake tax (CLAUDE.md, M7.7) ----------------------------------------
+#
+# THE ONE TEST FILE THAT KILLS ITS OWN RUNNER, and the only retry in this repo.
+#
+# `apps/mobile/test/playback/real_mpv_player_test.dart` loads a real libmpv over
+# dart:ffi. Roughly one app-suite run in twenty, the `flutter_tester` shell
+# hosting that file dies of a memory fault instead of reporting a result:
+# `TestDeviceException(Shell subprocess crashed with unexpected exit code -10.)`
+# — SIGBUS — or, less often, an outright segmentation fault. The whole file goes
+# with it and every test in it reports "did not complete", including ones that
+# had not started.
+#
+# MEASURED, not inferred (M7.0/E-8, this machine, mpv 0.41.0, Flutter 3.44.9):
+#
+#   * 2 crashes in 42 plain `flutter test` runs of `apps/mobile` — 4.8%;
+#   * 0 crashes in 12 `flutter test --coverage` runs of the same suite;
+#   * `ps -eo pid,etime,command | grep flutter_tester` showed ZERO processes
+#     before every single iteration, so the orphaned-tester hypothesis
+#     CLAUDE.md raises is not what this is;
+#   * M6.0/E-9 measured 0 in 24 standalone runs at both concurrencies, which is
+#     entirely consistent with 4.8% (P(0 of 24) = 0.31) — the "standalone runs
+#     never crash" reading of that result was underpowered, not wrong.
+#
+# The rate explains the observed "one gate run in four": `just check` runs this
+# suite for `test`, again for `coverage`, and once per mutant for `mutants`.
+#
+# WHY A RETRY, AND WHY NOT THE OTHER TWO OPTIONS the M7 plan offered.
+# Giving the file its own `flutter test` invocation makes a human re-run cheap;
+# it does not stop the gate going red, and "re-run on red" is the habit that
+# hides a real failure — the thing this exists to remove. Fixing the cause means
+# fixing a crash inside libmpv's teardown or media_kit's FFI finalizers, neither
+# of which is ours and neither of which we can reproduce on demand. So: retry,
+# **bounded at one**, **loud**, and **narrow**.
+#
+# WHAT IT WILL NOT DO, which is the load-bearing half:
+#
+#   * it does not retry a FAILED ASSERTION. The runner exiting non-zero with
+#     test results is a red gate, full stop; only a crashed shell qualifies;
+#   * it does not retry a crash in ANY OTHER FILE. A new file killing its
+#     runner is new information and must be seen. The predicate reads the
+#     `[E]` lines — which the expanded reporter always emits in full, unlike
+#     the "Failing tests:" summary, which truncates with "... and N more" — and
+#     refuses unless the only file named is the known one;
+#   * it does not retry twice. A second crash is reported as the failure it is.
+#
+# Every retry prints a NOTICE naming the file and the crash, so the rate stays
+# measurable instead of becoming folklore. `docs/verification-backlog.md` row H
+# carries the retirement condition.
+FLAKY_CRASH_FILE='real_mpv_player_test.dart'
+
+# True when $1 (a captured run's output) is a crash of ONLY the known file.
+crash_is_known_flake() {
+    local out="$1" files
+    grep -qF 'Shell subprocess crashed' <<< "$out" || return 1
+    files=$(grep -F '[E]' <<< "$out" | grep -oE '[^ /]*_test\.dart' | sort -u)
+    [ "$files" = "$FLAKY_CRASH_FILE" ]
+}
+
+# Run a test command, retrying ONCE if and only if the run died of the known
+# libmpv crash. Prints the run's output either way; leaves it in $LAST_TEST_OUT
+# for a caller that wants to assert on it. Usage:
+#   run_tests_retrying_known_crash <dir> <command...>
+#
+# `cmd || rc=$?` rather than `set +e; cmd; rc=$?; set -e`, and the difference
+# was a real defect for one measurement. `set -e` is SHELL-WIDE, not scoped to a
+# function, so the inner `set -e` re-armed errexit inside a caller that had
+# deliberately disarmed it — and the final `return "$rc"` then killed the script
+# on the spot. The gate still exited 1, but `fail`'s message never printed:
+# a gate that fails for the right reason and says nothing about it. Caught by
+# proving the negative direction, not by reading the code.
+run_tests_retrying_known_crash() {
+    local dir="$1"; shift
+    local rc=0
+    LAST_TEST_OUT=$( (cd "$dir" && "$@") 2>&1 ) || rc=$?
+    if [ "$rc" -ne 0 ] && crash_is_known_flake "$LAST_TEST_OUT"; then
+        printf '%s\n' "$LAST_TEST_OUT"
+        echo "NOTICE: $dir — $FLAKY_CRASH_FILE crashed its own test shell."
+        echo "        No test in it reported a result, so this is not a red"
+        echo "        suite; it is the libmpv teardown flake measured at"
+        echo "        M7.0/E-8 (2 in 42 runs). RETRYING ONCE, and once only."
+        echo "        If the retry also crashes, the gate fails. If this NOTICE"
+        echo "        starts appearing on most runs, the rate has changed and"
+        echo "        docs/verification-backlog.md row H is due again."
+        rc=0
+        LAST_TEST_OUT=$( (cd "$dir" && "$@") 2>&1 ) || rc=$?
+    fi
+    printf '%s\n' "$LAST_TEST_OUT"
+    return "$rc"
+}
+
 # Run one gate under a hook: log to a per-process temp file, print ok/FAILED
 # with a `[label]` prefix, and on failure print the last 25 log lines indented
 # to align with the gate name. Failed gates are appended to the caller's

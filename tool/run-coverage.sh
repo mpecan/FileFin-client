@@ -92,7 +92,17 @@ while IFS= read -r pubspec; do
     # covers `apps/*/lib`.
     if [ "${pkg_dir#apps/}" != "$pkg_dir" ]; then
         raw="$PWD/$OUT/$slug.flutter.lcov"
-        (cd "$pkg_dir" && flutter test --coverage --coverage-path="$raw")
+        # Same bounded, narrow retry the test gate uses: the libmpv crash costs
+        # this run its whole lcov, and a coverage figure computed from a
+        # half-written report would be wrong in the direction that fails
+        # (tool/common.sh, M7.7). Measured 0 in 12 here against 2 in 42 for the
+        # plain runner — rarer, same mechanism, same treatment.
+        set +e
+        run_tests_retrying_known_crash "$pkg_dir" \
+            flutter test --coverage --coverage-path="$raw"
+        cov_rc=$?
+        set -e
+        [ "$cov_rc" -eq 0 ] || fail "$pkg_dir: flutter test --coverage exited $cov_rc"
         [ -s "$raw" ] || fail "flutter test --coverage produced no lcov for $pkg_dir"
         bad=$(grep '^SF:' "$raw" | grep -cv '^SF:lib/' || true)
         if [ "$bad" -gt 0 ]; then
