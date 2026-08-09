@@ -42,6 +42,20 @@ dependencies:
   # The framework this package's whole lib/ is written in.
   flutter:
     sdk: flutter
+  # F2's persistence half: the Keychain on iOS and an AES-GCM Keystore-wrapped
+  # store on Android, which is the only place §9 permits a password to live.
+  # `PlatformSecretStore` imports it; nothing else may.
+  #
+  # 10.3.1 rather than the current 11.0.0, and the reason is measured (M7.0/E-5)
+  # rather than caution: 11.0.0's Android module declares `compileSdk = 37`,
+  # which needs an `android-37` platform that Flutter 3.44.9's own
+  # `flutter.compileSdkVersion` (36) does not ask for, and `flutter build apk`
+  # failed with "Failed to find target with hash string 'android-37'". 10.3.1
+  # declares 36 — exactly what the toolchain provides — and builds. Both floors
+  # are below C5's: `minSdkVersion 23` against our 26, `ios.deployment_target
+  # 13.0` against our 15, and the merged manifest and the built plist still say
+  # 26 and 15.0 with it in.
+  flutter_secure_storage: 10.3.1
   # SPEC C2's playback engine. Pure Dart over `dart:ffi` — only its `_video`
   # sibling is a Flutter plugin — which is the seam `MediaKitPlaybackHost` is
   # built on: a `Player` constructs under `flutter test` against a host libmpv.

@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/platform_secret_store.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
@@ -30,14 +31,18 @@ Future<void> main() async {
 /// Separate from [main] so a test can build the same tree over a temp
 /// directory without touching the plugin at all.
 ///
-/// **One `SecretStore` for the process.** F3 needs the password in memory for
-/// the process lifetime whatever the persistence story is — a re-auth cannot
-/// await a Keychain prompt in the middle of a 401 retry — and M7's platform
-/// store is a persistence decorator around exactly this object. The
-/// consequence, stated out loud because silence would imply otherwise: nothing
-/// persists a password at M3, so it is re-typed on every cold start.
+/// **One `SecretStore` for the process, and from M7.2 it persists.** F3 needs
+/// the password in memory for the process lifetime — a re-auth cannot await a
+/// Keychain prompt in the middle of a 401 retry — so [PlatformSecretStore] is a
+/// persistence decorator around the in-memory cache rather than a replacement
+/// for it, and reads still come from memory once anything has been read once.
+///
+/// The second plugin call in this package lives behind it. It is not made here
+/// and it is not made at launch: nothing touches the Keychain until something
+/// asks for a secret, which is why `main()` still has exactly one plugin call
+/// on its own critical path (NF1).
 Widget buildApp(Directory support) {
-  final secrets = InMemorySecretStore();
+  final secrets = PlatformSecretStore();
   return FileFinScope(
     dependencies: AppDependencies(
       settings: SettingsStore(support),

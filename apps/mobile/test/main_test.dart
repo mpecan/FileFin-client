@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -34,6 +35,12 @@ void main() {
   setUp(() {
     dir = Directory.systemTemp.createTempSync('filefin-main-');
     PathProviderPlatform.instance = _FakePathProvider(dir);
+    // The SECOND plugin `main()` now depends on, and the same kind of seam.
+    // Without it `PlatformSecretStore`'s first read throws
+    // `MissingPluginException` (measured, M7.0/E-4) out of F2's cold start,
+    // which is neither a `FileFinApiException` nor anything a launch can do
+    // about.
+    FlutterSecureStorage.setMockInitialValues({});
     addTearDown(() => dir.deleteSync(recursive: true));
   });
 
@@ -57,10 +64,17 @@ void main() {
       '{"servers":[{"id":"a","name":"Attic NAS", '
       '"baseUrl":"http://nas.local","lastUser":"sam","wifiOnly":false,'
       '"allowUnverifiedPlayback":false}],'
-      '"playback":{"progressIntervalSecs":30,"meteredWarnBytes":500000000}}',
+      '"playback":{"progressIntervalSecs":30,"meteredWarnBytes":500000000},'
+      // M7.3's key. Without it the strict decoder discards the whole file
+      // (§13) and this test would assert "No server yet" while believing it
+      // had proved the directory was read.
+      '"selectedServerId":null}',
     );
 
     await entrypoint.main();
+    await tester.pump();
+    // The second frame: a saved server means F2's cold start runs, and only
+    // once its `restore()` has failed does the signed-out screen appear.
     await tester.pump();
 
     expect(find.text('Signed out'), findsOneWidget);
