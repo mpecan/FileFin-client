@@ -1,4 +1,4 @@
-@Timeout(Duration(seconds: 120))
+@Timeout(Duration(seconds: 180))
 library;
 
 import 'dart:async';
@@ -14,11 +14,20 @@ import 'package:media_kit/media_kit.dart';
 import '../test/support/libmpv.dart';
 import 'support/live.dart';
 
-/// `playback_live_test.dart`'s negative control, **in its own process**.
+/// The negative control for `playback_live_test.dart` **and** for
+/// `hls_live_test.dart`, in its own process.
 ///
 /// R1's discipline: a spike whose command cannot fail proves nothing. If the
 /// same open succeeds without the session cookie, the positive test proved that
 /// mpv can read a URL and nothing about authentication.
+///
+/// **Both routes, because both positives claimed the cookie and only one had a
+/// control.** `hls_live_test.dart`'s duration assertion said it was "the
+/// assertion that says the cookie survived onto the segments"; it is not —
+/// removing the header kills that file forty seconds earlier, inside its
+/// measurement, and every one of its five tests reports the same bare
+/// `TimeoutException` (M5.R/T-F5). The falsifiable form is here: an open with
+/// no header at all, bounded, where the *timeout is the pass*.
 ///
 /// **It is a separate FILE because the control is otherwise vacuous, and that
 /// was measured rather than reasoned.** `Media`'s constructor is
@@ -34,8 +43,8 @@ import 'support/live.dart';
 /// cheap, because the failure mode of getting this wrong is a green suite that
 /// checks nothing.
 void main() {
-  late List<String> errors;
-  late Duration? duration;
+  late _Refusal direct;
+  late _Refusal hls;
 
   setUpAll(() async {
     HttpOverrides.global = null;
@@ -45,45 +54,55 @@ void main() {
     final api = await liveApi();
     final categories = await api.categories();
     final films = categories.firstWhere((c) => c.leaf == 'Films');
+    final shows = categories.firstWhere((c) => c.leaf == 'Shows');
     final film = (await api.categoryMedia(films.id)).single;
+    final show = (await api.categoryMedia(shows.id)).single;
 
     final raw = Player();
     final host = MediaKitPlaybackHost(RealMpvPlayer.over(raw));
     addTearDown(host.dispose);
 
-    errors = [];
+    final errors = <String>[];
     final sub = host.errors.listen(errors.add);
     addTearDown(sub.cancel);
 
-    final durationSeen = raw.stream.duration.firstWhere(
-      (d) => d > Duration.zero,
-    );
+    /// One cookie-less open, measured. Sequential on one engine rather than
+    /// two `Player`s: a second mpv context in one process is what
+    /// `hls_live_test.dart`'s header explains the cost of.
+    Future<_Refusal> refuse(MediaId id, String label) async {
+      errors.clear();
+      final durationSeen = raw.stream.duration.firstWhere(
+        (d) => d > Duration.zero,
+      );
+      await host.open(
+        PlaybackRequest(
+          url: api
+              .fileUrl(id, const FileIndex(0))
+              .replace(queryParameters: {'control': label}),
+          headers: const {},
+          startAt: Duration.zero,
+          verifyTls: false,
+        ),
+      );
+      await host.play();
+      // A duration that never arrives is the expected outcome, so the wait is
+      // bounded and its timeout is the *pass* rather than the failure.
+      final duration = await durationSeen
+          .timeout(const Duration(seconds: 15))
+          .then<Duration?>((d) => d)
+          .onError<TimeoutException>((_, _) => null);
+      return _Refusal(duration: duration, errors: [...errors]);
+    }
 
-    await host.open(
-      PlaybackRequest(
-        url: api
-            .fileUrl(film.id, const FileIndex(0))
-            .replace(queryParameters: {'control': 'no-cookie'}),
-        headers: const {},
-        startAt: Duration.zero,
-        verifyTls: false,
-      ),
-    );
-    await host.play();
-
-    // A duration that never arrives is the expected outcome, so the wait is
-    // bounded and its timeout is the *pass* rather than the failure.
-    duration = await durationSeen
-        .timeout(const Duration(seconds: 15))
-        .then<Duration?>((d) => d)
-        .onError<TimeoutException>((_, _) => null);
+    direct = await refuse(film.id, 'no-cookie');
+    hls = await refuse(show.id, 'no-cookie-hls');
   });
 
   test(
     'without the cookie the server refuses and mpv never gets a duration',
     () {
       expect(
-        duration,
+        direct.duration,
         isNull,
         reason:
             'the same open WITH the cookie reports 3 seconds in '
@@ -97,7 +116,34 @@ void main() {
     // libmpv surfaces no status code — a 401 and a missing file are the same
     // sentence — which is exactly why `PlayerController` answers an error by
     // asking `me()` instead of parsing this string.
-    expect(errors, isNotEmpty);
-    expect(errors.first, contains('/file/0'));
+    expect(direct.errors, isNotEmpty);
+    expect(direct.errors.first, contains('/file/0'));
   });
+
+  test('the TRANSCODING route needs it too: no cookie, no duration', () {
+    // The same question on the route that 307s to HLS. The playlist and every
+    // segment sit behind `s.auth` (`server.go:283`), and this is the assertion
+    // `hls_live_test.dart` was wrongly credited with.
+    expect(
+      hls.duration,
+      isNull,
+      reason:
+          'hls_live_test.dart reports 3.023 s for this same file WITH the '
+          'cookie — if this one also succeeds, that file proves nothing '
+          'about authentication either',
+    );
+  });
+
+  test('and the transcoding route says so on the same error stream', () {
+    expect(hls.errors, isNotEmpty);
+    expect(hls.errors.first, contains('/file/0'));
+  });
+}
+
+/// What one cookie-less open produced: no duration, and mpv's own complaint.
+class _Refusal {
+  const _Refusal({required this.duration, required this.errors});
+
+  final Duration? duration;
+  final List<String> errors;
 }

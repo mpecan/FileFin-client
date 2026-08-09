@@ -32,7 +32,7 @@ cd "$(repo_root)"
 # must not be covered by another that gained some.
 SUITES=(
     "packages/filefin_api integration_test dart 43"
-    "apps/mobile test_live flutter 22"
+    "apps/mobile test_live flutter 25"
 )
 BIN="${FILEFIN_BIN:-$HOME/development/filefin-test/filefin}"
 RUN="${FILEFIN_RUN:-$HOME/development/filefin-test/run}"
@@ -117,18 +117,34 @@ done
 # that is still LISTENing — `just it` was measured passing twice with five
 # orphans alive. This reaps disk and processes, which is the real cost, and it
 # runs BEFORE the suite so a failure leaves the evidence in place.
+#
+# **REAPING IS SHARED STATE, and scoping the checkout is not enough.** Two
+# reviewers running this from two checkouts share one `$TMPDIR` and one
+# `$BIN`, so the unscoped version — every `filefin-it-*` directory, every
+# `pgrep -f "$BIN serve"` match — killed the other run's live server and
+# deleted the library out from under it. It reaped one mid-session at M5.R.
+# Both halves are now scoped to things that cannot belong to a live run:
+#
+#   * directories older than an hour. A run in progress created its directory
+#     seconds ago; anything an hour old is from a suite that is long gone.
+#   * processes whose PARENT IS PID 1. A server started by a running suite has
+#     that suite as its parent; one whose suite died has been reparented to
+#     init, and that is the whole of what "orphan" means here. A live
+#     concurrent run is therefore untouchable by construction rather than by
+#     timing.
 reap() {
     local dir pid reaped=0
     while IFS= read -r dir; do
         [ -n "$dir" ] || continue
         rm -rf "$dir" && reaped=$((reaped + 1))
-    done < <(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'filefin-it-*' -type d 2>/dev/null)
+    done < <(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'filefin-it-*' -type d -mmin +60 2>/dev/null)
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
+        [ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')" = "1" ] || continue
         kill "$pid" 2>/dev/null || true
         reaped=$((reaped + 1))
     done < <(pgrep -f "$BIN serve" 2>/dev/null || true)
-    [ "$reaped" -gt 0 ] && echo "it: reaped $reaped stale server(s)/directory(ies)"
+    [ "$reaped" -gt 0 ] && echo "it: reaped $reaped orphaned server(s)/stale directory(ies)"
     return 0
 }
 reap
