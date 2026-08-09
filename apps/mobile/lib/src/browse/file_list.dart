@@ -8,6 +8,11 @@ import 'package:flutter/material.dart';
 /// adds to it, and a gate warning may fall or hold and never rise. The split
 /// is by subject — a file row knows nothing about watch state — so `jscpd` has
 /// nothing to find and the two halves stay readable.
+///
+/// **`path` is displayed AS-IS or not at all.** It is relative to the server's
+/// data directory (M2's finding C3), so joining it with anything — a base URL,
+/// a local directory — produces a path that addresses nothing and looks like
+/// it should.
 class FileList extends StatelessWidget {
   /// Lists [files]; [onPlay] starts one, or null when playback is unavailable.
   const FileList({required this.files, this.onPlay, super.key});
@@ -31,10 +36,6 @@ class FileList extends StatelessWidget {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(fileLabel(file)),
-              // `path` is displayed AS-IS or not at all. It is relative to the
-              // server's data directory (M2's finding C3), so joining it with
-              // anything — a base URL, a local directory — produces a path
-              // that addresses nothing and looks like it should.
               subtitle: file.path.isEmpty ? null : Text(file.path),
               trailing: Text(humanSize(file.size)),
               onTap: onPlay == null ? null : () => onPlay!(file.index),
@@ -65,16 +66,17 @@ String fileLabel(FileInfo file) {
 /// `size` is the only bandwidth signal the API gives (SPEC.md §3.3), so it is
 /// worth showing rather than hiding — F13's metered guard is built on the same
 /// number at M4.
+///
+/// **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** It
+/// divided by 1024 under those labels until M4.R/P7, which understated every
+/// size by 2.4% per step: `PlaybackPrefs`' own default of `500 * 1000 * 1000`
+/// came out of the settings dropdown as **"477 MB"** — an option the user
+/// never chose, offered as if they had. The thresholds this renders are
+/// written in powers of 1000, so decimal is the base the values are already
+/// in; relabelling to KiB/MiB/GiB would have been correct arithmetic showing a
+/// unit nobody picked. Routed through one constant so the two divisions cannot
+/// disagree, exactly as `formatPosition`'s `perMinute` is.
 String humanSize(int bytes) {
-  // **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** It
-  // divided by 1024 under those labels until M4.R/P7, which understated every
-  // size by 2.4% per step: `PlaybackPrefs`' own default of `500 * 1000 * 1000`
-  // came out of the settings dropdown as **"477 MB"** — an option the user
-  // never chose, offered as if they had. The thresholds this renders are
-  // written in powers of 1000, so decimal is the base the values are already
-  // in; relabelling to KiB/MiB/GiB would have been correct arithmetic showing
-  // a unit nobody picked. Routed through one constant so the two divisions
-  // cannot disagree, exactly as `formatPosition`'s `perMinute` is.
   const perUnit = 1000;
   if (bytes < perUnit) return '$bytes B';
   const units = ['kB', 'MB', 'GB', 'TB'];

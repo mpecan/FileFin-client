@@ -6,6 +6,8 @@ import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
 import 'package:filefin_mobile/src/browse/file_list.dart';
 import 'package:filefin_mobile/src/browse/poster_image_provider.dart';
+import 'package:filefin_mobile/src/browse/watch_actions.dart';
+import 'package:filefin_mobile/src/browse/watch_state_controls.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
     show PlaybackOutcome;
@@ -57,6 +59,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         (token) => widget.api.mediaDetail(widget.item.id, cancelToken: token),
       );
 
+  late final WatchActions _watch = WatchActions(
+    api: widget.api,
+    publish: _controller.replace,
+  );
+
   final _posterToken = CancelToken();
 
   @override
@@ -68,6 +75,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   @override
   void dispose() {
     _posterToken.cancel();
+    _watch.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -106,8 +114,24 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     );
   }
 
+  /// Pops with whether anything was written, so the home rows can be reloaded.
+  ///
+  /// **`canPop: false` and an explicit pop, because the ordinary back
+  /// affordances carry no result.** A `Scaffold`'s own back button and the
+  /// system gesture both call `Navigator.maybePop(context)` with nothing, so a
+  /// route pushed as `push<bool>` would receive null on every normal exit and
+  /// the home rows would stay stale exactly when a write had happened.
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => PopScope<bool>(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (didPop) return;
+      Navigator.of(context).pop(_watch.wrote);
+    },
+    child: _scaffold(context),
+  );
+
+  Widget _scaffold(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(
         widget.item.title.isEmpty ? 'Untitled' : widget.item.title,
@@ -153,6 +177,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           _Pairs(label: 'Details', pairs: detail.metadata),
           _Pairs(label: 'Ratings', pairs: detail.ratings),
           _Pairs(label: 'Technical', pairs: detail.technical),
+          WatchStateControls(detail: detail, actions: _watch),
           if (widget.onPlay != null)
             PlayButtons(
               detail: detail,
