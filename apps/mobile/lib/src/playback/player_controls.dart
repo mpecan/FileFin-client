@@ -90,7 +90,11 @@ class PlayerControls extends StatelessWidget {
             const Icon(Icons.volume_up, size: 20),
             Expanded(
               child: Slider(
-                value: 1,
+                // The controller's value, never a literal: `value: 1` made
+                // the thumb snap back to full on the next rebuild while mpv
+                // held the dragged value, and mutating the literal to 0 left
+                // all 149 playback tests green (M4.R/P6).
+                value: controller.volume,
                 onChanged: controller.setVolume,
               ),
             ),
@@ -131,6 +135,15 @@ class _AudioMenu extends StatelessWidget {
 }
 
 /// The sidecar subtitles, plus Off.
+///
+/// **`onSelected` re-reads `controller.subtitles`, so it can be a different
+/// list from the one `itemBuilder` numbered**, and the guard below is what
+/// makes that survivable. `PlayerController._open()` replaces the list
+/// wholesale and `_recover()` calls `_open()` asynchronously on any mpv error,
+/// so an error while the menu is open followed by a tap on the last row
+/// indexed past the end and threw a `RangeError` out of a callback. Third
+/// instance of the same shape as the clamp-before-guard bug: a value computed
+/// against one state, applied to another (M4.R/T9).
 class _SubtitleMenu extends StatelessWidget {
   const _SubtitleMenu({required this.controller});
 
@@ -140,7 +153,9 @@ class _SubtitleMenu extends StatelessWidget {
   Widget build(BuildContext context) => PopupMenuButton<int>(
     tooltip: 'Subtitles',
     onSelected: (index) => controller.selectSubtitle(
-      index < 0 ? null : controller.subtitles[index],
+      index < 0 || index >= controller.subtitles.length
+          ? null
+          : controller.subtitles[index],
     ),
     itemBuilder: (_) => [
       const PopupMenuItem(value: -1, child: Text('Off')),

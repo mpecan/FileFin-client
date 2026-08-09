@@ -67,6 +67,17 @@ class AsyncController<T> extends ChangeNotifier {
     }
   }
 
+  /// Publishes [value] as the current data, with no fetch.
+  ///
+  /// **F9's "without a full refetch" needs exactly this and nothing more.** The
+  /// player hands its screen a state folded through the server's own engine,
+  /// and re-reading the detail to display it would be the round trip F9 says
+  /// not to make. It does not touch [_token]: the only caller runs from a
+  /// completed route, long after `initState`'s load has published, so there is
+  /// no in-flight request for a later publish to lose a race with — and a
+  /// cancel here would be a branch no test could reach.
+  void replace(T value) => _publish(UiData<T>(value));
+
   /// Cancels in flight work and refuses to notify afterwards (NF5).
   ///
   /// `ChangeNotifier` asserts on `notifyListeners()` after disposal, so without

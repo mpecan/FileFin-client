@@ -1,5 +1,7 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
+import 'package:filefin_mobile/src/playback/player_controller.dart'
+    show PlaybackOutcome;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -49,8 +51,10 @@ void main() {
               id: MediaId('e4285edb34d5'),
               title: 'Direct Play Movie',
             ),
-            onPlay: (_, file, startAt) =>
-                played.add('${file.value}@${startAt.inSeconds}'),
+            onPlay: (_, file, startAt) async {
+              played.add('${file.value}@${startAt.inSeconds}');
+              return null;
+            },
           ),
         ),
       );
@@ -131,6 +135,100 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Play'), findsNothing);
+    });
+  });
+
+  group('F9 — what the player leaves behind reaches the screen', () {
+    const item = MediaSummary(
+      id: MediaId('e4285edb34d5'),
+      title: 'Direct Play Movie',
+    );
+    const detail = MediaDetail(
+      id: MediaId('e4285edb34d5'),
+      title: 'Direct Play Movie',
+      files: [FileInfo(name: 'File 0', size: 10)],
+    );
+
+    Future<void> pumpWithOutcome(
+      WidgetTester tester,
+      PlaybackOutcome? outcome,
+    ) async {
+      api.mediaDetailResult = detail;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaDetailPage(
+            api: api,
+            item: item,
+            onPlay: (_, _, _) async => outcome,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Play'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the prediction is applied WITHOUT a second fetch', (
+      tester,
+    ) async {
+      // F9's second clause, and until M4.R/P3 nothing in the app read it: the
+      // fold was computed, validated against 601 captured vectors and thrown
+      // away, so coming back from the player showed the offset from before
+      // playback started.
+      await pumpWithOutcome(
+        tester,
+        const PlaybackOutcome(
+          state: WatchState(
+            pointer: ResumePointer(file: FileIndex(0), seconds: 125),
+          ),
+          needsDetailRefetch: false,
+        ),
+      );
+
+      expect(find.text('Continue 2:05'), findsOneWidget);
+      expect(
+        api.calls.where((c) => c.startsWith('mediaDetail')),
+        hasLength(1),
+        reason: 'F9 says reflect it locally, without a full refetch',
+      );
+    });
+
+    testWidgets('a diverged prediction is re-read instead of trusted', (
+      tester,
+    ) async {
+      // M1's latch, discharged. `applyProgress` cannot match the server for a
+      // crossing report on a single-file item — `(0, 0)` on the wire cannot
+      // say whether the pointer is fresh or absent — so this is the one input
+      // class that pays for a round trip rather than predicting.
+      api.mediaDetailResult = detail;
+      await pumpWithOutcome(
+        tester,
+        const PlaybackOutcome(
+          state: WatchState(
+            pointer: ResumePointer(file: FileIndex(0), seconds: 95),
+          ),
+          needsDetailRefetch: true,
+        ),
+      );
+
+      expect(
+        api.calls.where((c) => c.startsWith('mediaDetail')),
+        hasLength(2),
+      );
+      // The SERVER's answer, not the prediction's 1:35.
+      expect(find.text('Play'), findsOneWidget);
+    });
+
+    testWidgets('a route that popped without an outcome changes nothing', (
+      tester,
+    ) async {
+      await pumpWithOutcome(tester, null);
+
+      expect(find.text('Play'), findsOneWidget);
+      expect(
+        api.calls.where((c) => c.startsWith('mediaDetail')),
+        hasLength(1),
+      );
     });
   });
 }

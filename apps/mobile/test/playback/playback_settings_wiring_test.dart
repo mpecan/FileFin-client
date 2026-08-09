@@ -150,6 +150,11 @@ void main() {
     // The whole point of the toggle: what it changes has to be visible in the
     // running app, not only in the file. Turning it on and opening the player
     // is the shortest path from the setting to its consequence.
+    //
+    // The transport is set because the banner is keyed on it as well as on the
+    // setting (M4.R/P5): `pinnedTls` is the one case where the sentence it
+    // shows is true, and it is the only case D10's refusal exists for.
+    api.transport = PlaybackTransport.pinnedTls;
     await signIn(tester);
     await tester.tap(find.byTooltip('Playback settings'));
     await tester.pumpAndSettle();

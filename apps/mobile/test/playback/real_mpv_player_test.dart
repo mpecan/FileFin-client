@@ -5,6 +5,10 @@ import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
+// The `Video` widget itself, for the one assertion that pins `buildSurface`.
+// `app_no_raw_http` gates `package:media_kit` under `apps/*/lib` only, which
+// is the whole point of that gate: a test may name what production may not.
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../support/libmpv.dart';
 
@@ -24,6 +28,12 @@ import '../support/libmpv.dart';
 /// answers; real bytes, real decode and a real cookie are `test_live/`'s job
 /// (`just it`), against the real server.
 void main() {
+  // Needed by `buildSurface` below and by nothing else here. `VideoController`
+  // reaches for `WidgetsBinding.instance` on its first statement, and this file
+  // is all plain `test()` bodies, which never bring a binding up on their own.
+  // Initialising one is NOT pumping: `addPostFrameCallback` still never runs.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(ensureLibmpv);
 
   late Player raw;
@@ -87,6 +97,42 @@ void main() {
     );
 
     expect(raw.state.track.subtitle.data, isTrue);
+  });
+
+  test('buildSurface returns a Video, and memoises one controller', () {
+    // **`VideoController(player)` does NOT hang, and the ratchet raise that
+    // said it did was unnecessary (M4.R/G1).** `media_kit_video`'s constructor
+    // body is a fire-and-forget `() async { … }()` closure
+    // (`video_controller.dart:71`) whose first statement awaits
+    // `addPostFrameCallback` — which never runs unless a frame is pumped. The
+    // constructor therefore returns synchronously and `Video` is `const`.
+    // M4.0's original measurement ("a probe that PUMPED a `Video` never
+    // returned") is accurate; `tool/coverage-gate.sh` generalised it from
+    // pumping to constructing, and coverage only ever needed the latter.
+    //
+    // Not a tautology either: the second assertion is the only thing in the
+    // tree that pins the `??=` memo, and without it two calls would hand two
+    // controllers to one `Player`.
+    //
+    // **Its own `Player`, deliberately never disposed**, and that is the part
+    // the review's own demo would have tripped over. `VideoController` sets
+    // `player.platform.isVideoControllerAttached = true` in its first
+    // statement, and `Player.dispose()` then awaits `videoControllerCompleter`
+    // — which is only completed at the END of that fire-and-forget closure,
+    // still parked on `addPostFrameCallback`. Measured three ways at M4.R:
+    // constructing a `VideoController` returns, building the `Video` returns,
+    // **disposing the player afterwards never does**. So the shared `player`
+    // from `setUp` cannot be used here: its `tearDown` would hang and take
+    // every test after it in this file with it (measured: four timeouts).
+    // One leaked mpv context for the rest of the process is what these two
+    // lines of coverage cost.
+    final surfaced = RealMpvPlayer.over(Player());
+    final surface = surfaced.buildSurface();
+    expect(surface, isA<Video>());
+    expect(
+      (surfaced.buildSurface() as Video).controller,
+      same((surface as Video).controller),
+    );
   });
 
   test('the default constructor loads libmpv before building the player', () {

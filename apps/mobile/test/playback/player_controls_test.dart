@@ -277,13 +277,105 @@ void main() {
     expect(controller.subtitle?.label, 'English');
   });
 
-  testWidgets('the volume slider reaches the engine', (tester) async {
+  testWidgets('the volume slider reaches the engine AND shows where it is', (
+    tester,
+  ) async {
     await pumpControls(tester);
+    Slider volume() => tester.widget<Slider>(find.byType(Slider).last);
+    expect(volume().value, 1.0);
 
     await tester.drag(find.byType(Slider).last, const Offset(-100, 0));
     await tester.pumpAndSettle();
 
     expect(host.calls.where((c) => c.startsWith('setVolume')), isNotEmpty);
+    // M4.R/P6: `value:` was the literal `1`, so the thumb snapped back to full
+    // on the next rebuild while mpv held the dragged value — and mutating that
+    // literal to `0` left all 149 playback tests green.
+    expect(controller.volume, lessThan(1.0));
+    expect(volume().value, controller.volume);
+  });
+
+  // M4.R/T9. `itemBuilder` numbers ONE snapshot of `controller.subtitles`;
+  // `onSelected` reads a LATER one. `PlayerController._open()` replaces the
+  // list wholesale — on `next()`, and asynchronously from `_recover()` on any
+  // mpv error — so a menu built over two sidecars and left open across an
+  // advance indexes past the end on its last row and throws a `RangeError` out
+  // of a callback. Same shape as the clamp-before-guard bug: a value computed
+  // against one state, applied to another.
+  //
+  // **Both sides of the boundary, and `just mutants` is why there are two.**
+  // With only the "one shorter" case `index >= length` and `index > length`
+  // answer alike; with only the "gone entirely" case `>=` and `==` do. Neither
+  // test alone pins the operator.
+  void useShowWhoseNextFileHas(List<SubtitleInfo> subtitles) {
+    controller.dispose();
+    controller = PlayerController(
+      api: api,
+      host: host,
+      network: FakeNetworkStatus(),
+      detail: MediaDetail(
+        id: _id,
+        title: 'Show',
+        files: [
+          const FileInfo(
+            subtitles: [
+              SubtitleInfo(label: 'English'),
+              SubtitleInfo(index: SubtitleIndex(1), label: 'Slovenian'),
+            ],
+          ),
+          FileInfo(index: const FileIndex(1), subtitles: subtitles),
+        ],
+      ),
+      server: SavedServer(
+        id: const ServerId('home'),
+        name: 'Home',
+        baseUrl: Uri.parse('http://nas.local'),
+      ),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+  }
+
+  Future<void> tapSlovenianAcrossAnAdvance(WidgetTester tester) async {
+    await controller.start();
+    await pumpControls(tester);
+    await tester.tap(find.byIcon(Icons.subtitles));
+    await tester.pumpAndSettle();
+    expect(find.text('Slovenian'), findsOneWidget);
+
+    await controller.next();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Slovenian'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a subtitle row one past the shortened list turns them off', (
+    tester,
+  ) async {
+    // Tapped index EQUALS the new length: 1 into a list of 1.
+    useShowWhoseNextFileHas(const [SubtitleInfo(label: 'English')]);
+
+    await tapSlovenianAcrossAnAdvance(tester);
+
+    expect(controller.subtitles, hasLength(1));
+    expect(tester.takeException(), isNull);
+    expect(controller.subtitle, isNull);
+  });
+
+  testWidgets('a subtitle row well past the emptied list turns them off', (
+    tester,
+  ) async {
+    // Tapped index EXCEEDS the new length: 1 into a list of 0.
+    useShowWhoseNextFileHas(const []);
+
+    await tapSlovenianAcrossAnAdvance(tester);
+
+    expect(controller.subtitles, isEmpty);
+    expect(tester.takeException(), isNull);
+    expect(controller.subtitle, isNull);
   });
 
   testWidgets('NF6 — hidden and inactive both report, resumed does not', (

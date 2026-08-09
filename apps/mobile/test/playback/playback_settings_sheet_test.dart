@@ -141,9 +141,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // The exact labels, because the arithmetic that produces them is what a
-    // mutation would change: `100 * 1024 * 1024` and `100 / 1024 / 1024` are
+    // mutation would change: `100 * 1000 * 1000` and `100 / 1000 / 1000` are
     // both "a number" and only one of them is 100 MB.
-    for (final label in ['100 MB', '477 MB', '1.0 GB', '4.0 GB']) {
+    for (final label in ['100 MB', '500 MB', '1.0 GB', '4.0 GB']) {
       expect(find.text(label), findsWidgets, reason: label);
     }
   });
@@ -156,7 +156,7 @@ void main() {
     await tester.tap(find.text('1.0 GB').last);
     await tester.pumpAndSettle();
 
-    expect(changes.single.$2.meteredWarnBytes, 1024 * 1024 * 1024);
+    expect(changes.single.$2.meteredWarnBytes, 1000 * 1000 * 1000);
     expect(
       changes.single.$2.progressIntervalSecs,
       30,

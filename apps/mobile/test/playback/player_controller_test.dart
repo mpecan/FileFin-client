@@ -358,7 +358,7 @@ void main() {
 
       expect(api.reports.last.event, ProgressEvent.ended);
       expect(api.reports.last.position, 100.0);
-      expect(controller.watchState.watched, isTrue);
+      expect(controller.outcome.state.watched, isTrue);
     });
 
     test('closing the route reports a stop, awaited', () async {

@@ -66,14 +66,17 @@ class PlayerController extends ChangeNotifier {
   Duration _startAt;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  var _volume = 1.0;
   var _playing = false;
+  var _positionIsCurrent = false;
   PlaybackTracks _tracks = PlaybackTracks.empty;
   var _subtitles = <SubtitleSource>[];
   SubtitleSource? _subtitle;
   PlaybackDecision? _decision;
+  NetworkType? _sample;
   String? _failure;
   var _needsSignIn = false;
-  var _recovering = false;
+  var _retrySpent = false;
   var _disposed = false;
 
   /// Which file of the item is playing.
@@ -87,6 +90,9 @@ class PlayerController extends ChangeNotifier {
 
   /// Whether the engine is playing.
   bool get playing => _playing;
+
+  /// Where the volume slider is, `0.0`–`1.0`. Full until someone moves it.
+  double get volume => _volume;
 
   /// The audio tracks the engine found (F7).
   PlaybackTracks get tracks => _tracks;
@@ -109,11 +115,11 @@ class PlayerController extends ChangeNotifier {
   /// Why progress reporting stopped, or null while it is running.
   ReportStop? get reportStop => _reporter.stopped;
 
-  /// Whether the detail must be re-read rather than trusted (M1's divergence).
-  bool get needsDetailRefetch => _reporter.needsDetailRefetch;
-
-  /// The optimistic watch state, folded through the server's own engine.
-  WatchState get watchState => _reporter.state;
+  /// What the screen that pushed the player has to know on the way out (F9).
+  PlaybackOutcome get outcome => PlaybackOutcome(
+    state: _reporter.state,
+    needsDetailRefetch: _reporter.needsDetailRefetch,
+  );
 
   /// Whether there is another file after this one (F7's Next).
   bool get hasNext => _current.value + 1 < detail.files.length;
@@ -126,10 +132,20 @@ class PlayerController extends ChangeNotifier {
   /// **The network is sampled once, here.** SPEC F13 says "before playing", and
   /// a mid-playback switch from Wi-Fi to cellular is out of scope — stated as
   /// debt rather than half-handled.
-  Future<void> start() async {
+  Future<void> start() => _decideAndOpen();
+
+  /// F13 asked again, for whichever file is now current.
+  ///
+  /// **`fileInfo.size` is per file and F13 is written per file**, so this runs
+  /// for every file rather than only the first: a 10-byte episode 1 followed by
+  /// a 9 GiB episode 2 opened with no prompt at all before [next] came through
+  /// here (M4.R/P4). The *sample* stays once-per-session — that is the debt
+  /// STATE.md names, and re-sampling here would quietly retire it — so the
+  /// answer is memoised rather than re-taken.
+  Future<void> _decideAndOpen() async {
     final decision = decide(
       file,
-      await network.current(),
+      _sample ??= await network.current(),
       PlaybackSettings(
         wifiOnly: server.wifiOnly,
         meteredWarnBytes: prefs.meteredWarnBytes,
@@ -159,13 +175,37 @@ class PlayerController extends ChangeNotifier {
   /// file is playing" — and that index is what every progress report is keyed
   /// on. The cost is no gapless preload, which is stated in STATE.md rather
   /// than discovered.
+  ///
+  /// The reset in [_switchTo] is what keeps that single source of truth
+  /// honest, and it was data corruption before it existed — see there.
   Future<void> next() async {
     if (!hasNext) return;
     await _reportNow(ProgressEvent.stop);
-    _current = FileIndex(_current.value + 1);
+    _switchTo(FileIndex(_current.value + 1));
     _startAt = Duration.zero;
     _notify();
-    await _open();
+    await _decideAndOpen();
+  }
+
+  /// Moves to [file], discarding everything that described the old one.
+  ///
+  /// **`_position` and `_duration` are keyed on `_current`**, and leaving them
+  /// behind was user-visible data corruption (M4.R/P1): against real libmpv the
+  /// first event after a second `open()` is deterministically `playing=false`,
+  /// *before* any position or duration event, so the pause it triggers carried
+  /// the finished file's seconds under the new file's index. Tapping Next at
+  /// the end of an episode posted `{"file":1,"position":2.9,"duration":3}` and
+  /// marked the whole show watched.
+  ///
+  /// Zeroing them is necessary and not sufficient, so [_positionIsCurrent]
+  /// suppresses the report outright until the engine has said where the new
+  /// file is: a report of second 0 is still a claim about a file nothing has
+  /// measured, and it would overwrite a pointer the server already holds.
+  void _switchTo(FileIndex file) {
+    _current = file;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _positionIsCurrent = false;
   }
 
   /// Seeks, then reports — `onChangeEnd`, never during a drag.
@@ -180,7 +220,15 @@ class PlayerController extends ChangeNotifier {
   Future<void> togglePlay() => _playing ? host.pause() : host.play();
 
   /// Sets the volume, `0.0`–`1.0`.
-  Future<void> setVolume(double volume) => host.setVolume(volume);
+  ///
+  /// Kept here because the slider has to draw it: a `Slider` whose `value` was
+  /// the literal `1` snapped its thumb back to full on the very next rebuild
+  /// while mpv held the dragged value (M4.R/P6).
+  Future<void> setVolume(double volume) {
+    _volume = volume;
+    _notify();
+    return host.setVolume(volume);
+  }
 
   /// Switches audio track (F7).
   Future<void> selectAudio(PlaybackTrackRef track) =>
@@ -286,13 +334,17 @@ class PlayerController extends ChangeNotifier {
       }),
       host.position.listen((p) {
         _position = p;
+        _positionIsCurrent = true;
+        // Playback is demonstrably running again, so the next failure gets its
+        // own retry. See [_recover].
+        _retrySpent = false;
         _notify();
         unawaited(_report(ProgressEvent.checkpoint));
       }),
       host.playing.listen((p) {
         _playing = p;
         _notify();
-        if (!p) unawaited(_report(ProgressEvent.pause));
+        if (!p && _positionIsCurrent) unawaited(_report(ProgressEvent.pause));
       }),
       host.completed.listen((done) {
         if (!done) return;
@@ -312,15 +364,35 @@ class PlayerController extends ChangeNotifier {
   /// A 401 and a missing file produce the same sentence from mpv. One `me()`
   /// separates them: if it succeeds the session was fine — or F3 has just
   /// renewed it — so re-opening once is worth a try; if it fails the user has
-  /// to sign in. The flag guard is what stops a genuinely broken file from
-  /// looping.
+  /// to sign in.
+  ///
+  /// **The retry is spent until playback demonstrably resumes**, which is what
+  /// a position tick says and nothing else does. The guard used to latch for
+  /// the controller's whole life and [message] was never read, so two things
+  /// were wrong at once (M4.R/P2): a genuinely broken file gave a **black
+  /// player with no text on it**, which is the opposite of what F12 asks for;
+  /// and a session dying mid-film after any earlier transient error never
+  /// reached `api.me()` again, so it never routed to sign-in. Spending the
+  /// retry still stops the loop — a file that cannot play never ticks.
   Future<void> _recover(String message) async {
-    if (_recovering || _disposed) return;
-    _recovering = true;
+    if (_disposed) return;
+    if (_retrySpent) {
+      // mpv's own words. It is all there is: no status code reaches here.
+      _failure = message;
+      _notify();
+      return;
+    }
+    // Set before the first await, so three errors arriving together produce
+    // one retry and two messages rather than three retries.
+    _retrySpent = true;
     try {
       await api.me();
       _reporter.resume();
-      _startAt = _position;
+      // Only where a tick has actually been, for the reason [_switchTo] gives:
+      // `_position` describes nothing until the engine has said so, and
+      // overwriting `_startAt` with it threw away F8's resume offset when the
+      // very first open failed.
+      if (_positionIsCurrent) _startAt = _position;
       await _open();
     } on FileFinApiException catch (e) {
       _fail(e);
@@ -349,6 +421,36 @@ class PlayerController extends ChangeNotifier {
   void _notify() {
     if (!_disposed) notifyListeners();
   }
+}
+
+/// What one playback session leaves behind for the screen that opened it.
+///
+/// **This is F9's second clause made into a value someone receives** — "reflect
+/// resulting watched/continue changes locally without a full refetch". Until
+/// M4.R/P3 `ProgressReporter.state` and `needsDetailRefetch` had no production
+/// reader at all: the fold was computed, validated against 601 captured vectors
+/// and thrown away, `MediaDetailPage` loaded once in `initState` and never
+/// again, and the detail screen behind the player showed a resume offset from
+/// before playback started. M1's divergence latch discharged nothing because
+/// nothing read it.
+@immutable
+class PlaybackOutcome {
+  /// The session ended with [state], needing a refetch or not.
+  const PlaybackOutcome({
+    required this.state,
+    required this.needsDetailRefetch,
+  });
+
+  /// The optimistic watch state, folded through the server's own engine.
+  final WatchState state;
+
+  /// Whether [state] is known to have diverged and must be re-read instead.
+  ///
+  /// True only for the one input class `applyProgress` provably cannot match —
+  /// a report crossing 90% of a single-file item, where `(0, 0)` is ambiguous
+  /// on the wire. Everywhere else the prediction IS the server's answer, which
+  /// is what makes the no-refetch half of F9 honest rather than optimistic.
+  final bool needsDetailRefetch;
 }
 
 /// The sentence a playback failure shows, and whether it needs a sign-in.

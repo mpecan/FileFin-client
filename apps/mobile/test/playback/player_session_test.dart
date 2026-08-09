@@ -38,6 +38,7 @@ final Uri _url = Uri.parse(
 MediaDetail _detail({
   int files = 1,
   int size = 10,
+  List<int>? sizes,
   bool transcode = false,
   List<SubtitleInfo> subtitles = const [],
 }) => MediaDetail(
@@ -47,7 +48,7 @@ MediaDetail _detail({
     for (var i = 0; i < files; i++)
       FileInfo(
         index: FileIndex(i),
-        size: size,
+        size: sizes == null ? size : sizes[i],
         transcode: transcode,
         subtitles: i == 0 ? subtitles : const [],
       ),
@@ -124,6 +125,117 @@ void main() {
 
       expect(host.opened, hasLength(1));
     });
+
+    test('the old position is never posted under the new file', () async {
+      // M4.R/P1, and it was user-visible data corruption. Against real libmpv
+      // the first event after a second `open()` is deterministically
+      // `playing=false`, BEFORE any position or duration event:
+      //   playing=false / position=0 / duration=0 / playing=true / duration=3s
+      // With `_position` still holding the finished file's 2.9 s that pause was
+      // posted as `{"file":1,"position":2.9,"duration":3}` — 2.9/3.0 is past
+      // the 0.90 threshold on the LAST file, so tapping Next at the end of
+      // episode 1 marked the whole show watched. Replayed against a real
+      // v0.20.3 server: `VIEW watched=True perFile=[True, True]`.
+      final controller = controllerFor(detail: _detail(files: 2));
+      await controller.start();
+      host
+        ..emitDuration(const Duration(seconds: 3))
+        ..emitPosition(const Duration(milliseconds: 2900));
+      await pumpEventQueue();
+
+      await controller.next();
+      host.emitPlaying(value: false);
+      await pumpEventQueue();
+
+      expect(controller.outcome.state.watched, isFalse);
+      expect(
+        api.reports.where((r) => r.file == const FileIndex(1)),
+        isEmpty,
+        reason: 'nothing describes a file that has not reported a tick yet',
+      );
+      expect(controller.position, Duration.zero);
+      expect(controller.duration, Duration.zero);
+    });
+
+    test('a duration alone does not say where the new file is', () async {
+      // Zeroing the two fields is necessary and NOT sufficient. mpv reports the
+      // new file's length while loading it, and `playing == false` still
+      // arrives before the first position tick — so without the suppression
+      // this posts `{"file":1,"position":0,"duration":100}`, a claim about a
+      // file nothing has measured that overwrites the pointer the server holds.
+      final controller = controllerFor(detail: _detail(files: 2));
+      await controller.start();
+      host
+        ..emitDuration(const Duration(seconds: 100))
+        ..emitPosition(const Duration(seconds: 40));
+      await pumpEventQueue();
+
+      await controller.next();
+      host
+        ..emitDuration(const Duration(seconds: 100))
+        ..emitPlaying(value: false);
+      await pumpEventQueue();
+
+      expect(api.reports.where((r) => r.file == const FileIndex(1)), isEmpty);
+    });
+
+    test('the new file reports normally once it has ticked', () async {
+      // The other direction of the guard above: suppressing the pause until a
+      // tick arrives must not suppress it for the file's whole life.
+      final controller = controllerFor(detail: _detail(files: 2));
+      await controller.start();
+      host
+        ..emitDuration(const Duration(seconds: 100))
+        ..emitPosition(const Duration(seconds: 40));
+      await pumpEventQueue();
+
+      await controller.next();
+      host
+        ..emitDuration(const Duration(seconds: 100))
+        ..emitPosition(const Duration(seconds: 5))
+        // Inside the interval, so it sends nothing — which makes the pause
+        // below the first report of second 6, the case that matters.
+        ..emitPosition(const Duration(seconds: 6));
+      await pumpEventQueue();
+
+      host.emitPlaying(value: false);
+      await pumpEventQueue();
+
+      expect(api.reports.last.event, ProgressEvent.pause);
+      expect(api.reports.last.file, const FileIndex(1));
+      expect(api.reports.last.position, 6.0);
+    });
+
+    test('F13 is asked again for a file with its own size', () async {
+      // M4.R/P4: `next()` went straight to `_open()`, so F13 saw the FIRST
+      // file and no other. Measured with a 10-byte episode 1 and a 9 GiB
+      // episode 2 on a metered connection — file 1 opened with no prompt.
+      final controller = controllerFor(
+        detail: _detail(files: 2, sizes: [10, 900 * 1000 * 1000]),
+      );
+      network.answer = NetworkType.metered;
+
+      await controller.start();
+      expect(controller.decision, isA<PlayDirect>());
+
+      await controller.next();
+
+      expect(
+        controller.decision,
+        isA<ConfirmLargeOnMetered>().having(
+          (c) => c.bytes,
+          'bytes',
+          900 * 1000 * 1000,
+        ),
+      );
+      expect(host.opened, hasLength(1), reason: 'the big file waits');
+      // The sample stays once-per-session; only the DECISION is re-taken.
+      expect(network.samples, 1);
+
+      await controller.confirmLargeOnMetered();
+
+      expect(host.opened.last.url.path, '/api/media/e4285edb34d5/file/1');
+    });
   });
 
   group('NF6 — the lifecycle report is what survives an OS kill', () {
@@ -184,13 +296,29 @@ void main() {
       await pumpEventQueue();
 
       host
-        ..emitError('Failed to open.')
-        ..emitError('Failed to open.')
-        ..emitError('Failed to open.');
+        ..emitError('Failed to open http://nas.local/f: 404 Not Found.')
+        ..emitError('Failed to open http://nas.local/f: 404 Not Found.')
+        ..emitError('Failed to open http://nas.local/f: 404 Not Found.');
       await pumpEventQueue();
 
       expect(api.calls.where((c) => c == 'me'), hasLength(1));
       expect(controller.needsSignIn, isFalse);
+      // F12: mpv's own words reach the screen. Before M4.R/P2 `message` was
+      // never read at all, so a broken file left a black player saying
+      // nothing whatever.
+      expect(controller.failure, contains('404 Not Found'));
+    });
+
+    test("a retry before the first tick keeps F8's resume offset", () async {
+      // `_startAt = _position` with no tick yet threw away the offset the
+      // detail screen resumed from and restarted the film (M4.R/P2).
+      final controller = controllerFor(startAt: const Duration(seconds: 42));
+      await controller.start();
+
+      host.emitError('Failed to open.');
+      await pumpEventQueue();
+
+      expect(host.opened.last.startAt, const Duration(seconds: 42));
     });
 
     test('a dead session routes to sign-in rather than retrying', () async {
@@ -203,6 +331,30 @@ void main() {
 
       expect(controller.needsSignIn, isTrue);
       expect(controller.failure, isNotNull);
+    });
+
+    test('a session dying AFTER an earlier error still signs in', () async {
+      // M4.R/P2's second half: the guard latched for the controller's whole
+      // life, so one transient error anywhere earlier meant a session that
+      // died mid-film never reached `me()` again and never routed to sign-in.
+      final controller = controllerFor();
+      await controller.start();
+      host
+        ..emitDuration(const Duration(seconds: 100))
+        ..emitError('Failed to open.');
+      await pumpEventQueue();
+      expect(controller.needsSignIn, isFalse);
+
+      // Playback resumed: the retry is no longer spent.
+      host.emitPosition(const Duration(seconds: 30));
+      await pumpEventQueue();
+
+      api.meResult = SessionExpired(_url);
+      host.emitError('Failed to open.');
+      await pumpEventQueue();
+
+      expect(controller.needsSignIn, isTrue);
+      expect(api.calls.where((c) => c == 'me'), hasLength(2));
     });
   });
 
@@ -231,7 +383,7 @@ void main() {
       host.emitCompleted();
       await pumpEventQueue();
 
-      expect(controller.needsDetailRefetch, isTrue);
+      expect(controller.outcome.needsDetailRefetch, isTrue);
     });
   });
 

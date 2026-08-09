@@ -100,7 +100,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) => PopScope<PlaybackOutcome>(
     canPop: false,
     onPopInvokedWithResult: (didPop, _) async {
       if (didPop) return;
@@ -111,7 +111,11 @@ class _PlayerPageState extends State<PlayerPage> {
         const Duration(seconds: 2),
         onTimeout: () {},
       );
-      if (context.mounted) Navigator.of(context).pop();
+      // The outcome is READ AFTER that final report, which is the whole reason
+      // it is awaited: the last `stop` is what moves the pointer to where the
+      // user actually stopped, and a value taken before it would hand the
+      // detail screen a state one report out of date (F9).
+      if (context.mounted) Navigator.of(context).pop(_controller.outcome);
     },
     child: Scaffold(
       backgroundColor: Colors.black,
@@ -134,7 +138,16 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     return Column(
       children: [
-        if (widget.server.allowUnverifiedPlayback) const UnverifiedTlsBanner(),
+        // Keyed on the TRANSPORT and not only on the setting. With the flag on
+        // and an OS-trusted certificate, `PlayerController` passes
+        // `verifyTls: true` and mpv really does verify — so the banner's
+        // "the player checks no certificate" was simply false, on every server
+        // whose owner had ever turned the flag on (M4.R/P5). D10's guarantee
+        // never depended on it, because the banner cannot under-fire: this is
+        // the cry-wolf half.
+        if (widget.api.playbackTransport() == PlaybackTransport.pinnedTls &&
+            widget.server.allowUnverifiedPlayback)
+          const UnverifiedTlsBanner(),
         if (_controller.failure != null)
           _FailureBanner(
             message: _controller.failure!,
@@ -161,10 +174,14 @@ class UnverifiedTlsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The scheme read once. Two `Theme.of(context)` calls in one build is a
-    // small thing; the reason it is worth fixing is that collapsing the
-    // `TextStyle(...)` onto one line also removes the only mutant in this file
-    // that no assertion could kill — the argument-swap rule was matching a run
-    // of closing parentheses and producing a whitespace-only rewrite.
+    // small thing, and at M4 this hoist was load-bearing for a second reason:
+    // collapsing the `TextStyle(...)` onto one line also removed the only
+    // mutant in this file that no assertion could kill. **That is no longer
+    // what protects it** — M4.R/G5 narrowed the three argument-swap rules so
+    // they cannot match a run of closing parentheses at all, which is a fix in
+    // `mutation_rules.xml` rather than one enforced by `dart format`. Measured:
+    // un-hoisted, the file goes 33 → 36 mutants under the old rules and stays
+    // at 30 under the new ones. The hoist stays because it reads better.
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,

@@ -8,11 +8,17 @@ import 'package:flutter/material.dart';
 /// The current value is unioned in by [PlaybackSettingsSheet] rather than
 /// assumed to be one of these: `settings.json` is hand-editable and a
 /// `DropdownButton` whose `value` is not among its items throws.
+/// **All four are powers of 1000**, matching the kB/MB/GB `humanSize` writes on
+/// them and matching `PlaybackPrefs`' own default. Three of them were powers of
+/// 1024 until M4.R/P7, mixed in with one that was not, so the list a person
+/// chose from read "100 MB, 477 MB, 1.0 GB, 4.0 GB" — one entry rendered from a
+/// different base than its neighbours and none of them the round number it
+/// claimed to be.
 const meteredWarnChoices = <int>[
-  100 * 1024 * 1024,
+  100 * 1000 * 1000,
   500 * 1000 * 1000,
-  1024 * 1024 * 1024,
-  4 * 1024 * 1024 * 1024,
+  1000 * 1000 * 1000,
+  4 * 1000 * 1000 * 1000,
 ];
 
 /// The reporting intervals, in **media** seconds. 30 is upstream's own.

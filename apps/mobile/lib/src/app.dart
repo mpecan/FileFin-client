@@ -7,6 +7,8 @@ import 'package:filefin_mobile/src/browse/category_tree_page.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
+import 'package:filefin_mobile/src/playback/player_controller.dart'
+    show PlaybackOutcome;
 import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
@@ -116,7 +118,12 @@ class _HomeRouteState extends State<HomeRoute> {
   /// needs — the connection sample and the engine factory — come from the one
   /// scope the whole app is built on, and a widget test substitutes both by
   /// building that scope.
-  void _play(
+  ///
+  /// **It returns the route's result**, which is what carries F9's local
+  /// reflection back to the detail screen: without it `MediaDetailPage` showed
+  /// a resume offset from before playback started and M1's divergence latch
+  /// discharged nothing (M4.R/P3).
+  Future<PlaybackOutcome?> _play(
     LibraryApi api,
     SavedServer server,
     MediaDetail detail,
@@ -124,20 +131,18 @@ class _HomeRouteState extends State<HomeRoute> {
     Duration startAt,
   ) {
     final deps = FileFinScope.of(context);
-    unawaited(
-      Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => PlayerPage(
-            api: api,
-            hostFactory: deps.playbackHostFactory,
-            network: deps.network,
-            detail: detail,
-            server: server,
-            prefs: deps.settings.read().playback,
-            initialFile: file,
-            startAt: startAt,
-            onSignIn: _signOut,
-          ),
+    return Navigator.of(context).push<PlaybackOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PlayerPage(
+          api: api,
+          hostFactory: deps.playbackHostFactory,
+          network: deps.network,
+          detail: detail,
+          server: server,
+          prefs: deps.settings.read().playback,
+          initialFile: file,
+          startAt: startAt,
+          onSignIn: _signOut,
         ),
       ),
     );

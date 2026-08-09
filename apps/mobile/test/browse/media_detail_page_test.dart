@@ -154,8 +154,9 @@ void main() {
     ) async {
       await pump(tester);
 
+      // 38583 and 38250 bytes, in the powers of 1000 the labels claim.
+      expect(find.textContaining('39 kB'), findsOneWidget);
       expect(find.textContaining('38 kB'), findsOneWidget);
-      expect(find.textContaining('37 kB'), findsOneWidget);
     });
   });
 
@@ -344,21 +345,26 @@ void main() {
   group('the helpers', () {
     test('a size is rendered in the largest unit that keeps it readable', () {
       expect(humanSize(0), '0 B');
-      expect(humanSize(1023), '1023 B');
-      expect(humanSize(1024), '1.0 kB');
-      // One decimal below ten, none above: "38 kB" is as precise as anyone
-      // reads, and "37.7 kB" next to "5.0 MB" is a column of noise.
-      expect(humanSize(38583), '38 kB');
-      expect(humanSize(5 * 1024), '5.0 kB');
-      expect(humanSize(5 * 1024 * 1024), '5.0 MB');
-      expect(humanSize(20 * 1024 * 1024), '20 MB');
-      expect(humanSize(3 * 1024 * 1024 * 1024), '3.0 GB');
+      expect(humanSize(999), '999 B');
+      expect(humanSize(1000), '1.0 kB');
+      // One decimal below ten, none above: "39 kB" is as precise as anyone
+      // reads, and "38.6 kB" next to "5.0 MB" is a column of noise.
+      expect(humanSize(38583), '39 kB');
+      expect(humanSize(5 * 1000), '5.0 kB');
+      expect(humanSize(5 * 1000 * 1000), '5.0 MB');
+      expect(humanSize(20 * 1000 * 1000), '20 MB');
+      expect(humanSize(3 * 1000 * 1000 * 1000), '3.0 GB');
+      // **Powers of 1000, and that is the assertion rather than the arithmetic
+      // it happens to use** (M4.R/P7): with a 1024 divisor under a kB/MB/GB
+      // label these read 1.0 kB / 4.9 MB / 19 MB / 2.8 GB, and the settings
+      // dropdown offered `500 * 1000 * 1000` as "477 MB".
+      expect(humanSize(500 * 1000 * 1000), '500 MB');
       // The two boundaries, exactly. `just mutants` weakened both `<` to `<=`
       // with the suite green — the difference shows only AT the value, which
       // is the off-by-one §3 cites mutation testing for.
-      expect(humanSize(1024 * 1024), '1.0 MB', reason: 'exactly one unit up');
-      expect(humanSize(10 * 1024), '10 kB', reason: 'exactly the 10 boundary');
-      expect(humanSize(4 * 1024 * 1024 * 1024 * 1024), '4.0 TB');
+      expect(humanSize(1000 * 1000), '1.0 MB', reason: 'exactly one unit up');
+      expect(humanSize(10 * 1000), '10 kB', reason: 'exactly the 10 boundary');
+      expect(humanSize(4 * 1000 * 1000 * 1000 * 1000), '4.0 TB');
     });
 
     test('a size beyond the largest unit stays in that unit', () {

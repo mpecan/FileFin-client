@@ -6,6 +6,8 @@ import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
 import 'package:filefin_mobile/src/browse/poster_image_provider.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/player_controller.dart'
+    show PlaybackOutcome;
 import 'package:flutter/material.dart';
 
 /// F4's third screen: everything the server says about one item, and where
@@ -31,7 +33,14 @@ class MediaDetailPage extends StatefulWidget {
   ///
   /// The route lives in `app.dart`; this screen decides only **which file and
   /// from where**, which is `startSecondsFor`'s answer rather than its own.
-  final void Function(MediaDetail detail, FileIndex file, Duration startAt)?
+  ///
+  /// **It answers with what playback left behind**, which is what F9's second
+  /// clause needs a consumer for — see `_MediaDetailPageState._afterPlaying`.
+  final Future<PlaybackOutcome?> Function(
+    MediaDetail detail,
+    FileIndex file,
+    Duration startAt,
+  )?
   onPlay;
 
   /// Where a `SessionExpired` sends the user.
@@ -60,6 +69,40 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     _posterToken.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// F9's "reflect resulting watched/continue changes locally **without a full
+  /// refetch**", applied to the screen the player was opened from.
+  ///
+  /// `applyProgress` is the server's own engine transcribed and validated
+  /// against 601 captured vectors, so the state the player hands back IS what
+  /// the server holds — for every input but one. That one is
+  /// [PlaybackOutcome.needsDetailRefetch]: a crossing report on a single-file
+  /// item, where the wire's `(0, 0)` cannot say whether the pointer is fresh or
+  /// absent. There, and only there, this pays for a round trip.
+  ///
+  /// Until M4.R/P3 neither branch existed and the screen simply showed what it
+  /// had loaded in `initState` — so after watching half a film the detail page
+  /// behind still offered to resume from where the *previous* session stopped.
+  Future<void> _afterPlaying(
+    MediaDetail detail,
+    FileIndex file,
+    Duration startAt,
+  ) async {
+    final outcome = await widget.onPlay!(detail, file, startAt);
+    if (outcome == null || !mounted) return;
+    if (outcome.needsDetailRefetch) {
+      await _controller.load();
+      return;
+    }
+    final view = deriveView(outcome.state, fileCount: detail.files.length);
+    _controller.replace(
+      detail.copyWith(
+        watched: view.watched,
+        continueIndex: view.continueIndex.value,
+        continueSeconds: view.continueSeconds,
+      ),
+    );
   }
 
   @override
@@ -112,16 +155,19 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           if (widget.onPlay != null)
             PlayButtons(
               detail: detail,
-              onPlay: (file, startAt) => widget.onPlay!(detail, file, startAt),
+              onPlay: (file, startAt) =>
+                  unawaited(_afterPlaying(detail, file, startAt)),
             ),
           _Files(
             files: detail.files,
             onPlay: widget.onPlay == null
                 ? null
-                : (file) => widget.onPlay!(
-                    detail,
-                    file,
-                    Duration(seconds: startSecondsFor(detail, file)),
+                : (file) => unawaited(
+                    _afterPlaying(
+                      detail,
+                      file,
+                      Duration(seconds: startSecondsFor(detail, file)),
+                    ),
                   ),
           ),
         ],
@@ -345,13 +391,23 @@ String fileLabel(FileInfo file) {
 /// worth showing rather than hiding — F13's metered guard is built on the same
 /// number at M4.
 String humanSize(int bytes) {
-  if (bytes < 1024) return '$bytes B';
+  // **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** It
+  // divided by 1024 under those labels until M4.R/P7, which understated every
+  // size by 2.4% per step: `PlaybackPrefs`' own default of `500 * 1000 * 1000`
+  // came out of the settings dropdown as **"477 MB"** — an option the user
+  // never chose, offered as if they had. The thresholds this renders are
+  // written in powers of 1000, so decimal is the base the values are already
+  // in; relabelling to KiB/MiB/GiB would have been correct arithmetic showing
+  // a unit nobody picked. Routed through one constant so the two divisions
+  // cannot disagree, exactly as `formatPosition`'s `perMinute` is.
+  const perUnit = 1000;
+  if (bytes < perUnit) return '$bytes B';
   const units = ['kB', 'MB', 'GB', 'TB'];
-  var value = bytes / 1024;
+  var value = bytes / perUnit;
   var unit = 0;
   for (var step = 0; step < units.length - 1; step += 1) {
-    if (value < 1024) break;
-    value /= 1024;
+    if (value < perUnit) break;
+    value /= perUnit;
     unit += 1;
   }
   return '${value.toStringAsFixed(value < 10 ? 1 : 0)} ${units[unit]}';

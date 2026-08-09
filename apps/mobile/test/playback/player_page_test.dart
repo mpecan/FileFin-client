@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
+import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:filefin_mobile/src/playback/player_controls.dart';
 import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
@@ -75,9 +76,10 @@ void main() {
   testWidgets('the surface comes from the HOST, so no Video is ever built', (
     tester,
   ) async {
-    // The whole reason `buildSurface` is on the port: `VideoController` hangs
-    // under `flutter test` (measured at M4.0), so a screen test that built one
-    // would never return.
+    // The whole reason `buildSurface` is on the port. `VideoController` does
+    // construct headlessly (M4.R/G1 re-measured it) — but the `Player` it
+    // attaches to can then never be DISPOSED under `flutter test`, and a
+    // screen test disposes its host on every teardown.
     await pumpPlayer(tester);
 
     expect(find.byKey(const ValueKey('fake-surface')), findsOneWidget);
@@ -175,7 +177,7 @@ void main() {
 
     await pumpPlayer(tester, detail: _detail(size: 900 * 1000 * 1000));
 
-    expect(find.textContaining('858 MB'), findsOneWidget);
+    expect(find.textContaining('900 MB'), findsOneWidget);
     expect(host.opened, isEmpty);
 
     await tester.tap(find.text('Play anyway'));
@@ -197,6 +199,33 @@ void main() {
     // so a dialog that could be dismissed would understate it.
     expect(find.textContaining('session cookie'), findsOneWidget);
     expect(find.textContaining('no certificate'), findsOneWidget);
+  });
+
+  testWidgets('D10 — no banner on a server that never enabled the override', (
+    tester,
+  ) async {
+    // M4.R/T5: nothing asserted the banner's ABSENCE, so dropping the guard
+    // entirely — a standing "the player checks no certificate" on every server
+    // in the app — passed all 358 mobile tests. The default `plainHttp` and
+    // not `pinnedTls`, because a pinned server with the flag off is REFUSED
+    // and the refusal panel replaces the column the banner sits in: that arm
+    // would pass for a reason that has nothing to do with the guard.
+    await pumpPlayer(tester, server: _server());
+
+    expect(host.opened, hasLength(1));
+    expect(find.byType(UnverifiedTlsBanner), findsNothing);
+  });
+
+  testWidgets('D10 — no banner where mpv really does verify', (tester) async {
+    // M4.R/P5: the banner was keyed on the SETTING. With the flag on and an
+    // OS-trusted certificate `PlayerController` passes `verifyTls: true`, so
+    // mpv verifies and the banner's own sentence was false.
+    api.transport = PlaybackTransport.osTrustedTls;
+
+    await pumpPlayer(tester, server: _server(allowUnverifiedPlayback: true));
+
+    expect(host.opened.single.verifyTls, isTrue);
+    expect(find.byType(UnverifiedTlsBanner), findsNothing);
   });
 
   testWidgets('D10 — a pinned server with no override refuses, naming why', (
@@ -242,6 +271,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.reports.last.event, ProgressEvent.stop);
+  });
+
+  testWidgets('the route pops WITH the outcome, read after the last report', (
+    tester,
+  ) async {
+    // F9's second clause needs a value to travel on, and this is the route it
+    // travels: `MediaDetailPage` applies it rather than re-fetching (M4.R/P3).
+    // Read AFTER the awaited final `stop`, because that report is what moves
+    // the pointer to where the user actually stopped.
+    PlaybackOutcome? popped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async =>
+                popped = await Navigator.of(context).push<PlaybackOutcome>(
+                  MaterialPageRoute(
+                    builder: (_) => PlayerPage(
+                      api: api,
+                      hostFactory: () => host,
+                      network: network,
+                      detail: _detail(),
+                      server: _server(),
+                      prefs: const PlaybackPrefs(),
+                      initialFile: const FileIndex(0),
+                      startAt: Duration.zero,
+                    ),
+                  ),
+                ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    host
+      ..emitDuration(const Duration(seconds: 100))
+      ..emitPosition(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+    await tester.pumpAndSettle();
+
+    expect(popped, isNotNull);
+    expect(popped!.state.pointer?.seconds, 30);
+    expect(popped!.needsDetailRefetch, isFalse);
   });
 
   testWidgets('meets the tap-target and contrast guidelines', (tester) async {
