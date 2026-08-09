@@ -2,9 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:filefin_core/filefin_core.dart';
-import 'package:filefin_mobile/src/browse/category_grid_page.dart';
-import 'package:filefin_mobile/src/browse/category_tree_page.dart';
-import 'package:filefin_mobile/src/browse/media_detail_page.dart';
+import 'package:filefin_mobile/src/browse/library_shell.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
@@ -184,38 +182,24 @@ class _HomeRouteState extends State<HomeRoute> {
     final server = _server;
     final api = _api;
     if (api != null && server != null) {
-      return CategoryTreePage(
+      // The five browsing screens and the routes between them moved into
+      // `LibraryShell` at M6.7, because two of them — the `push<bool>` detail
+      // route and the home reload it triggers — are a pair that only the
+      // owner of the Home tab can wire.
+      return LibraryShell(
         api: api,
         title: server.name,
         onSettings: () => _playbackSettings(server),
         // Sign-out on a SessionExpired is a state change here rather than a
-        // route push: the tree, the grid and the detail page can all be the
-        // screen that discovers the session is gone, and every one of them
-        // must land on the same place. All three therefore get `_signOut` —
-        // the grid and the detail page shipped M3 without it, which left the
-        // two screens a user actually lives in showing "Please sign in again"
-        // with no button and no retry.
+        // route push: home, the tree, the grid, search and the detail page can
+        // all be the screen that discovers the session is gone, and every one
+        // of them must land on the same place. All of them therefore get
+        // `_signOut` — the grid and the detail page shipped M3 without it,
+        // which left the two screens a user actually lives in showing "Please
+        // sign in again" with no button and no retry.
         onSignIn: _signOut,
-        onOpen: (category) => Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) => CategoryGridPage(
-              api: api,
-              category: category,
-              onSignIn: _signOut,
-              onOpen: (item) => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => MediaDetailPage(
-                    api: api,
-                    item: item,
-                    onSignIn: _signOut,
-                    onPlay: (detail, file, startAt) =>
-                        _play(api, server, detail, file, startAt),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+        onPlay: (detail, file, startAt) =>
+            _play(api, server, detail, file, startAt),
       );
     }
     // The server signed out of, when there is one, rather than `saved.first`:

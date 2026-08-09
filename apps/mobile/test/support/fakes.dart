@@ -93,7 +93,14 @@ base class FakeLibraryApi extends LibraryApi {
   Object? subtitleResult;
 
   /// What `home()` answers with, or throws.
-  Object? homeResult;
+  ///
+  /// **The one field with a non-null default, and `LibraryShell` is why.** The
+  /// shell opens on the Home tab, so from M6.7 every app-level test reaches
+  /// `home()` on its first frame. A `null` here would make each of them throw
+  /// a `TypeError` about `HomeRows` instead of failing on whatever the test
+  /// was actually about — and three empty rows is what a fresh account really
+  /// answers, so the default is the honest one rather than a convenience.
+  Object? homeResult = const HomeRows();
 
   /// What `search()` answers with, or throws.
   Object? searchResult;

@@ -29,6 +29,17 @@ void main() {
     addTearDown(() => dir.deleteSync(recursive: true));
   });
 
+  /// Selects the Library tab.
+  ///
+  /// **Home is tab 0 from M6.7, and the tabs are built lazily**, so the
+  /// category tree does not exist — and issues no request — until this runs.
+  /// Every case below that is about the tree, the grid or the detail page
+  /// starts here.
+  Future<void> openLibrary(WidgetTester tester) async {
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+  }
+
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
       network: FakeNetworkStatus(),
@@ -81,6 +92,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
+    await openLibrary(tester);
     await tester.tap(find.text('Films'));
     await tester.pumpAndSettle();
     expect(find.text('Direct Play Movie'), findsWidgets);
@@ -138,6 +150,7 @@ void main() {
     saveAtticNas();
     await signIn(tester);
 
+    await openLibrary(tester);
     await tester.tap(find.text('Films'));
     await tester.pumpAndSettle();
     expect(find.text('Please sign in again'), findsOneWidget);
@@ -167,6 +180,7 @@ void main() {
     saveAtticNas();
     await signIn(tester);
 
+    await openLibrary(tester);
     await tester.tap(find.text('Films'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Direct Play Movie').first);
@@ -206,6 +220,10 @@ void main() {
     );
     api
       ..loginResult = const AuthResult(user: 'sam')
+      // Home is where a signed-in launch lands, so it is where a dead session
+      // is discovered. Both are set, because the second server's session is
+      // gone for every route rather than for one of them.
+      ..homeResult = SessionExpired(Uri.parse('http://second.local/api'))
       ..categoriesResult = SessionExpired(Uri.parse('http://second.local/api'));
     await tester.pumpWidget(shell());
 
@@ -238,6 +256,9 @@ void main() {
     // the three screens can be the one that discovers it.
     api
       ..loginResult = const AuthResult(user: 'sam')
+      // The Home tab is the one a signed-in launch lands on, so it is the
+      // screen that discovers the expiry. "Anywhere" is the point of the case.
+      ..homeResult = SessionExpired(Uri.parse('http://nas.local/api'))
       ..categoriesResult = SessionExpired(Uri.parse('http://nas.local/api'));
     SettingsStore(dir).write(
       AppSettings.empty.upsert(
@@ -294,6 +315,7 @@ void main() {
     );
 
     await signIn(tester);
+    await openLibrary(tester);
     await tester.tap(find.text('Films'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Movie'));

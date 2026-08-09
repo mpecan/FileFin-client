@@ -163,6 +163,10 @@ void main() {
     await tester.tapAt(const Offset(400, 20));
     await tester.pumpAndSettle();
 
+    // Home is tab 0 from M6.7, so the tree — and the grid under it — is one
+    // tap away.
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Films'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Film').first);

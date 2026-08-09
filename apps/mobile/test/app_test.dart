@@ -31,6 +31,15 @@ void main() {
     child: const FileFinApp(),
   );
 
+  /// Selects the Library tab.
+  ///
+  /// **Home is tab 0 from M6.7 and the tabs are built lazily**, so the
+  /// category tree does not exist — and issues no request — until this runs.
+  Future<void> openLibrary(WidgetTester tester) async {
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('a first launch lands on the no-server empty state', (
     tester,
   ) async {
@@ -129,7 +138,11 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
+    // Home is the landing tab from M6.7 and its app bar carries the server
+    // name; the tree is one tap away and is not built — or fetched — before
+    // that tap.
     expect(find.text('192.168.1.10'), findsOneWidget);
+    await openLibrary(tester);
     expect(find.text('Films'), findsOneWidget);
   });
 
@@ -162,10 +175,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Attic NAS'), findsOneWidget);
+    await openLibrary(tester);
     expect(find.textContaining('no categories yet'), findsOneWidget);
   });
 
-  testWidgets('signed in, the app lands on the category tree', (tester) async {
+  testWidgets('signed in, the app lands on Home with Library a tap away', (
+    tester,
+  ) async {
     api
       ..probeResult = const FileFinServer('0.20.3')
       ..loginResult = const AuthResult(user: 'sam')
@@ -191,6 +207,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Attic NAS'), findsOneWidget);
+    await openLibrary(tester);
     expect(find.text('Films'), findsOneWidget);
   });
 }
