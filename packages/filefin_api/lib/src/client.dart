@@ -21,6 +21,7 @@ import 'package:filefin_core/filefin_core.dart';
 
 part 'client_browse.dart';
 part 'client_playback.dart';
+part 'client_watch_state.dart';
 
 /// One server's API, typed, with F3's retry and F15's pinning already wired.
 ///
@@ -256,6 +257,24 @@ class FileFinClient {
         cancelToken: cancelToken,
         options: Options(contentType: Headers.jsonContentType),
       );
+    } on DioException catch (e) {
+      throw _asOurs(e, url);
+    }
+  }
+
+  /// One DELETE, one error vocabulary, and no body in either direction.
+  ///
+  /// A sibling of [_sendJson] rather than a copy of its try/catch, for the same
+  /// two reasons: `just dupes` fires on the duplication at 15 lines / 50
+  /// tokens, and two copies is two chances to map an error differently.
+  ///
+  /// It exists at all because the verb is what distinguishes the two un-watch
+  /// operations. `DELETE .../watched` drops the resume pointer where
+  /// `POST {"watched": false}` keeps it, so a `DELETE` carrying a body would be
+  /// the other operation wearing the wrong verb.
+  Future<void> _sendDelete(Uri url, {CancelToken? cancelToken}) async {
+    try {
+      await _dio.deleteUri<void>(url, cancelToken: cancelToken);
     } on DioException catch (e) {
       throw _asOurs(e, url);
     }

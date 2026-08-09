@@ -90,4 +90,35 @@ extension FileFinClientBrowse on FileFinClient {
       throw mapped;
     }
   }
+
+  /// `GET /api/home` — continue / favourites / completed in one call.
+  ///
+  /// **Served from the `user_state` mirror, not from `meta.json`**
+  /// (`media.go:227` -> `db.HomeBuckets`), and the mirror upsert on every write
+  /// is best-effort (`media.go:166-181`). So a `204` from a watch-state write
+  /// does not prove what this will answer, and M6.0/E-2 measured a copy where
+  /// the two disagreed in both directions. A caller that wants the rows right
+  /// after a write has to re-read them; it cannot predict them.
+  Future<HomeRows> home({CancelToken? cancelToken}) => _send(
+    urls.home,
+    (r, url) => FileFinClient._one(r, url, HomeRows.fromJson),
+    cancelToken: cancelToken,
+  );
+
+  /// `GET /api/search?q=&field=` — `MediaSummary[]`, year then title.
+  ///
+  /// Both parameters always go on the wire. An empty `q` answers `[]` rather
+  /// than the whole library and an unrecognised `field` degrades silently to
+  /// `all` (`db/search.go:17-19`, `:74`), so nothing here second-guesses the
+  /// caller: `searchIsRunnable` in `filefin_core` is what decides whether a
+  /// request is worth making, and this method sends what it is given.
+  Future<List<MediaSummary>> search(
+    String query, {
+    SearchField field = SearchField.all,
+    CancelToken? cancelToken,
+  }) => _send(
+    urls.search(query, field: field),
+    (r, url) => FileFinClient._many(r, url, MediaSummary.fromJson),
+    cancelToken: cancelToken,
+  );
 }

@@ -78,6 +78,83 @@ void main() {
       expect(detail.tags, contains('direct-play'));
     });
 
+    test('home — three rows in one call, and an item in two of them', () async {
+      stub.on(
+        'GET',
+        urls.home.path,
+        (_) => StubResponse(
+          status: 200,
+          body: fixtureText('home_populated.json'),
+          contentType: 'application/json',
+        ),
+      );
+      final rows = await client.home();
+      // The captured payload has the film in `continue` AND in `favorites`,
+      // which is the shape a home screen has to survive: the same id appears
+      // twice and the two rows are independent lists, not a partition.
+      expect(rows.continueRow.single.id, const MediaId('e4285edb34d5'));
+      expect(rows.favorites.single.id, const MediaId('e4285edb34d5'));
+      expect(rows.completed.single.id, const MediaId('919ac9caad25'));
+      expect(rows.completed.single.watched, isTrue);
+    });
+
+    test('home — the wire key is `continue`, a Dart reserved word', () async {
+      // Getting `@JsonKey(name: 'continue')` wrong does not fail to compile.
+      // It produces an empty row, which looks exactly like a user who has
+      // watched nothing.
+      stub.on(
+        'GET',
+        urls.home.path,
+        (_) => StubResponse.json({
+          'continue': [
+            {'id': 'aaaaaaaaaaaa', 'title': 'One'},
+          ],
+        }),
+      );
+      final rows = await client.home();
+      expect(rows.continueRow.single.title, 'One');
+      expect(rows.favorites, isEmpty);
+      expect(rows.completed, isEmpty);
+    });
+
+    test('search — the FIELD is on the wire, not just the query', () async {
+      stub.on(
+        'GET',
+        urls.search('').path,
+        (_) => StubResponse(
+          status: 200,
+          body: fixtureText('search_results.json'),
+          contentType: 'application/json',
+        ),
+      );
+      final found = await client.search(
+        'Kurosawa',
+        field: SearchField.director,
+      );
+      expect(found.single.title, 'Direct Play Movie');
+      expect(stub.requests.single.query, {
+        'q': 'Kurosawa',
+        'field': 'director',
+      });
+    });
+
+    test('search — the default scope is `all`, and it is sent', () async {
+      stub.on(
+        'GET',
+        urls.search('').path,
+        (_) => StubResponse(
+          status: 200,
+          body: fixtureText('search_empty.json'),
+          contentType: 'application/json',
+        ),
+      );
+      expect(await client.search('nothing here'), isEmpty);
+      // Sent rather than omitted: an absent `field` defaults to `all` upstream
+      // anyway, but a request that says what it means is what makes a renamed
+      // scope visible in `just it` rather than silently degrading.
+      expect(stub.requests.single.query['field'], 'all');
+    });
+
     test('me', () async {
       stub.on(
         'GET',
