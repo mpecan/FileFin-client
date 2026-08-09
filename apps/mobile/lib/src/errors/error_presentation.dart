@@ -32,10 +32,14 @@ class ErrorMessage {
 /// Turns one of `filefin_api`'s errors into words (F12's discipline).
 ///
 /// **The switch is exhaustive and has no default arm, and that is the design.**
-/// When M5 adds `TranscodingDisabled` — the 415 where F12's wording *is* the
-/// variant — this function stops compiling. That is the alarm. A default arm
-/// would render "something went wrong" for the one error the spec asks us to
-/// name precisely, and nothing would ever tell us.
+/// It worked: when M5 added `TranscodingDisabled` — the 415 where F12's wording
+/// *is* the variant — this function stopped compiling, along with two test
+/// files, and the arm below was written because the compiler insisted (measured
+/// at M5.0/E-J: exactly three files failed). A default arm would have rendered
+/// "something went wrong" for the one error the spec asks us to name precisely,
+/// and nothing would ever have told us — which is exactly what
+/// `describeApiFailure` in `player_controller.dart` did until M5.1 deleted its
+/// `_` arm.
 ///
 /// Every URL goes through `redactUserInfo`. A message is a log line waiting to
 /// happen (§9, NF4), and a saved-server URL is typed by a user —
@@ -157,6 +161,16 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     detail:
         'The reply was not the shape this app understands: $problem. The '
         'server may be a version this app has not been checked against.',
+  ),
+
+  // F12. Not retryable: the setting is the server's (measured, M5.0/E-B).
+  TranscodingDisabled(:final requested) => ErrorMessage(
+    title: 'This file needs transcoding',
+    detail:
+        '${redactUserInfo(requested).host} has transcoding turned off, and '
+        'this file cannot be played without it. Nothing this app can change '
+        'will help: someone with admin access to the server has to turn it '
+        'back on.',
   ),
 
   ServerFailure(:final statusCode, :final requested) => ErrorMessage(

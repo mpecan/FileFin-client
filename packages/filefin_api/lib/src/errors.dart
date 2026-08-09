@@ -5,13 +5,13 @@
 /// has to catch two vocabularies ends up catching `Object`, and then a bug in
 /// the client is indistinguishable from a server the user typed wrong.
 ///
-/// It is also **exactly as large as M2 needs** (§1, §5). `dead_types` fails a
-/// `sealed` variant nobody constructs outside its declaring file, so a variant
-/// arrives in the commit that first produces it and not before. What is
-/// deliberately absent, with the milestone that adds it:
+/// It is also **exactly as large as the milestones need** (§1, §5).
+/// `dead_types` fails a `sealed` variant nobody constructs outside its
+/// declaring file, so a variant arrives in the commit that first produces it
+/// and not before. `TranscodingDisabled` (415) arrived at M5, where F12's
+/// wording is the whole point of the variant. What is still deliberately
+/// absent:
 ///
-/// - `TranscodingDisabled` (415) — M5, where F12's wording is the whole point
-///   of the variant.
 /// - 403 — never. It is admin-only, and C4 forbids calling an admin route.
 ///
 /// **Hand-written, not `@freezed`.** None of these needs `copyWith` or JSON,
@@ -27,6 +27,7 @@ library;
 // shortening the prose to fit would have deleted the reasoning that is the
 // most valuable thing in an error type.
 part 'errors_certificates.dart';
+part 'errors_playback.dart';
 
 /// Strips `user:password@` from a URL before it reaches a message.
 ///

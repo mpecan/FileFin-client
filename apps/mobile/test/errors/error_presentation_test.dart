@@ -317,6 +317,53 @@ void main() {
       expect(message.title, isNotEmpty);
     });
   });
+
+  group('F12: a 415 names transcoding, never "playback failed"', () {
+    test('the words are pinned exactly, because prose is source', () {
+      final message = describeApiError(
+        TranscodingDisabled(
+          Uri.parse('https://media.example/api/media/abc/file/0'),
+        ),
+      );
+
+      expect(message.title, 'This file needs transcoding');
+      expect(
+        message.detail,
+        'media.example has transcoding turned off, and this file cannot be '
+        'played without it. Nothing this app can change will help: someone '
+        'with admin access to the server has to turn it back on.',
+      );
+    });
+
+    test('it is not retryable and does not send anyone to sign in', () {
+      // Deterministic and permanent (M5.0/E-B): the same request answers 415
+      // for as long as the setting is off, so a retry button would invite
+      // mashing it against a server that has already given its final answer.
+      final message = describeApiError(TranscodingDisabled(url));
+
+      expect(message.retryable, isFalse);
+      expect(message.needsSignIn, isFalse);
+    });
+
+    test('the message never says the two things F12 forbids', () {
+      final message = describeApiError(TranscodingDisabled(url));
+
+      expect(message.detail, isNot(contains('failed')));
+      expect(message.title, isNot(contains('failed')));
+    });
+
+    test('a userInfo credential never reaches the sentence (§9, NF4)', () {
+      final message = describeApiError(
+        TranscodingDisabled(
+          Uri.parse('https://sam:hunter2@media.example/api/media/a/file/0'),
+        ),
+      );
+
+      expect(message.detail, isNot(contains('hunter2')));
+      expect(message.detail, isNot(contains('sam')));
+      expect(message.detail, contains('media.example'));
+    });
+  });
 }
 
 /// Whether a variant is allowed to send the user to the sign-in screen.
@@ -340,6 +387,7 @@ bool expectedNeedsSignIn(FileFinApiException error) => switch (error) {
   NotAFileFinServerResponse() ||
   MalformedResponse() ||
   ServerFailure() ||
+  TranscodingDisabled() ||
   CertificateNotTrusted() ||
   CertificatePinMismatch() => false,
 };

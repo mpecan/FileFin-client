@@ -129,6 +129,10 @@ FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
     400 => BadRequest(requested, body),
     401 => SessionExpired(requested),
     404 => NotFound(requested),
+    // F12's, and it is the file route's 415 rather than the HLS route's: this
+    // client never requests `.../hls/index.m3u8` itself (`errors_playback.dart`
+    // says why), so `transcoding disabled` is the only shape that reaches here.
+    415 => TranscodingDisabled(requested),
     429 => _rateLimited(response, requested),
     503 => CacheUnavailable(requested),
     final status => ServerFailure(status ?? 0, body, requested),

@@ -232,6 +232,7 @@ void main() {
         mapDioException(badResponse(401, 'unauthorized'), requested: requested),
         mapDioException(badResponse(404, 'x'), requested: requested),
         mapDioException(badResponse(503, 'x'), requested: requested),
+        mapDioException(badResponse(415, 'x'), requested: requested),
         mapDioException(badResponse(429, 'x'), requested: requested),
         mapDioException(badResponse(500, 'x'), requested: requested),
       ];
@@ -367,6 +368,7 @@ void main() {
         InvalidCredentials() => 'wrong password',
         MalformedIdentifier() => 'bad id from the server',
         BadRequest() => 'the request was wrong',
+        TranscodingDisabled() => 'transcoding is off',
       };
       expect(
         describe(
