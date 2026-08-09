@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
+import 'package:filefin_mobile/src/browse/library_actions.dart';
 import 'package:filefin_mobile/src/browse/visible_rows.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ class CategoryTreePage extends StatefulWidget {
     required this.onOpen,
     this.onSignIn,
     this.onSettings,
+    this.onSignOut,
     super.key,
   });
 
@@ -38,6 +40,9 @@ class CategoryTreePage extends StatefulWidget {
   /// become reachable — both are refusals `decide()` can return and neither had
   /// a way in before M4.8.
   final VoidCallback? onSettings;
+
+  /// Ends the session and forgets this account (F2, §9).
+  final VoidCallback? onSignOut;
 
   @override
   State<CategoryTreePage> createState() => _CategoryTreePageState();
@@ -68,14 +73,10 @@ class _CategoryTreePageState extends State<CategoryTreePage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(widget.title),
-      actions: [
-        if (widget.onSettings != null)
-          IconButton(
-            onPressed: widget.onSettings,
-            tooltip: 'Playback settings',
-            icon: const Icon(Icons.settings_outlined),
-          ),
-      ],
+      actions: libraryAppBarActions(
+        onSettings: widget.onSettings,
+        onSignOut: widget.onSignOut,
+      ),
     ),
     body: AsyncView<List<CategoryNode>>(
       controller: _controller,

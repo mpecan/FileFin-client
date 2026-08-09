@@ -37,6 +37,20 @@ abstract base class LibraryApi {
   /// `POST /api/login` — signs in and stores the session and password (F2).
   Future<AuthResult> login(Credentials credentials);
 
+  /// `POST /api/logout` — ends the session and forgets this account (F2).
+  ///
+  /// **Not the same thing as dropping this object**, and the difference is
+  /// what §9 turns on once the secret store persists: closing the client
+  /// leaves the session alive on the server and the password in the Keychain,
+  /// so the next launch signs the user straight back in to a session they
+  /// asked to leave. This is the only call that forgets either.
+  ///
+  /// It throws when the server could not be reached, **after** the local
+  /// forgetting has already happened (`SessionManager.logout`'s `finally`), so
+  /// a caller reports the failure rather than treating it as "still signed
+  /// in".
+  Future<void> logout();
+
   /// `GET /api/categories` — the flat list, for `buildCategoryTree`.
   Future<List<Category>> categories({CancelToken? cancelToken});
 
@@ -178,6 +192,9 @@ final class FileFinLibraryApi extends LibraryApi {
   @override
   Future<AuthResult> login(Credentials credentials) =>
       _client.login(credentials);
+
+  @override
+  Future<void> logout() => _client.logout();
 
   @override
   Future<List<Category>> categories({CancelToken? cancelToken}) =>

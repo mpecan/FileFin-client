@@ -325,6 +325,19 @@ void main() {
     expect(api.playbackTransport(), PlaybackTransport.plainHttp);
   });
 
+  test('logout POSTs /api/logout', () async {
+    // The verb is the assertion. A `getUri` here would be answered `200
+    // text/html` by the SPA catch-all rather than with a 405 — measured live
+    // on this exact route (`probe_and_login_test.dart:101`) — so the session
+    // would survive a sign-out and nothing would say so.
+    await api.login(const Credentials(username: 'sam', password: 'hunter2'));
+    seen.clear();
+
+    await api.logout();
+
+    expect(seen, ['POST /api/logout']);
+  });
+
   test('close releases the client', () async {
     api.close();
 

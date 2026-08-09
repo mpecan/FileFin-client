@@ -56,6 +56,7 @@ class LibraryShell extends StatefulWidget {
     this.onPlay,
     this.onSignIn,
     this.onSettings,
+    this.onSignOut,
     super.key,
   });
 
@@ -78,6 +79,14 @@ class LibraryShell extends StatefulWidget {
 
   /// Opens the playback settings sheet.
   final VoidCallback? onSettings;
+
+  /// Ends the session and forgets this account (F2, §9).
+  ///
+  /// Distinct from [onSignIn], which is what a `SessionExpired` reaches: that
+  /// one is the server having already forgotten, and the stored password is
+  /// what F3 renews from, so it must NOT be cleared. This is the user asking
+  /// to be forgotten, and it clears everything.
+  final VoidCallback? onSignOut;
 
   @override
   State<LibraryShell> createState() => _LibraryShellState();
@@ -120,6 +129,7 @@ class _LibraryShellState extends State<LibraryShell> {
       onOpen: _openDetail,
       onSignIn: widget.onSignIn,
       onSettings: widget.onSettings,
+      onSignOut: widget.onSignOut,
     ),
     LibraryTab.library => CategoryTreePage(
       api: widget.api,
@@ -127,6 +137,7 @@ class _LibraryShellState extends State<LibraryShell> {
       onOpen: _openCategory,
       onSignIn: widget.onSignIn,
       onSettings: widget.onSettings,
+      onSignOut: widget.onSignOut,
     ),
     LibraryTab.search => SearchPage(
       api: widget.api,

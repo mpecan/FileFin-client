@@ -76,6 +76,9 @@ base class FakeLibraryApi extends LibraryApi {
   /// What `login()` answers with, or throws.
   Object? loginResult;
 
+  /// What `logout()` throws, or `null` for a server that answered.
+  Object? logoutResult;
+
   /// What `me()` answers with, or throws.
   Object? meResult;
 
@@ -186,6 +189,21 @@ base class FakeLibraryApi extends LibraryApi {
   @override
   Future<AuthResult> login(Credentials credentials) async =>
       _answer<AuthResult>(loginResult, 'login(${credentials.username})', null);
+
+  @override
+  Future<void> logout() async {
+    // NOT `_answer<void>`: with `T` bound to `void` the throw arm is
+    // unreachable, so a fake set up to fail would quietly succeed — the trap
+    // `postProgress` names above, and the one the "logout that fails still
+    // signs the user out" case rests on.
+    calls.add('logout');
+    final failure = logoutResult;
+    if (failure != null) {
+      // The field holds whatever the real API threw, which is an Exception.
+      // ignore: only_throw_errors
+      throw failure;
+    }
+  }
 
   @override
   Future<List<Category>> categories({CancelToken? cancelToken}) async =>

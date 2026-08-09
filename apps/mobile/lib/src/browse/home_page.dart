@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
+import 'package:filefin_mobile/src/browse/library_actions.dart';
 import 'package:filefin_mobile/src/browse/media_row.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ class HomePage extends StatefulWidget {
     required this.onOpen,
     this.onSignIn,
     this.onSettings,
+    this.onSignOut,
     super.key,
   });
 
@@ -52,6 +54,9 @@ class HomePage extends StatefulWidget {
   /// the tab a signed-in launch lands on, and a setting reachable only from a
   /// tab you have to know to visit is a setting nobody finds.
   final VoidCallback? onSettings;
+
+  /// Ends the session and forgets this account (F2, §9).
+  final VoidCallback? onSignOut;
 
   @override
   State<HomePage> createState() => HomePageState();
@@ -92,14 +97,10 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(widget.title),
-      actions: [
-        if (widget.onSettings != null)
-          IconButton(
-            onPressed: widget.onSettings,
-            tooltip: 'Playback settings',
-            icon: const Icon(Icons.settings_outlined),
-          ),
-      ],
+      actions: libraryAppBarActions(
+        onSettings: widget.onSettings,
+        onSignOut: widget.onSignOut,
+      ),
     ),
     body: AsyncView<HomeRows>(
       controller: _controller,

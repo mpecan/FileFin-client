@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/library_shell.dart';
+import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
@@ -94,20 +96,54 @@ class _HomeRouteState extends State<HomeRoute> {
   /// What a `SessionExpired` on ANY browsing screen does.
   ///
   /// Two halves, and both are needed. `popUntil` is the half the tree does not
-  /// need and the grid and the detail page do: sign-out is a state change on
-  /// this route, so without it the user is returned to a signed-out shell
-  /// sitting under two pushed routes they must dismiss by hand. Clearing the
-  /// API is what makes [build] draw the signed-out screen at all.
+  /// need and the grid and the detail page do: this is a state change on this
+  /// route, so without it the user is returned to a signed-out shell sitting
+  /// under two pushed routes they must dismiss by hand. Clearing the API is
+  /// what makes [build] draw the signed-out screen at all.
   ///
   /// [_server] is deliberately KEPT. It is what the sign-in button then offers,
   /// and dropping it sent someone who signed out of their second server to
   /// their first one — silently, with no picker anywhere to correct it.
-  void _signOut() {
+  ///
+  /// **It deliberately does NOT call `logout()`, and that is the whole
+  /// distinction from [_signOut].** A `SessionExpired` means the server has
+  /// already forgotten this session; the stored *password* is what F3 renews
+  /// from and what F2's silent cold start needs, so clearing it here would
+  /// turn every server restart into a password prompt — the case F2 exists to
+  /// remove.
+  void _sessionExpired() {
     Navigator.of(context).popUntil((route) => route.isFirst);
     setState(() {
       _api?.close();
       _api = null;
     });
+  }
+
+  /// The user asking to be forgotten (F2, §9).
+  ///
+  /// `logout()` first, then the local drop, and the order is load-bearing:
+  /// closing the client releases the sockets the request would travel on.
+  ///
+  /// A server that does not answer still signs the user out here.
+  /// `SessionManager.logout`'s `finally` has already cleared the jar and both
+  /// secrets by the time it throws, so treating the throw as "still signed in"
+  /// would leave the app claiming a session neither side holds — and someone
+  /// whose server is down could never leave it. The failure is said out loud
+  /// rather than swallowed.
+  ///
+  /// It takes the API rather than reading [_api] so there is no
+  /// "what if there isn't one" branch: the affordance only exists on a
+  /// signed-in shell, and a guard for a case the UI cannot produce is a dead
+  /// branch (§5) that nothing could ever cover.
+  Future<void> _signOut(LibraryApi api) async {
+    try {
+      await api.logout();
+    } on FileFinApiException catch (error) {
+      _messenger?.showSnackBar(
+        SnackBar(content: Text(describeApiError(error).title)),
+      );
+    }
+    if (mounted) _sessionExpired();
   }
 
   /// The player route.
@@ -140,7 +176,7 @@ class _HomeRouteState extends State<HomeRoute> {
           prefs: deps.settings.read().playback,
           initialFile: file,
           startAt: startAt,
-          onSignIn: _signOut,
+          onSignIn: _sessionExpired,
         ),
       ),
     );
@@ -197,7 +233,8 @@ class _HomeRouteState extends State<HomeRoute> {
         // `_signOut` — the grid and the detail page shipped M3 without it,
         // which left the two screens a user actually lives in showing "Please
         // sign in again" with no button and no retry.
-        onSignIn: _signOut,
+        onSignIn: _sessionExpired,
+        onSignOut: () => unawaited(_signOut(api)),
         onPlay: (detail, file, startAt) =>
             _play(api, server, detail, file, startAt),
       );

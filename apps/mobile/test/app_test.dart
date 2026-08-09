@@ -181,6 +181,72 @@ void main() {
     expect(find.textContaining('no categories yet'), findsOneWidget);
   });
 
+  /// Saves one server, signs in to it, and lands on the shell.
+  ///
+  /// The two sign-out cases below both need a signed-in shell and neither is
+  /// about how one is reached, so the flow is here rather than copied twice.
+  Future<void> signIn(WidgetTester tester) async {
+    SettingsStore(dir).write(
+      AppSettings.empty.upsert(
+        SavedServer(
+          id: const ServerId('http://nas.local'),
+          name: 'Attic NAS',
+          baseUrl: Uri.parse('http://nas.local'),
+          lastUser: 'sam',
+        ),
+      ),
+    );
+    api.loginResult = const AuthResult(user: 'sam');
+    await tester.pumpWidget(shell());
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'hunter2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('signing out ends the SERVER session, not only this app', (
+    tester,
+  ) async {
+    // The whole of M7.1. A sign-out that only dropped the client left the
+    // session alive on the server and — from M7.2, where the store persists —
+    // the password in the Keychain, so the next launch signed the user
+    // straight back in. `logout()` is what ends both, and nothing in
+    // `apps/mobile/` called it for two milestones (M7.0/E-1).
+    await signIn(tester);
+
+    await tester.tap(find.byTooltip('Sign out'));
+    await tester.pumpAndSettle();
+
+    expect(api.calls, contains('logout'));
+    expect(api.closed, isTrue, reason: 'the client is released after logout');
+    expect(find.text('Signed out'), findsOneWidget);
+  });
+
+  testWidgets('a logout the server refuses still signs the user out here', (
+    tester,
+  ) async {
+    // Someone who taps sign out while the server is down must still end up
+    // signed out. `SessionManager.logout`'s `finally` guarantees the secrets
+    // half; this is the app half, and without it a dead server is a user who
+    // cannot leave.
+    await signIn(tester);
+    api.logoutResult = ConnectionFailed(
+      Uri.parse('http://nas.local/api/logout'),
+    );
+
+    await tester.tap(find.byTooltip('Sign out'));
+    await tester.pumpAndSettle();
+
+    expect(api.calls, contains('logout'));
+    expect(find.text('Signed out'), findsOneWidget);
+    expect(
+      find.textContaining('Cannot reach the server'),
+      findsOneWidget,
+      reason: 'the failure is said out loud rather than swallowed',
+    );
+  });
+
   testWidgets('signed in, the app lands on Home with Library a tap away', (
     tester,
   ) async {
