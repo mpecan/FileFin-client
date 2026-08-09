@@ -262,6 +262,19 @@ suppresses scrutiny. Classic ways a shell gate silently always-passes:
   gate — so a tree of `*.g.dart` turned them all green again.
 - an assertion satisfiable in prose. A check for `String toString(` matched the
   comment saying the class deliberately has none.
+- **a gate that HANGS rather than fails.** `mutation_test` runs the whole suite
+  once per mutant under a 300 s command timeout and counts a timed-out run as
+  *undetected*, so one mutant that loops forever costs five minutes and then
+  reports as a survivor no per-file listing names. The shape that does it is a
+  bound written **only as a condition** in front of a recursive call: rewrite
+  its `||` to `&&` and the recursion is unbounded. Measured at M5.R on
+  `PlayerController._open`'s one retry — three runs out of three, always
+  `Undetected: 1, Timeouts: 1` with `0 not detected` in every file. Bound such
+  a thing **structurally** — a parameter the second call passes — so no rewrite
+  of the condition can loop. `mutation_rules.xml` already excludes every loop
+  rule for exactly this reason; the same hazard reaches ordinary recursion.
+  To find one: sample `git diff` of the mutated sources every ten seconds
+  through a run and look for the mutant that sits on disk for 300 s.
 
 **When you add or change a gate, prove both directions.** Construct an input
 that must fail, run the gate, confirm non-zero exit; then confirm the clean

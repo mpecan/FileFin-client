@@ -204,6 +204,12 @@ reimplemented.
 95 mutants over the M5.1 diff, all killed. 119 over the pre-flight diff, of
 which **two survived the first pass** and both are worth keeping:
 
+**The per-commit figures do not add up to a distinct total, and adding them was
+wrong.** `just mutants` is diff-scoped but re-mutates whole FILES, so a file
+touched by two commits contributes its whole mutant set twice. The union over
+the M5 diff is **255 distinct mutants**, all killed; the sum of the per-commit
+runs is 314 and means only "314 mutant runs happened" (M5.R/G-F5).
+
 - `client_playback.dart` — `if ((response.statusCode ?? 0) < 300)` rewritten to
   `<= 300`, and nothing objected. The tests exercised 206 and 302, which sit
   either side of the boundary without touching it; `300 Multiple Choices` is a
@@ -275,8 +281,14 @@ which **two survived the first pass** and both are worth keeping:
   it is, because the panel replaces the controls a user would reach for.
   Recorded rather than patched: pausing on the failure path is a behaviour
   change that wants its own test on both sides, and inventing it at the end of
-  a milestone is how an untested branch gets shipped. It is reachable only by
-  turning transcoding off between two episodes of one item.
+  a milestone is how an untested branch gets shipped.
+  **RETRACTED, and it was worse than under-stated.** This paragraph ended
+  "it is reachable only by turning transcoding off between two episodes of one
+  item", which is false: SPEC §3.4 decides per FILE, so a mixed-codec item on a
+  statically configured `transcodeEnabled:false` server reaches it with nothing
+  changing and no administrator doing anything. And the consequence was not
+  only the audible one described above — M4.R/P1's data corruption came back
+  through it. Both are fixed in M5.R below.
 - A dead position collector in `hls_live_test.dart`'s resume arm — written and
   never read — was deleted.
 
@@ -287,6 +299,226 @@ this as an open contradiction "since M2"; it is not — §4 says "Every dependen
 is pinned exactly on introduction… not only pre-1.0 ones" and
 `docs/architecture.md` records the M3 reconciliation that made it so. Nothing
 to fix, and it is recorded here so a fourth pass does not go looking again.
+
+### M5.R — remediation of three adversarial reviews of M5
+
+Three reviews, each in its own worktree with its own seeded server: C
+(correctness), T (test genuineness), G (gates and fixtures). Twenty-two
+findings. **One was user-visible data corruption and the two reviewers
+disagreed about it**, so the first thing done was to reproduce both.
+
+#### The disagreement, settled by reproducing both
+
+C measured `postsAfterRefusal = []` after a refused `next()` and concluded the
+pointer does not advance. T re-emitted a duration event and reached a corrupt
+POST. **Both are right, under conditions one line apart**, and running them
+side by side is what shows which:
+
+```
+PROBE C-F1  AFTER-NEXT unplayable=true hostCalls=[open(…/file/0), play] current=1
+            AFTER-TICK current=1 position=0:00:43 duration=0:00:00 reports=[]
+PROBE T-F1  AFTER-DURATION-REEMIT reports=[file1@44.0/100.0:checkpoint]
+            AFTER-COMPLETED       reports=[file1@44.0/100.0:checkpoint,
+                                           file1@100.0/100.0:ended]
+```
+
+`_switchTo` zeroes `_duration`, and `decideReport` skips a zero duration as
+`notStarted` — so with **real libmpv**, which emits `duration` once per open,
+nothing is posted and C's measurement is exactly right. Emit one more duration
+event and the skip stops firing: file 0 running to its end posts
+`{"file":1,"position":100,"duration":100,"event":"ended"}` and marks an episode
+nobody opened, and cannot open, fully watched. **That is M4.R/P1 verbatim,
+through a second route, and it was protected only by a rule about something
+else.**
+
+Two more halves of the same defect, both reproduced:
+
+```
+PROBE C-F1 blast   AFTER-RECOVER opens=[…/file/0@0ms, …/file/1@2400ms]
+PROBE C-F3         failure=Playback could not start: ConnectionFailed: …
+                   unplayable=null opened=0 calls=[] — no retry, no way back
+```
+
+#### The fix: the guard is keyed on FILE IDENTITY, which is what C-F2 asked for
+
+`_engineFile` records the file the engine was actually handed, written after
+`await host.open` returns and nowhere else. `_engineOwnsCurrent` gates the
+`position` and `duration` listeners. `_openFailed` pauses the engine when it is
+holding anything, and routes everything that is not a `TranscodingDisabled`
+through the same bounded retry `_recover` uses.
+
+Three deviations from what the reviews prescribed, each with its reason:
+
+- **`_positionIsCurrent = false` on the refusal path: not added.** With the
+  identity gate the old file's ticks never set it, so on the `next()` path the
+  assignment is dead — and on the other path, where `_recover` re-opens the
+  file the engine is still holding, it is live and *wrong*: that flag is what
+  preserves F8's resume offset.
+- **The `completed` listener is NOT gated.** It reports `position: _duration`,
+  and the two gates above hold `_duration` at zero for a file the engine does
+  not own, which `decideReport` skips. Measured: with the other two gates in
+  place, removing the `completed` gate left **all 179 tests green** — a branch
+  no input can distinguish is a §1 violation and an unkillable mutant.
+- **C-F3 took the retry option, not the Retry button.** The banner over a
+  never-opened engine is still a black rectangle with live controls; that is
+  recorded below rather than fixed.
+
+**And the retry is bounded TWICE, because the first version hung `just
+mutants`.** Expressed only as a condition — `if (error is TranscodingDisabled
+|| _retrySpent) return;` before a recursive `_open()` — the bound is one
+operator away from not existing: `mutation_test` rewrote that `||` to `&&`,
+every failure retried forever, and the gate ran into its 300 s per-command
+timeout. It reported `Undetected Mutations: 1, Timeouts: 1` with **`0 not
+detected` in each of the three files** — a gate that hangs cannot tell a
+survivor from an interruption, which is the shape CLAUDE.md's `mutation_rules`
+already excludes whole loop rules for. It reproduced **three runs out of
+three**, so it was not the machine.
+
+Found by sampling `git diff` of the mutated sources every ten seconds
+throughout a run and looking for the mutant that stayed on disk for 300 s:
+`&&` where the neighbouring sample had `||`. `_open` now takes `mayRetry`, and
+the one retry calls `_open(mayRetry: false)` — the second open is
+**structurally incapable** of asking for a third. Under the same `&&` mutation
+the suite now finishes in seconds and **three tests go red**.
+
+#### Every finding, and what happened to it
+
+| ID | Verdict | What was done |
+|---|---|---|
+| T-F1 | **Confirmed, critical** | `_engineFile` + `_engineOwnsCurrent`; `_openFailed` pauses; 4 new tests |
+| C-F1 | Confirmed, and its blast radius understated | same fix; the `_recover` offset poisoning has its own test |
+| C-F2 | Confirmed | the same identity key — that IS C-F2's prescription |
+| C-F3 | Confirmed | non-415 pre-flight failures go through the bounded retry; 3 tests |
+| C-F4 | Confirmed | one `CancelToken` for the controller, cancelled by `dispose`, passed to all three requests; `_open` returns before `_listen` when disposed; 3 tests |
+| C-F5 | Confirmed | the 415 arm is `when _isFileRoute(requested)`; 7 tests |
+| C-F6 | Confirmed | "The file you asked for", and "turn it on" rather than "back on" |
+| T-F2 | **Confirmed, decoy** | `isNot(anyElement(startsWith('open(')))` at both sites; whole suite grepped |
+| T-F3 | Confirmed | asserts the pre-flight COUNT and the second sentence, not `host.opened` |
+| T-F4 | Confirmed | a third live test: the same show against a transcoding-ENABLED server |
+| T-F5 | Confirmed | the claim deleted; `playback_no_cookie_test.dart` now controls BOTH routes; every `_measure` wait is named |
+| T-F6 | Confirmed | `hasLength(1)` |
+| T-F7 | Confirmed | reworded: it reproduces production's sequence and claims no coverage |
+| T-F8 | Confirmed | `try/finally`, and every `firstWhere` replaced by a subscription this function can cancel |
+| G-F1 | Confirmed | five more anchored assertions, each proven to fail |
+| G-F2 | Confirmed | PROVENANCE.md lists all twelve blocks, in the order the capture writes them |
+| G-F3 | Confirmed | `grep -qiE` over an alternation, in both scripts |
+| G-F5 | Confirmed | 314 is a run count; the union is 255. Corrected above |
+| G-F7 | Confirmed | `git rev-parse --git-path hooks` / `--git-common-dir` |
+| G-F8 | Confirmed | the `-x` rationale now says three of five |
+| reap | Confirmed | orphans only (`ppid == 1`), directories older than an hour |
+| G-F4, G-F6 | Left | recorded by G as pre-existing/cosmetic and unchanged this pass |
+
+#### Proof log — every fix broken, and the test that went red
+
+Applied to production source with `cp` for the undo, suite run, source restored
+and compared byte for byte. `real_mpv_player_test.dart`'s known segfault is
+excluded from the readings below.
+
+| Mutation | Result |
+|---|---|
+| the `position` identity gate deleted | `player_refusal_test.dart: … reopens the new file at ZERO` RED |
+| the `duration` identity gate deleted | `… no ended report ever marks the unopened file watched` RED |
+| **all identity gates deleted (the M5 behaviour)** | **3 RED, including `… nothing the old file does is posted under the new index`** |
+| the `completed` gate deleted | ALL GREEN — see the deviation above; the gate was removed |
+| `await host.pause()` deleted | `… the engine is PAUSED rather than left audible` RED |
+| the whole retry deleted | 2 RED in `a transient pre-flight failure is retried, once` |
+| `\|\|` → `&&` in the retry guard (**the mutant that hung the gate**) | 3 RED, in seconds — it used to run for 300 s and report nothing |
+| `_retrySpent` dropped from `_openFailed`'s guard | `a recovery that already spent the retry does not spend a second` RED |
+| `_retrySpent = true` deleted from `_recover` | `transcoding turned off mid-session stops at one retry` RED — **it was green before T-F3's fix** |
+| `if (_disposed) return` deleted from `_open` | `… nothing is opened on an engine dispose has already torn down` RED |
+| `_work.cancel()` deleted from `dispose` | `… the request itself was cancelled` RED |
+| `cancelToken:` dropped from `requirePlayable` | same test RED |
+| `cancelToken:` dropped from `playbackHeaders` | `… every request the open makes carries the token` RED |
+| `cancelToken:` dropped from `subtitleText` | same test RED |
+| `415 when _isFileRoute(...)` → `415 =>` | 6 RED in the route-scoping group |
+| `[^/]+$` → `[^/]+` in the route predicate | the `/sub/{k}` case RED |
+
+**T-F2's decoy, proven in isolation** rather than by argument, over the exact
+list `FakePlaybackHost` records when `open` IS called:
+
+```
++0: THE DECOY: passes even though open was called
++1 -1: THE FIX: fails, as it must [E]
+  Expected: not some element a string starting with 'open('
+    Actual: ['open(PlaybackRequest(http://nas/file/0))', 'play']
+```
+
+#### Gate proofs, both directions
+
+- **The five new `error_shapes.txt` assertions.** Each line deleted from the
+  fixture, `fixtures-accept` run so the checksum half passes, `verify`
+  re-run: `bad file index`, `rating out of range`, `WEBVTT`,
+  `Content-Range` and the `401…429` sequence all → **exit 1**. Restored →
+  exit 0 and the fixture bytes are identical to before the probes.
+- **The widened retracted-claim tripwire.** `decided by the EXTENSION`,
+  `decided by extension` and `decided by the file suffix` appended in turn,
+  each accepted and re-verified: **exit 1** for all three. The old
+  case-sensitive literal caught none of them.
+- **`hooks-status` in a linked worktree.** Old script, run with the worktree as
+  cwd: `ERROR: … pre-commit (not installed) post-commit (not installed)`,
+  exit 1 — structurally unsatisfiable, because `.git` is a file there. New
+  script: exit 0 from the worktree **and** from the main checkout. Still fails
+  correctly on a hand-made stub: `pre-commit (a plain file, not a symlink …)`,
+  exit 1.
+- **The scoped reap.** One server whose parent is a live shell and one
+  reparented to pid 1, both matching `pgrep -f "$BIN serve"`:
+  `LIVE SURVIVED (correct)` / `ORPHAN REAPED (correct)`. The old code killed
+  both, which is how it reaped a reviewer's server mid-session.
+
+#### What the gates say
+
+- `just check` **exit 0**; `just it` **exit 0** (68 tests: 43 + 25).
+- Tests **1440** (404 + 178 + 858), up from 1422. Live floor **22 → 25**.
+- Mutation: **140 mutants over the M5.R diff** (106 in `apps/mobile` across
+  `player_controller.dart`, `player_failure.dart` and `player_page.dart`, 34 in
+  `error_mapper.dart`), **all killed, 0 timeouts, 16m15s** — against 21m and
+  38m with the hanging mutant burning the 300 s bound. `!mayRetry` is the one line in the diff the
+  rule set produces no mutant for — a brace-less `if` with no operator in its
+  condition — and it is deliberately redundant with `_retrySpent`: it exists to
+  make the recursion structurally impossible, not to be the bound.
+- Coverage **100% (2269/2269)**, ratchet **0**.
+- `file-size` **0 errors, 6 warnings** — held. `player_controller.dart` reached
+  the 600-line HARD limit when the `CancelToken` landed, so
+  `describeApiFailure` and `PlaybackOutcome` moved into `player_failure.dart`
+  as a **part**: no import churn, and the warning count is unchanged because
+  the controller is still over 400 and the new file is not.
+- `comments` **0 errors, 1 warning** — held. The part file's rationale lives at
+  the `part` directive rather than in the part, which is where a reader looking
+  for "why is this split" actually is.
+- Constitution baseline unchanged at **0 across seven checks**. The first draft
+  of `_isFileRoute` used a `RegExp` spelling the path out and
+  `undocumented_endpoint` counted it as a new endpoint — correctly, since a gate
+  cannot tell a pattern from a route. It compares path SEGMENTS instead.
+- `test/fixtures/SHA256SUMS` changed for **PROVENANCE.md only**, which is in the
+  manifest by design (§8): the provenance table is part of what the bytes mean.
+  `KEYS.txt` is unchanged.
+
+#### Left undone, plainly
+
+- **C-F3's UI half.** A pre-flight failure that survives its retry still
+  renders the failure banner over `host.buildSurface()` and a live
+  `PlayerControls` for an engine that was never opened — a black rectangle with
+  controls that drive nothing. The retry closes the dead-end; the surface is
+  still wrong, and a Retry button on `_FailureBanner` when nothing was opened is
+  the remaining half.
+- **`hls_live_test.dart`'s memoised measurement still collapses five tests into
+  one failure.** The waits are named now, so the message says which stage died,
+  but a broken stage still reddens all five.
+- **The `real_mpv_player_test.dart` segfault: re-measured, not explained.**
+  **0 failures in 12 consecutive runs of that file alone**, against M5's 1 in 6
+  and 1 in 5 — but it then took down a whole `just check` anyway, with
+  `TestDeviceException(Shell subprocess crashed with unexpected exit code
+  -10.)` on `mutation_test`'s BASELINE run, which aborts the gate before a
+  single mutant is applied. So: still live, still roughly M5's rate, and the
+  file-alone measurement says nothing useful. And T-F8's leak cannot be the cause of *this* file's crash —
+  the leak is in `test_live/hls_live_test.dart`, which `just test` never runs
+  and which gets its own `flutter_tester` process. What T-F8 did fix is real
+  and was measured as a condition rather than as a crash: `_measure` left
+  listeners on an mpv context `tearDownAll` was about to dispose, which is the
+  condition M4.R/T4 named. Treat the flake as open.
+- **G-F4** (`dead_types` counts constructions in test files) and **G-F6**
+  (`capture_fixtures.sh` exits 0 on some SIGTERM interruptions) are unchanged;
+  both were recorded by review G as pre-existing or cosmetic.
 
 ---
 
