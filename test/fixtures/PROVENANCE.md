@@ -88,14 +88,35 @@ encode what we already believe about the function under test.
 `error_shapes.txt` is a transcript, not a payload, because the interesting part
 is the status line and the headers rather than a body:
 
+**Every block the capture emits is listed here, and that completeness is the
+point.** `check-fixtures.sh` puts this file in the SHA-256 manifest precisely so
+the record of how a fixture was produced is tied to its bytes; a table that had
+drifted to six of twelve sections tied the bytes to a description of something
+else (M5.R/G-F2). `tool/testserver/capture_fixtures.sh` writes them in this
+order.
+
 | Section | Request |
 |---|---|
 | 401 | `GET /api/me` with no cookie |
 | 404 | `GET /api/media/deadbeefdead` |
 | 307 | `GET /api/media/{t}/file/0` — response headers only |
-| 415 | `GET /api/media/{d}/file/0/hls/index.m3u8` — the symmetric refusal |
+| 415 | `GET /api/media/{d}/file/0/hls/index.m3u8` — the symmetric refusal, `not transcodable` |
 | 206 | `GET /api/media/{d}/file/0` with `Range: bytes=0-49` — headers only |
+| 400 | `POST /api/media/{t}/progress` with `file: 99` — `bad file index` |
+| 400 | `POST /api/media/{d}/rating` with `{"rating": 99}` — `rating out of range` |
+| 200 | `GET /api/media/{d}/file/0/sub/0` — headers and the WebVTT the server converted the SRT into |
 | 429 | eight consecutive `POST /api/login` with a wrong password |
+
+The last three blocks are captured against **the same server restarted with
+`transcodeEnabled: false`**, which the script writes into `.filefin.json` and
+puts back from a pristine copy on the way out (its `EXIT` trap, whatever
+happens). They are the only ones that need a differently configured server:
+
+| Section | Request |
+|---|---|
+| 415 | `GET /api/media/{t}/file/0` — the FILE route's `transcoding disabled`, **the only 415 this client can receive** (F12) |
+| detail | `GET /api/media/{t}` — `"transcode":true` on that same server, which is what keeps the client's guard firing (M5.0/E-B) |
+| 200 | `GET /api/media/{d}/file/0` — the direct-play film is unaffected by the setting |
 
 The 429 carries `Retry-After: 900`, verified live against this seeded server —
 six wrong passwords give `401 401 401 401 401 429`, and the sixth carries the

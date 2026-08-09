@@ -222,10 +222,13 @@ grep -q '^Location:.*hls/index.m3u8' "$DIR/error_shapes.txt" || \
 # both captured is what stops a maintainer "fixing" F12's message to cover a
 # case that cannot reach it.
 #
-# `-x`, and that is not pedantry: the capture writes a COMMENT above each block
-# naming the same words, so an unanchored grep passed against a file whose
-# payload line had been deleted — measured while proving this gate in both
-# directions. An assertion satisfiable by prose is one CLAUDE.md names by name.
+# `-x`, and that is not pedantry: for THREE of the five strings anchored in this
+# section the capture writes a COMMENT above the block naming the same words, so
+# an unanchored grep passed against a file whose payload line had been deleted —
+# measured while proving this gate in both directions. (`HTTP 415` and the
+# `Location:` line are not shadowed by their own comments; they are anchored for
+# consistency and cost nothing.) An assertion satisfiable by prose is one
+# CLAUDE.md names by name.
 grep -qx 'transcoding disabled' "$DIR/error_shapes.txt" || \
     fail "error_shapes.txt has no 'transcoding disabled' — that is the FILE route's
        415 and the only one this client can see. It needs a server with
@@ -233,12 +236,43 @@ grep -qx 'transcoding disabled' "$DIR/error_shapes.txt" || \
 grep -qx 'not transcodable' "$DIR/error_shapes.txt" || \
     fail "error_shapes.txt has no 'not transcodable' — the HLS route's 415, the
        symmetric half of SPEC §3.4"
+
+# THE OTHER FIVE BLOCKS. Until M5.R this gate guarded four of about twelve, and
+# the rest were guarded only inside `capture_fixtures.sh` — which needs a real
+# server, is not in `just check` and cannot run in CI. A hand-edit followed by
+# `fixtures-accept` therefore laundered them away with `verify` still exit 0,
+# which is the exact attack the structural half exists to stop (proven at M4
+# with `jq '.tags = []'`). Anchored for the reason above.
+grep -qx 'bad file index' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 'bad file index' — the 400 the progress route
+       answers when an item's file list changed under us. It is what
+       ProgressReporter turns into ReportStop.rejected, and the only capture of it"
+grep -qx 'rating out of range' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 'rating out of range' — the OTHER 400 body, and
+       the one that shows BadRequest carries a route-specific sentence rather
+       than a single fixed string"
+grep -qx 'WEBVTT' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no WEBVTT line — the sidecar route converts SRT to
+       WebVTT on the fly (SPEC §3.4), and subtitleText's whole contract is that
+       what comes back is already WebVTT"
+grep -qE '^Content-Range: bytes 0-49/[0-9]+$' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 206 Content-Range header — byte-range serving on
+       the direct-play route is F8's foundation and this is its only capture"
+grep -qE '^(401 )+(429 )+$' "$DIR/error_shapes.txt" || \
+    fail "error_shapes.txt has no 401…429 rate-limit sequence — the lockout that
+       RateLimited and Retry-After are written against"
 # A GATE AGAINST ONE SPECIFIC FALSEHOOD COMING BACK. The last block of this file
 # used to read "the browser-native verdict is decided by EXTENSION, not by probed
 # codecs" — the unprobed fallback read as the rule. It was retracted in four
 # other documents at M4 and left standing here, in a CAPTURED FIXTURE, which §8
 # treats as evidence. It is evidence for something untrue.
-if grep -q 'decided by EXTENSION' "$DIR/error_shapes.txt"; then
+# `-i`, and a wider alternation than the retracted sentence used. A tripwire on
+# one exact spelling is defeated by re-typing the claim: `decided by the
+# EXTENSION`, `decided by extension` and `decided by the file suffix` all sailed
+# through the case-sensitive literal (M5.R/G-F3). Case-insensitivity costs
+# nothing, and the real defence is still the SHA-256 manifest forcing any edit
+# through `fixtures-accept` into a reviewable diff.
+if grep -qiE 'decided by (the )?(file )?(extension|suffix)' "$DIR/error_shapes.txt"; then
     fail "error_shapes.txt states the RETRACTED claim that the browser-native
        verdict is decided by the file extension. It is decided by the PROBED
        container and codecs when the cache row has them (playback.go:78), and

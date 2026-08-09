@@ -258,8 +258,10 @@ for shape in 'bad file index' 'rating out of range' 'WEBVTT' 'transcoding disabl
   grep -qx "$shape" "$OUT/error_shapes.txt" || {
     echo "FATAL: error_shapes.txt lost the '$shape' block"; exit 1; }
 done
-grep -q 'decided by EXTENSION' "$OUT/error_shapes.txt" && {
-  echo "FATAL: the retracted 'decided by EXTENSION' claim is back in error_shapes.txt"; exit 1; }
+# `-i` and an alternation, matching `check-fixtures.sh`: a tripwire on one exact
+# spelling is defeated by re-typing the claim (M5.R/G-F3).
+grep -qiE 'decided by (the )?(file )?(extension|suffix)' "$OUT/error_shapes.txt" && {
+  echo "FATAL: the retracted 'decided by the extension' claim is back in error_shapes.txt"; exit 1; }
 
 # NO CARRIAGE RETURNS. `curl -D -` emits real HTTP headers, which end CRLF, and
 # `git config core.autocrlf=input` strips them ON COMMIT — so a manifest

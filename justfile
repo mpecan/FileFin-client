@@ -101,10 +101,11 @@ mutants:
 
 # === git hooks (CLAUDE.md §12) ===
 install-hooks:
-    @mkdir -p .git/hooks
-    @for hook in pre-commit post-commit; do \
-      ln -sf ../../tool/hooks/$hook .git/hooks/$hook && \
-      test -x .git/hooks/$hook && echo "$hook hook installed and executable"; \
+    @hooks=$(git rev-parse --git-path hooks); mkdir -p "$hooks"; \
+    tree=$(cd "$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P); \
+    for hook in pre-commit post-commit; do \
+      ln -sf "$tree/tool/hooks/$hook" "$hooks/$hook" && \
+      test -x "$hooks/$hook" && echo "$hook hook installed and executable"; \
     done
 
 # Fails rather than warns: an uninstalled hook gates nothing and stays silent

@@ -29,10 +29,19 @@ resolve() {
     )
 }
 
+# `git rev-parse`, not a literal `.git/hooks`. In a LINKED WORKTREE `.git` is a
+# FILE, so the literal path does not exist and this gate was structurally
+# unsatisfiable there — it failed with "not installed" however carefully the
+# hooks had been installed. `--git-path hooks` answers with the common hooks
+# directory from either kind of checkout, and `--git-common-dir`'s parent is the
+# main working tree, which is what the symlink legitimately points into.
+hooks_dir="$(git rev-parse --git-path hooks)"
+main_tree="$(cd "$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"
+
 problems=()
 for hook in pre-commit post-commit; do
-    installed=".git/hooks/$hook"
-    source_hook="tool/hooks/$hook"
+    installed="$hooks_dir/$hook"
+    source_hook="$main_tree/tool/hooks/$hook"
     if [ ! -e "$installed" ]; then
         problems+=("$hook (not installed)")
     elif [ ! -x "$installed" ]; then
@@ -49,4 +58,4 @@ if [ ${#problems[@]} -gt 0 ]; then
        Run 'just install-hooks'. Until then nothing stops a red commit."
 fi
 
-echo "hooks: pre-commit + post-commit are symlinks to tool/hooks/ and executable"
+echo "hooks: pre-commit + post-commit are symlinks to $main_tree/tool/hooks/ and executable"
