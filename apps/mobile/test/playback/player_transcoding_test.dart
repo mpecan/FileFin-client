@@ -163,7 +163,12 @@ void main() {
       );
       expect(controller.unplayable, isA<TranscodingDisabled>());
       expect(controller.needsSignIn, isFalse);
-      expect(host.calls, isNot(contains('open')));
+      // `anyElement(startsWith(...))`, and the shape is the finding rather
+      // than a style choice: `open` is recorded as `'open($request)'`, so
+      // `isNot(contains('open'))` is element EQUALITY against a string no
+      // element can ever equal — it passed with `open` called, in a test named
+      // for open never being called.
+      expect(host.calls, isNot(anyElement(startsWith('open('))));
       expect(host.opened, isEmpty);
     });
 
@@ -213,15 +218,26 @@ void main() {
       // `_recover` spends its retry on the first engine error and re-opens;
       // the pre-flight refuses that re-open, and nothing loops. Without the
       // bound, a permanently-415 file would re-open forever behind a banner.
+      //
+      // **Asserted on the PRE-FLIGHT count and on the second sentence**, not
+      // on `host.opened`. `opened` stays at 1 whether the bound exists or not,
+      // because what stops the second open is the pre-flight refusing — so
+      // deleting `_retrySpent = true` outright left all 15 tests in this file
+      // green and the assertion whose reason read "the retry is spent, no
+      // loop" was satisfied by something else entirely.
       final controller = controllerFor(_show());
       await controller.start();
       expect(host.opened, hasLength(1));
+      int preflights() =>
+          api.calls.where((c) => c.startsWith('requirePlayable')).length;
+      expect(preflights(), 1);
 
       api.requirePlayableResult = TranscodingDisabled(url);
       host.emitError('Failed to open http://nas.local/…/file/0.');
       await pumpEventQueue();
 
       expect(host.opened, hasLength(1), reason: 'the re-open was refused');
+      expect(preflights(), 2, reason: 'the one retry was spent here');
       expect(
         controller.failure,
         'This file needs transcoding and the server has it turned off.',
@@ -230,7 +246,11 @@ void main() {
       host.emitError('Failed to open http://nas.local/…/file/0.');
       await pumpEventQueue();
 
-      expect(host.opened, hasLength(1), reason: 'the retry is spent, no loop');
+      expect(preflights(), 2, reason: 'the retry is spent: no second re-open');
+      // And the banner now carries mpv's own words rather than F12's, which is
+      // the observable difference between "the retry is spent" and "the retry
+      // ran again and was refused again".
+      expect(controller.failure, 'Failed to open http://nas.local/…/file/0.');
     });
 
     test('an ordinary failure leaves `unplayable` null', () async {
@@ -295,7 +315,7 @@ void main() {
 
       expect(
         find.text(
-          'This file needs transcoding, and "Home NAS" has it '
+          'The file you asked for needs transcoding, and "Home NAS" has it '
           'turned off.',
         ),
         findsOneWidget,
@@ -305,7 +325,7 @@ void main() {
           'The server converts formats a player cannot read as they '
           'are. With that turned off there is nothing to play — nothing '
           'this app can change will help, so someone with admin access to '
-          'the server has to turn it back on.',
+          'the server has to turn it on.',
         ),
         findsOneWidget,
       );

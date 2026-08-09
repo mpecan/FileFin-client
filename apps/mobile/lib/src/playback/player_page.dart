@@ -274,8 +274,12 @@ class _UnplayablePanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'This file needs transcoding, and "${server.name}" has it '
-            'turned off.',
+            // "The file you asked for", not "This file": after a refused
+            // `next()` the panel is about the episode the user just asked for
+            // and NOT about the one they were watching a second ago, and
+            // "this" cannot tell them apart (M5.R/C-F6).
+            'The file you asked for needs transcoding, and "${server.name}" '
+            'has it turned off.',
             textAlign: TextAlign.center,
             // No explicit size, matching `_RefusalPanel` and `MeteredPrompt`.
             // A hard-coded `fontSize: 18` also fixed the type scale against the
@@ -286,10 +290,12 @@ class _UnplayablePanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text(
+            // "turn it on", not "back on": nothing here knows it was ever
+            // on, and a server that shipped with it off has never had it.
             'The server converts formats a player cannot read as they are. '
             'With that turned off there is nothing to play — nothing this app '
             'can change will help, so someone with admin access to the server '
-            'has to turn it back on.',
+            'has to turn it on.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white70),
           ),

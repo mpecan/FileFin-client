@@ -9,6 +9,14 @@ import 'package:filefin_mobile/src/playback/progress_reporter.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/widgets.dart';
 
+// A `part` rather than a second library, for the reason `client_playback.dart`
+// is one: this file reached `file-size`'s 600-line HARD limit when M5.R
+// threaded a `CancelToken` through `_open`, and a gate warning may fall or hold
+// and never rise. Splitting by subject keeps both halves readable and — because
+// it is a part — costs no import churn at the call sites that already take
+// `describeApiFailure` and `PlaybackOutcome` from here.
+part 'player_failure.dart';
+
 /// Drives one playing item: F7, F8, F9, F13, NF6 and playback's half of F3.
 ///
 /// **A `ChangeNotifier`, deliberately not an `AsyncController`.** That one is
@@ -62,7 +70,17 @@ class PlayerController extends ChangeNotifier {
   final ProgressReporter _reporter;
   final List<StreamSubscription<Object?>> _subs = [];
 
+  /// NF5's token for every request this controller makes.
+  ///
+  /// The pre-flight made the window worth closing: `_open` awaits up to three
+  /// round trips before it reaches `host.open`, and backing out of the route
+  /// in that window used to resume into `host.open()` on a `Player` that
+  /// `dispose` had already torn down — measured as
+  /// `after gate: opened=1 calls=[dispose, open(…), play]`.
+  final CancelToken _work = CancelToken();
+
   FileIndex _current;
+  FileIndex? _engineFile;
   Duration _startAt;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -210,6 +228,16 @@ class PlayerController extends ChangeNotifier {
   /// suppresses the report outright until the engine has said where the new
   /// file is: a report of second 0 is still a claim about a file nothing has
   /// measured, and it would overwrite a pointer the server already holds.
+  ///
+  /// Neither is sufficient **either**, and [_engineOwnsCurrent] is why: both
+  /// assume the open that follows reaches `host.open`. When it does not — a
+  /// refused pre-flight, a `playbackHeaders` throw — the engine keeps emitting
+  /// the *old* file's events, which re-arm exactly what was just disarmed. A
+  /// position tick sets `_positionIsCurrent`, a duration tick refills
+  /// `_duration`, and the pair posts the old file's seconds under the new
+  /// file's index: measured after M5, file 0 running to its end posted
+  /// `{"file":1,"position":100,"duration":100,"event":"ended"}` and marked an
+  /// episode nobody had opened fully watched.
   void _switchTo(FileIndex file) {
     _current = file;
     _position = Duration.zero;
@@ -277,6 +305,7 @@ class PlayerController extends ChangeNotifier {
     // Unawaited, as a backstop: `PopScope` awaits `close()` on the normal path,
     // and a dispose that blocked on a request would hold the frame.
     unawaited(_reportNow(ProgressEvent.stop));
+    _work.cancel();
     for (final sub in _subs) {
       unawaited(sub.cancel());
     }
@@ -304,13 +333,28 @@ class PlayerController extends ChangeNotifier {
   /// the guard fire in the case it exists for. It can be stale — the detail
   /// was fetched earlier — and that is accepted debt: a file that became
   /// direct-playable meanwhile simply answers `200` and the pre-flight passes.
-  Future<void> _open() async {
+  ///
+  /// [mayRetry] is what stops the retry below from being a RECURSION, and it
+  /// is there because of a measured hang rather than for tidiness: with the
+  /// bound expressed only as a condition, `mutation_test` rewriting that
+  /// condition's `||` to `&&` made every failure retry forever and the whole
+  /// gate ran into its 300 s per-command timeout, three runs out of three.
+  /// A gate that hangs reports nothing, so the second open is now structurally
+  /// incapable of asking for a third.
+  Future<void> _open({bool mayRetry = true}) async {
     _failure = null;
     _unplayable = null;
     try {
-      if (file.transcode) await api.requirePlayable(detail.id, _current);
-      final headers = await api.playbackHeaders();
+      if (file.transcode) {
+        await api.requirePlayable(detail.id, _current, cancelToken: _work);
+      }
+      final headers = await api.playbackHeaders(cancelToken: _work);
       _subtitles = await _fetchSubtitles();
+      // The screen went away while the pre-flight was in flight. Opening now
+      // drives an engine `dispose` has already torn down, and subscribing to
+      // it registers listeners nothing will ever cancel. Before `_listen`, so
+      // neither happens.
+      if (_disposed) return;
       await _listen();
       await host.open(
         PlaybackRequest(
@@ -320,12 +364,51 @@ class PlayerController extends ChangeNotifier {
           verifyTls: api.playbackTransport() == PlaybackTransport.osTrustedTls,
         ),
       );
+      // After the await, not before: until `open` returns, what the engine
+      // holds is still the previous file, and claiming otherwise is the whole
+      // defect [_switchTo] describes.
+      _engineFile = _current;
       await host.play();
       final first = _subtitles.isEmpty ? null : _subtitles.first;
       if (first != null) await selectSubtitle(first);
     } on FileFinApiException catch (e) {
-      _fail(e);
+      await _openFailed(e, mayRetry: mayRetry);
     }
+  }
+
+  /// An open that never reached the engine, and the two things it must do.
+  ///
+  /// **Silence what is still playing.** Every failure here lands *before*
+  /// `host.open`, so the engine keeps decoding whatever it had — and after
+  /// [next] has moved `_current`, that is audio for a file the screen no
+  /// longer describes, behind a full-screen panel with no controls on it. The
+  /// pause is the user-visible half of the same defect [_switchTo] names.
+  ///
+  /// **Then retry, once, unless the answer is permanent.** A `415` is
+  /// deterministic — re-asking spends a round trip to be told the same thing —
+  /// but a `ConnectionFailed` on the pre-flight is a blip, and before M5 the
+  /// blip went through `host.errors` to [_recover]'s retry. Without this the
+  /// player dead-ends on a banner with nothing behind it and no way back.
+  /// Bounded twice over: [_retrySpent], which is the same latch [_recover]
+  /// spends and which stops a second retry after a recovery has already used
+  /// one; and `mayRetry`, which bounds it structurally. See [_open].
+  ///
+  /// The review also asked for `_positionIsCurrent = false` here, and it is
+  /// deliberately absent: [_engineOwnsCurrent] already stops the old file's
+  /// ticks from setting it, so it would be dead on the [next] path — and live
+  /// and *wrong* on the other one, where [_recover] re-opens the file the
+  /// engine still holds and `_positionIsCurrent` preserves F8's offset.
+  Future<void> _openFailed(
+    FileFinApiException error, {
+    required bool mayRetry,
+  }) async {
+    if (_disposed) return;
+    if (_engineFile != null) await host.pause();
+    _fail(error);
+    if (!mayRetry) return;
+    if (error is TranscodingDisabled || _retrySpent) return;
+    _retrySpent = true;
+    await _open(mayRetry: false);
   }
 
   /// Fetches every sidecar for the current file **through the API**.
@@ -341,7 +424,12 @@ class PlayerController extends ChangeNotifier {
           SubtitleSource(
             index: info.index,
             label: info.label.isEmpty ? info.lang : info.label,
-            data: await api.subtitleText(detail.id, _current, info.index),
+            data: await api.subtitleText(
+              detail.id,
+              _current,
+              info.index,
+              cancelToken: _work,
+            ),
           ),
         );
       } on FileFinApiException {
@@ -351,10 +439,20 @@ class PlayerController extends ChangeNotifier {
     return sources;
   }
 
+  /// Whether the engine is holding the file [current] names.
+  ///
+  /// **The single source of truth [next]'s comment claims, made checkable.**
+  /// `_engineFile` is written where the engine is handed a file and nowhere
+  /// else, so an event arriving while it disagrees with `_current` describes a
+  /// file this controller no longer reports on. Every listener that feeds a
+  /// progress report is gated on it.
+  bool get _engineOwnsCurrent => _engineFile == _current;
+
   Future<void> _listen() async {
     if (_subs.isNotEmpty) return;
     _subs.addAll([
       host.duration.listen((d) {
+        if (!_engineOwnsCurrent) return;
         _duration = d;
         _notify();
       }),
@@ -363,6 +461,7 @@ class PlayerController extends ChangeNotifier {
         _notify();
       }),
       host.position.listen((p) {
+        if (!_engineOwnsCurrent) return;
         _position = p;
         _positionIsCurrent = true;
         // Playback is demonstrably running again, so the next failure gets its
@@ -377,6 +476,10 @@ class PlayerController extends ChangeNotifier {
         if (!p && _positionIsCurrent) unawaited(_report(ProgressEvent.pause));
       }),
       host.completed.listen((done) {
+        // No `_engineOwnsCurrent` here, and the absence is measured: this
+        // reports `position: _duration`, which the two gates above hold at
+        // zero for a file the engine does not own — `notStarted`. A third gate
+        // is a branch no input can distinguish (§1); it survived the suite.
         if (!done) return;
         // `position: duration` so the crossing is unambiguous: mpv's last
         // position tick can land a few milliseconds short of the end, which is
@@ -453,74 +556,3 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 }
-
-/// What one playback session leaves behind for the screen that opened it.
-///
-/// **This is F9's second clause made into a value someone receives** — "reflect
-/// resulting watched/continue changes locally without a full refetch". Until
-/// M4.R/P3 `ProgressReporter.state` and `needsDetailRefetch` had no production
-/// reader at all: the fold was computed, validated against 601 captured vectors
-/// and thrown away, `MediaDetailPage` loaded once in `initState` and never
-/// again, and the detail screen behind the player showed a resume offset from
-/// before playback started. M1's divergence latch discharged nothing because
-/// nothing read it.
-@immutable
-class PlaybackOutcome {
-  /// The session ended with [state], needing a refetch or not.
-  const PlaybackOutcome({
-    required this.state,
-    required this.needsDetailRefetch,
-  });
-
-  /// The optimistic watch state, folded through the server's own engine.
-  final WatchState state;
-
-  /// Whether [state] is known to have diverged and must be re-read instead.
-  ///
-  /// True only for the one input class `applyProgress` provably cannot match —
-  /// a report crossing 90% of a single-file item, where `(0, 0)` is ambiguous
-  /// on the wire. Everywhere else the prediction IS the server's answer, which
-  /// is what makes the no-refetch half of F9 honest rather than optimistic.
-  final bool needsDetailRefetch;
-}
-
-/// The sentence a playback failure shows, and whether it needs a sign-in.
-///
-/// A tuple rather than a reach into `error_presentation.dart`'s `ErrorMessage`:
-/// the player shows one line over the video, not a full panel with a Retry
-/// button, and the two surfaces want different things from the same error.
-///
-/// **There is no `_` arm, and its absence is the point.** This function had one
-/// until M5.1, and it was a hole in an alarm three other switches were sounding
-/// correctly: `error_presentation.dart`, `error_presentation_test.dart` and
-/// `error_mapper_test.dart` all stopped compiling when `TranscodingDisabled`
-/// landed and this one did not (measured, M5.0/E-J). It would have rendered
-/// `Playback could not start: TranscodingDisabled: … turned off` on the player
-/// banner — the surface F12 is actually about — with nothing to say so. The
-/// generic sentence is now a **grouped arm** rather than a default, so it still
-/// covers everything with no wording of its own while a new variant remains a
-/// compile error here.
-(String, bool) describeApiFailure(FileFinApiException error) => switch (error) {
-  SessionExpired() => (
-    'Your session ended. Sign in again to keep playing.',
-    true,
-  ),
-  TranscodingDisabled() => (
-    'This file needs transcoding and the server has it turned off.',
-    false,
-  ),
-  BadRequest(:final body) => ('The server refused that file: $body', false),
-  NotFound() => ('That file is not on the server any more.', false),
-  RequestTimedOut() ||
-  RequestCancelled() ||
-  ConnectionFailed() ||
-  CacheUnavailable() ||
-  RateLimited() ||
-  MalformedIdentifier() ||
-  InvalidCredentials() ||
-  NotAFileFinServerResponse() ||
-  MalformedResponse() ||
-  ServerFailure() ||
-  CertificateNotTrusted() ||
-  CertificatePinMismatch() => ('Playback could not start: $error', false),
-};
