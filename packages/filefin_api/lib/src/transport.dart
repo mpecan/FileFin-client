@@ -56,11 +56,21 @@ import 'package:dio/dio.dart';
 /// Refusing outright rather than inspecting the final URI is the M2-shaped
 /// answer: no documented endpoint this client calls redirects (the wire trace
 /// of all seven found none), so a redirect here is already something we do not
-/// model and arrives as `ServerFailure` naming the status. M5's `307` to HLS is
-/// a redirect we *do* model, and it will have to turn this on deliberately,
-/// with the origin check and the "headers survive the redirect" test that
-/// SPEC.md asks for — which is exactly the conversation a silent default was
-/// having on our behalf.
+/// model and arrives as `ServerFailure` naming the status.
+///
+/// **This paragraph used to predict that M5 would turn it on. M5 did not, and
+/// the prediction was wrong for a reason worth keeping.** The `307` to HLS is a
+/// redirect we model, but *dio never follows it*: `PlaybackRequest.url` is the
+/// file route and **libmpv** follows the redirect itself, over its own socket,
+/// with the `Cookie` header surviving onto the playlist and the segments (R1,
+/// retired). The only thing dio does with that route is `requirePlayable`'s
+/// bounded `HEAD`, which wants to *read* the `307` rather than chase it —
+/// `validateStatus: (s) => s < 400` is what makes it return instead of throw.
+/// So turning `followRedirects` on would have re-opened M2's measured
+/// downgrade attack (`302 -> http://impostor/api/me` returning
+/// `{"user":"attacker","admin":true}`) in exchange for nothing at all.
+/// `preflight_test.dart` asserts `countFor(hlsPath) == 0`, which is the
+/// assertion that pins this off.
 BaseOptions fileFinBaseOptions({
   required Uri baseUrl,
   required Duration timeout,

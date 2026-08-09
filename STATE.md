@@ -9,7 +9,8 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M2** — `filefin_api`: the HTTP client, the cookie jar, F3's 401-retry, F15's certificate pinning, and `just it` against a real `filefin` |
 | **Done** | **M3** — `apps/mobile`: the app shell, F1's add-server flow, F2's sign-in, and F4's category tree, virtualised poster grid and detail view; every gate's Flutter branch |
 | **Done** | **M4** — playback, the direct path: F7, F8, F9, F13, NF6, D10's TLS refusal, and the `PlaybackHost` seam that makes libmpv testable |
-| **Next** | **M5** — the HLS path and F12's messaging |
+| **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
+| **Next** | **M6** — search, home rows, favourite/rating/watched (F5, F6, F10) |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -36,6 +37,240 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M5 — what was built
+
+| Step | Deliverable |
+|---|---|
+| M5.0 | A measurement session, no commit. **Twelve experiments; one destroyed a premise of the plan, two confirmed the two the design rests on, and one destroyed a prediction in the reassuring direction** |
+| M5.1 | `TranscodingDisabled` in `errors_playback.dart`, the `415` mapper arm, `describeApiError`'s arm — and the **`_` default arm deleted** from `describeApiFailure`, which is the hole §1 of the plan found |
+| M5.2 | `FileFinClient.requirePlayable` — a `HEAD` pre-flight on the file route, `validateStatus < 400` so the `307` returns, `_refuseHtml` on **2xx only** |
+| M5.3 | `LibraryApi.requirePlayable` and an argument-aware fake for it, deliberately not through `_answer<void>` |
+| M5.4 | The guard in `PlayerController._open()`, `unplayable`, and the tests that pin it on **both** sides |
+| M5.5 | `_UnplayablePanel` — full-screen, because the engine was never opened and there is nothing behind a banner |
+| M5.6 | `capture_fixtures.sh` emits the four blocks that were hand-appended, adds the FILE route's 415 against a transcoding-disabled server, and puts the config back; three new `check-fixtures.sh` assertions, each proven to fail |
+| M5.7 | `FixtureRun.create(transcoding:)` and five integration tests against a real disabled server; floor 38 → 43 |
+| M5.8 | `hls_live_test.dart` and `transcoding_disabled_live_test.dart`; floor 15 → 22 |
+| M5.9 | This section, four verification-backlog rows, and the nine document errors the plan listed |
+
+### The verdict, up front
+
+**Playback itself needed no client change at all.** `PlaybackRequest.url` was
+already `api.fileUrl(...)`, `transport.dart` never fetches media bytes, and
+libmpv follows the `307` and decodes the server's HLS unaided — measured before
+a line was written (M5.0/E-C): duration, an audio track, a position past one
+second, a backwards seek and completion, all through the unmodified
+`MediaKitPlaybackHost`. So M5 is **one error variant, one bounded pre-flight,
+one `if`, one panel and the tests**, and saying that plainly is better than
+inventing an "HLS adapter" to justify the milestone.
+
+### M5.0 — the twelve answers
+
+Two servers were run side by side over private copies of the seeded run
+directory (`transcodeEnabled: null` and `false`). **`$HOME/development/filefin-test/run`
+was never modified**, which matters: a stray `false` there turns the existing
+307 integration test red on unmodified code.
+
+- **E-A — the pre-flight is a `HEAD`.** Go 1.22's `ServeMux` matches a `GET`
+  pattern for `HEAD`, so it really reaches `handleStream`: `307` for the
+  transcoding show, `200 video/mp4` for the film, `415` on the disabled server,
+  `404` for a bad index, `401` unauthenticated, and `200 text/html` for a path
+  the SPA catch-all answers. A one-byte `GET Range: 0-0` gives identical
+  statuses and moves a body — 81 bytes of Go's redirect HTML on one arm, a
+  media byte on the other.
+- **E-B — `transcode` stays `true` with transcoding off.** LOAD-BEARING, and it
+  holds. `fileNeedsTranscode` never consults whether transcoding is *enabled*,
+  so the client's guard still fires. File route → `415 transcoding disabled`;
+  hls route → `415 not transcodable`; the film still answers `200` with
+  `Accept-Ranges: bytes`.
+- **E-C — the `307` plays.** duration **3023 ms** (mpv takes `#EXTINF:3.023`
+  from the playlist, not the 3.000 s source), one audio track, first position
+  past 1 s at 1023 ms, completion at 2956 ms.
+- **E-D — `Media(start:)` IS honoured on an HLS VOD playlist.** LOAD-BEARING,
+  and nothing had ever tested it. `startAt: 1200 ms` → `[0, 1200, 1289, …]`;
+  the `startAt: 0` control → `[0, 89, 156, …]`. F8 over HLS works and M5 owes
+  no fallback.
+- **E-E — the event order after a second `open()` is IDENTICAL on both paths.**
+  The prediction that they might differ is destroyed, in the reassuring
+  direction: `tracks=∅ → playing=false → position=0 → duration=0 →
+  playing=true → tracks=1 → duration → first real position`, mid-playback, on
+  both. `_switchTo`'s zeroing and `_positionIsCurrent` cover `next()` between
+  two HEVC episodes exactly as they cover the direct path, so **the
+  data-corruption bug this experiment was looking for does not exist.** One
+  refinement: an emptied `tracks` precedes `playing=false`; the load-bearing
+  half of the claim in `player_controller.dart` — `playing=false` before any
+  position or duration event — holds.
+- **E-F — a backwards seek over HLS lands.** 2223 ms → 400 ms, no new
+  `filefin-hls-*` session directory, no ffmpeg process observable at all.
+- **E-G — the pre-flight starts no transcode.** 10 HEADs + 10 one-byte GETs
+  created **zero** session directories (13 → 13 → 13); one playlist request
+  created one (13 → 14).
+- **E-H — `503 segment unavailable` is unprovokable here, and that is the
+  answer** rather than a claim that the behaviour is fine. The playlist is one
+  `seg0.ts` with `#EXT-X-ENDLIST` and the segment answered in 1.3 ms. Backlog
+  row A.
+- **E-I — the "before".** Real client, real libmpv, disabled server:
+  `PlayerController.failure` was mpv's own sentence, verbatim —
+  `Failed to open http://127.0.0.1:8299/api/media/919ac9caad25/file/0.` — over
+  a black surface, with `_recover` spending its retry on a failure that can
+  never succeed. That is what F12 exists to replace.
+- **E-J — the compile alarm reaches three files, and not the one that
+  mattered.** `error_presentation.dart:50`, `error_presentation_test.dart:329`,
+  `error_mapper_test.dart:354`. **`player_controller.dart` was absent**, because
+  `describeApiFailure` had a `_` arm — §1 of the plan found it by grep and this
+  measured it.
+- **E-K — dio returns the `307`, and the plan was wrong about the guard.**
+  `validateStatus: (s) => s < 400` makes a `3xx` return with `Location`
+  present; the `415` throws `badResponse`, with an **empty body under HEAD**.
+  And the finding that changed the design: **the `307` carries
+  `Content-Type: text/html; charset=utf-8`**, because `http.Redirect` writes an
+  HTML body. The plan's "`_refuseHtml` on the response" would have refused the
+  success case while letting the SPA catch-all's `200 text/html` through —
+  backwards. The guard is 2xx-only and is tested at 206, 300 and 302.
+- **E-L — the gate numbers, before any edit.** `file-size` **6 warnings**,
+  `comments` **1 warning and 13 files under 20 counted lines**, constitution
+  clean, coverage **100% (2201/2201)** with the ratchet at **0**. STATE.md said
+  both gates reported zero; they do not, and that sentence is corrected above.
+
+### The design, and the three things it deliberately does not do
+
+```
+PlayerController._open()
+  ├─ if (file.transcode) await api.requirePlayable(detail.id, _current)
+  │        415 → TranscodingDisabled → F12's panel, engine never opened
+  │        307 → proceed          2xx → proceed
+  ├─ await api.playbackHeaders()          (unchanged)
+  ├─ subtitles, listen                    (unchanged)
+  └─ host.open(...)                       libmpv follows the 307 itself
+```
+
+**Eager, not classify-on-error**, because a 415 is deterministic and permanent:
+there is nothing for `_recover`'s retry to achieve, the eager path never puts a
+black surface in front of anyone, and the lazy path would weave a second
+question into a three-line function M4.R had to fix three defects in.
+
+**Guarded on `file.transcode`**, because SPEC §3.4 makes a 415 on the file
+route reachable only for a file that needs transcoding. The flag can be stale;
+that is accepted debt and it self-heals, because a file that became
+direct-playable answers `200` and the pre-flight passes.
+
+Not done, each because a document suggested it: `followRedirects` stays **off**
+(dio never fetches media bytes, and turning it on re-opens M2's measured
+downgrade attack for no benefit); no `RefuseReason.transcodingDisabled`,
+because every variant of that enum must be constructible from `decide`'s own
+inputs and a 415 is not (A10, M1); and `transcode.DirectPlayable` is not
+reimplemented.
+
+### What the gates said
+
+- `just check` **exit 0**; `just it` **exit 0**.
+- `file-size` **0 errors, 6 warnings** — held, not raised. `error_mapper_test.dart`
+  crossed 400 when the 415 cases were added to it and they were moved into
+  `errors_playback_test.dart` rather than left to raise the count.
+- `comments` **0 errors, 1 warning** — held. `error_presentation.dart` crossed
+  15% under a four-line rationale comment, which moved into the variant's
+  `///` doc where it belongs.
+- Coverage **100%**, `MAX_UNCOVERED` **0**.
+- The constitution baseline is unchanged at **0 across seven checks**.
+
+### Gate proofs, both directions
+
+- **`dead_types`.** With every construction **and** every `switch` pattern for
+  `TranscodingDisabled` renamed away, `just constitution` reports
+  `dead_types — 1 violation(s), baseline 0` and exits non-zero; restored, `no
+  new violations`, exit 0. **Worth recording: the gate's regex cannot tell a
+  constructor call from a `switch` pattern**, so a variant that is only ever
+  *matched* satisfies it. Deleting the mapper line alone — which is what the
+  plan proposed as the proof — leaves the gate green, because the tests
+  construct it.
+- **The three new `check-fixtures.sh` assertions.** Each was proven by editing
+  `error_shapes.txt`, running `fixtures-accept` so the checksum half passes,
+  and confirming the structural half fails: dropping the `transcoding disabled`
+  line → exit 1, dropping `not transcodable` → exit 1, re-adding the retracted
+  `decided by EXTENSION` block → exit 1. Restored: exit 0, and the manifest is
+  byte-identical to before the probes. **The first attempt at those greps was
+  satisfiable by prose** — the capture writes a comment above each block naming
+  the same words, so an unanchored `grep` passed against a file whose payload
+  line had been deleted. They are `grep -qx` now.
+- **The `file-size` and `comments` budgets** were re-measured before and after
+  every commit rather than assumed.
+- **The two integration floors** are raised from 38 → 43 and 15 → 22 and the
+  suites run exactly that many.
+
+### Mutation
+
+95 mutants over the M5.1 diff, all killed. 119 over the pre-flight diff, of
+which **two survived the first pass** and both are worth keeping:
+
+- `client_playback.dart` — `if ((response.statusCode ?? 0) < 300)` rewritten to
+  `<= 300`, and nothing objected. The tests exercised 206 and 302, which sit
+  either side of the boundary without touching it; `300 Multiple Choices` is a
+  redirect status and must be allowed through. **That is M4.R/T9's lesson
+  recurring: a boundary tested on one side only.** A `300` case kills it.
+- `player_page.dart` — `fontSize: 18` rewritten to `-18` in the new panel.
+  Nothing can assert a point size that carries no meaning, so the literal was
+  deleted rather than asserted; the panel now inherits the type scale like its
+  two siblings, which also stops it fixing the size against the system font
+  setting (backlog row 13).
+
+### Debt M5 knowingly accepts
+
+- The pre-flight is one extra round trip on every transcoding open, including
+  every `next()`. It is bounded, it starts no transcode (E-G), and it is
+  guarded so a direct-play open never pays it.
+- It is guarded on a `transcode` flag that can be stale. Self-heals.
+- The seeded HLS item is **3 seconds and one segment**, so every multi-segment
+  behaviour is unmeasured: segment 503 recovery (row A), seek latency and the
+  one-ffmpeg-run-per-session promise (row B).
+- HLS was measured against **Homebrew's** libmpv 0.41.0, not the shipped
+  Android and iOS builds — `Media(start:)` in particular (row C).
+- Nothing verifies what the HLS path **draws** (row 16).
+- The disabled server is configured through `.filefin.json` rather than through
+  the admin route a real administrator would use, because C4 forbids calling
+  one.
+- Backlog row 22 stays open a second milestone, now with a stated reason.
+- `hlsIndex`/`hlsSegment` keep no production consumer, deliberately.
+
+### Two things found in passing that are not M5's
+
+- **`real_mpv_player_test.dart` segfaults intermittently.**
+  `TestDeviceException(Shell subprocess crashed with segmentation fault.)`
+  takes the whole file down and reports every test as "did not complete".
+  Measured at HEAD with all M5 changes stashed: **1 failure in 6 runs**; with
+  them, 1 in 5. It sank three `just check` runs. It is a property of that file
+  and libmpv rather than of any diff, it needs its own investigation, and per
+  §11 that makes it a note here rather than a guess in the code.
+- **Five orphaned `flutter_tester` processes, eight hours old**, four of them
+  still pointing at a `scratchpad/mutcopy/` mutation copy from a session before
+  this one. They were killed. Whether they were what made the segfault frequent
+  is not established — the flake reproduced at HEAD before they were found —
+  but they are the cheapest thing to check first, and CLAUDE.md now says so.
+- **A latent fixture hazard, fixed:** `curl -D -` writes real HTTP headers,
+  which end CRLF, and `git config core.autocrlf=input` strips them **on
+  commit**. So a `SHA256SUMS` accepted from a freshly captured working tree
+  would not match a fresh clone, and `fixtures-verify` would go red in CI for a
+  reason nobody could reproduce locally. Measured: HEAD's committed
+  `error_shapes.txt` carries 0 CR bytes and a freshly captured one carried 13.
+  The capture now pipes through `tr -d '\r'` and refuses any CR it finds.
+- **`fixtures-capture` was not idempotent, in the same way `just it` was not at
+  M4.R.** `meta.json` is filesystem truth, so the favourite, rating and
+  progress the script POSTs survived it — and the *next* run captured them into
+  `media_detail_directplay.json`, whose entire job is to be the payload with no
+  state on it. Measured: a second consecutive capture turned `favorite:false
+  rating:0 continueSeconds:0` into `true / 8 / 2` and gave the show
+  `watched:true` and `continueIndex:1`. The script now clears per-user state
+  before capturing and asserts the result, and two consecutive captures produce
+  byte-identical fixtures.
+
+### Checked and found already consistent
+
+CLAUDE.md §4 and `docs/architecture.md` on version pinning. The M5 plan listed
+this as an open contradiction "since M2"; it is not — §4 says "Every dependency
+is pinned exactly on introduction… not only pre-1.0 ones" and
+`docs/architecture.md` records the M3 reconciliation that made it so. Nothing
+to fix, and it is recorded here so a fourth pass does not go looking again.
 
 ---
 
@@ -66,8 +301,13 @@ because it is the interesting one: a boundary guard tested on one side only.
 `apps/mobile`, 155 in `filefin_api`, 858 in `filefin_core`. Coverage **100%
 (2201/2201)** with
 `MAX_UNCOVERED` **back at 0** — the M4 raise to 2 was unnecessary and its stated
-reason was false; see M4.R/G1. `file-size` and `comments` both report **0 errors
-and 0 warnings**, unchanged; `dupes` is under the 5% threshold. The constitution
+reason was false; see M4.R/G1. **`file-size` and `comments` do NOT report zero,
+and this sentence used to say they did** (corrected at M5.0/E-L, by running
+them): `file-size` is **0 errors and 6 warnings** and `comments` is **0 errors,
+1 warning and 13 files under 20 counted lines**. Those are the budgets — a gate
+warning may fall or hold and never rise — so a reader who took the old number at
+face value would have treated their first warning as a regression they had
+caused. `dupes` is under the 5% threshold. The constitution
 baseline is still **0 across seven checks**, now with two more greps under
 `app_no_raw_http`. `just it` is **53 tests across two live suites**.
 
@@ -2327,8 +2567,12 @@ bytes (multi-megabyte binary; R1's spike already confirmed `200 video/mp2t`),
 and only one user — who **is** an admin — so neither per-user state isolation
 nor a non-admin `authResult` is exercised. The `Retry-After` gap is closed:
 verified live as `Retry-After: 900` on the sixth consecutive bad login,
-matching `int(retry.Seconds()) + 1` at `auth.go:149`. None of these is claimed by any M1 model, so §8 is intact; they
-land on the `just it` harness at M2/M5.
+matching `int(retry.Seconds()) + 1` at `auth.go:149`. None of these is claimed by any M1 model, so §8 is intact.
+**"they land at M2/M5" was restated at M5**: the file route's `415 transcoding
+disabled` landed, captured against a real server whose setting
+`capture_fixtures.sh` switches off and restores; HLS segment bytes deliberately
+did not, and `test/fixtures/PROVENANCE.md` says why rather than leaving a
+milestone name that has gone past.
 
 ### CI does not capture fixtures
 

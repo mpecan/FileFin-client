@@ -597,6 +597,23 @@ as a non-native one cannot be served raw. There is no quality, bitrate, or
 resolution parameter anywhere. This is what defeats network-adaptive playback
 (SPEC.md §5.4, D4) and is why F13 is a guard rather than a switch.
 
+**Two different 415s exist, and this client can only ever receive one of them.**
+Both are captured in `error_shapes.txt`, and the distinction is worth one
+paragraph because F12 promises to explain "a 415" and a maintainer who read
+that literally would widen the message to cover a case that cannot arrive:
+
+| Route | Body | When | Reachable from this client? |
+|---|---|---|---|
+| `.../file/{n}` | `transcoding disabled` | the file needs transcoding and the server has it off (`playback.go:115`) | **yes — this is F12's** |
+| `.../file/{n}/hls/index.m3u8` | `not transcodable` | transcoding is off **or the file does not need it** (`playback.go:153`) | no |
+
+`PlaybackRequest.url` is always the **file** route and libmpv follows the `307`
+itself, so nothing in `filefin_api` ever requests the hls route — `hlsIndex` and
+`hlsSegment` exist on `FileFinUrls` and have no production consumer, which is a
+decision recorded in `urls.dart` rather than an oversight. `TranscodingDisabled`
+therefore carries no body: only one shape can reach it, and under the `HEAD`
+pre-flight that shape has no body at all (measured, M5.0/E-K).
+
 Status `200`, `400` bad `{n}`, `404` no such file, `415` not transcodable,
 `500` transcode failed, `503` cache unavailable.
 

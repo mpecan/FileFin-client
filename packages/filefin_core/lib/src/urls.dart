@@ -100,10 +100,28 @@ abstract final class ApiPaths {
       '/api/media/${_seg(id.value)}/file/${_seg(n.value)}';
 
   /// `GET` — the VOD playlist. `415` for a file that does not need transcoding.
+  ///
+  /// **Neither this nor [hlsSegment] has a production consumer, and after M5 —
+  /// the milestone about the HLS path — they still do not. A decision.**
+  /// `PlaybackRequest.url` is always [file], and libmpv follows the server's
+  /// `307` over its own socket, so nothing in `filefin_api` ever addresses
+  /// these two routes. Building them anyway would be §1's speculative
+  /// construction.
+  ///
+  /// They stay for two concrete reasons rather than out of sentiment.
+  /// [hlsSegment] is the **motivating example** in [_seg]'s own documentation
+  /// of why `''`, `'.'` and `'..'` are refused — a segment name is the one path
+  /// component that comes from a *file the server generated* rather than from a
+  /// typed id — and `urls_test.dart` exercises that refusal through it. And
+  /// they keep `docs/server-api.md`'s two HLS routes expressible in the one
+  /// place URLs are built, so a reader comparing the document against the code
+  /// does not conclude the contract is half transcribed.
   static String hlsIndex(MediaId id, FileIndex n) =>
       '/api/media/${_seg(id.value)}/file/${_seg(n.value)}/hls/index.m3u8';
 
   /// `GET` — one segment. `503` while it is still being produced is routine.
+  ///
+  /// No production consumer, deliberately — see [hlsIndex].
   static String hlsSegment(MediaId id, FileIndex n, String segment) =>
       '/api/media/${_seg(id.value)}/file/${_seg(n.value)}/hls/${_seg(segment)}';
 

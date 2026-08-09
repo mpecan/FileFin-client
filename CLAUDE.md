@@ -356,6 +356,40 @@ and each will look like a client bug when it happens:
   carries `matroska,webm` / `vp9` / `opus` → `transcode:false` and **200 with
   `Accept-Ranges`**. So an `.mkv` *does* direct-play. Before concluding
   anything about this endpoint, look at the three format columns first.
+- **The `307` to HLS carries `Content-Type: text/html`.** Go's `http.Redirect`
+  writes an HTML body, so a client that refuses HTML on this route refuses the
+  **success** case — while the SPA catch-all's `200 text/html`, which is the
+  real failure, sails through. `FileFinClient._refuseHtml` is therefore applied
+  to **2xx only** in `requirePlayable`, and the boundary is tested at 206, 300
+  and 302. Measured at M5.0/E-K; the M5 plan predicted the opposite.
+- **`Media(start:)` IS honoured on an HLS VOD playlist**, so F8 works over the
+  transcode path with no fallback. Measured at M5.0/E-D against mpv 0.41.0:
+  `startAt: 1200 ms` produced the position stream `[0, 1200, 1289, …]` where a
+  `startAt: 0` control produced `[0, 89, 156, …]`. The shipped Android and iOS
+  builds are a different question — `docs/verification-backlog.md` row C.
+- **The event order after a second `open()` is IDENTICAL on the direct and HLS
+  paths**, so `_switchTo`'s zeroing and `_positionIsCurrent` cover both.
+  Measured at M5.0/E-E, mid-playback, on the same host: an emptied `tracks`,
+  then `playing=false`, then `position=0`, then `duration=0`, then
+  `playing=true`, then the new file's real values. The load-bearing half of the
+  claim `player_controller.dart` records — `playing=false` before any position
+  or duration event — holds on both.
+- **mpv reports the PLAYLIST's duration on the HLS path, not the source
+  file's.** The seeded 3.000 s HEVC item comes back as **3.023 s**, from
+  `#EXTINF:3.023`. The 90% crossing is computed against whatever mpv says, so
+  an assertion written against the source duration is wrong by 23 ms and an
+  exact-equality one is simply wrong.
+- **`real_mpv_player_test.dart` segfaults intermittently, and it is not yours.**
+  `TestDeviceException(Shell subprocess crashed with segmentation fault.)`
+  takes the whole file down and every test reports "did not complete".
+  Measured at M5: **1 failure in 6 runs at HEAD with all changes stashed**, and
+  1 in 5 with them — so it is a property of the file and libmpv, not of a diff.
+  It sank three `just check` runs. Before hunting a cause in your own change,
+  re-run. Also worth checking first: **five orphaned `flutter_tester` processes
+  eight hours old** were found during M5, four of them still pointing at a
+  `scratchpad/mutcopy/` mutation copy from an earlier session. Killing them is
+  the cheapest thing to try, and `ps -eo pid,etime,command | grep
+  flutter_tester` is how to see them.
 - **libmpv verifies NO certificate by default.** Measured with mpv 0.41.0
   against this repo's own `server_a.crt`: default → the server logged
   `"GET … 200"`; `--tls-verify=yes` → `error:0A000086 certificate verify failed`

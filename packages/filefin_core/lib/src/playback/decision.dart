@@ -62,9 +62,18 @@ enum PlaybackTransport {
 /// Why playback was refused outright.
 ///
 /// Every variant is constructible from [decide]'s own inputs, which is the test
-/// for whether a reason belongs here. The `415 transcoding disabled` message is
-/// only knowable *after* a request, so it is `filefin_api`'s to report at M5,
-/// not a branch of this function.
+/// for whether a reason belongs here. A `415 transcoding disabled` is only
+/// knowable *after* a request, so it is not a branch of this function — and M5
+/// kept it that way.
+///
+/// **Where it went instead is worth one line, because this comment used to say
+/// "it is `filefin_api`'s to report" and that assigns F12 to the wrong layer.**
+/// The *variant* is `filefin_api`'s: `TranscodingDisabled`, raised by
+/// `requirePlayable`. The *message* is `apps/mobile`'s — `describeApiError`,
+/// `describeApiFailure` and `_UnplayablePanel` — because `filefin_api` is
+/// Flutter-free and user-facing prose does not belong in it. Taken literally,
+/// the old wording would have put F12's sentence in a package that draws
+/// nothing.
 enum RefuseReason {
   /// [NetworkType.none] — there is nothing to stream over.
   offline,

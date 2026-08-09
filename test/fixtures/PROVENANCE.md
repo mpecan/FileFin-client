@@ -106,7 +106,16 @@ header. It is `int(retry.Seconds()) + 1` over the remaining account lock
 ## Known gaps
 
 Stated so silence does not read as coverage. None of these is claimed by any
-M1 model, so §8 is intact; they land on the `just it` harness at M2/M5.
+M1 model, so §8 is intact.
+
+**"they land at M2/M5" was too broad, and M5 is where that shows.** M5 captured
+the 415 a client can actually receive — the FILE route's `transcoding
+disabled`, against a server whose `transcodeEnabled` this script switches off
+and puts back — and deliberately did NOT capture segment bytes: they are
+multi-megabyte, nothing in `filefin_core` parses them, and R1's spike already
+confirmed `seg0.ts` answers `200 video/mp2t`. What is left open is listed
+below with the milestone that would close it, rather than with a date that has
+passed.
 
 - ~~**Poster bytes.**~~ **Closed at M3.3.** `poster.jpg` is captured. The gap
   rested on "the seeded items have no poster", which stopped being true: the

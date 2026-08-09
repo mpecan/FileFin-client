@@ -276,6 +276,22 @@ filesystem truth, not cache. It survives a server cache rebuild.
 - **F12.** Explain playback refusals in the user's terms. A `415` means
   "transcoding is disabled on the server and this file needs it" — name that,
   never "playback failed".
+
+  **Which 415, precisely.** §3.4's table has two, and only one can reach this
+  client: `GET .../file/{n}` answers `415 transcoding disabled` for a file that
+  needs transcoding on a server where it is off, and that is F12's. The hls
+  route's `415 not transcodable` is the symmetric half and is **unreachable
+  from here**, because `PlaybackRequest.url` is always the file route and
+  libmpv follows the `307` itself. Both are captured in `error_shapes.txt`;
+  `docs/server-api.md` carries the table. Widening F12's wording to cover both
+  would describe a case that cannot arrive.
+
+  **It is answered before the engine opens, not after it fails.** libmpv
+  surfaces no status code — measured at M5.0/E-I, a 415 reaches the player as
+  `Failed to open <url>.` over a black surface and nothing else — so
+  `PlayerController` asks `requirePlayable` first, guarded on
+  `fileInfo.transcode`, which stays `true` on a server that will not honour it
+  (M5.0/E-B).
 - **F13.** Cellular guard: before playing over a metered connection, if the
   file exceeds a configurable size threshold, warn with the actual size and
   require confirmation. Per-server "wifi only" setting. (§5.4)
@@ -533,7 +549,7 @@ Each gets a spike before the milestone that depends on it. Tracked in
 | **M2** | `filefin_api`: login, secure-store session+password, F3 retry, browse endpoints, **TLS pinning (F15)** | `just check` exits 0 **and** `just it` exits 0 on a machine with the binary: the integration suite survives a mid-test server restart; a self-signed server connects only after explicit accept, and a changed fingerprint blocks. **The TLS half is met against a Dart `HttpServer.bindSecure`, not against `filefin`** — the binary has no TLS listener at all (§8 R5) |
 | **M3** | App shell + browsing UI: tree, virtualised grid, detail (F4) | 5000-item category scrolls at 60fps (NF2) — **met by proxy, and the proxy is named.** 60fps cannot be measured headlessly: `flutter test` runs `flutter_tester` under a fake clock with no vsync and no rasterizer, and `flutter_tools` demands a connected device for anything under `integration_test/` (both measured at M3.0/M3.7). What IS gated is the property 60fps rests on — a bounded live-tile count at the top, middle and end of a 5000-item grid; poster requests far below the item count and never above the tiles ever built; the listing fetched exactly once; a scrolled-away tile cancelling. A build+layout wall-clock number is printed and deliberately NOT gated. Real frame timing is `docs/verification-backlog.md` row 1 |
 | **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | **Met, and the criterion's "where the server allows" turned out to be load-bearing.** An MKV plays via direct bytes exactly when the cache row has been probed: `fileNeedsTranscode` (`internal/server/playback.go:78`) consults the probed container and codecs only under `f.Container != "" && f.VideoCodec != ""` and otherwise falls back to `transcode.NeedsTranscode(f.Ext)`, whose direct-play set is `{.mp4, .webm, .m4v}`. `tool/testserver/seed.sh` rebuilds the cache and never probes, so every seeded row has empty format columns and every verdict taken from the seeded library is that fallback. `tool/spikes/e5_mkv_direct_play.sh` runs both arms over one VP9/Opus `.mkv`: unprobed → `transcode:true`, **307 to HLS**; after `POST /api/admin/probe/scan` fills the row with `matroska,webm` / `vp9` / `opus` → `transcode:false`, **200 with `Accept-Ranges: bytes`** and `Content-Type: video/x-matroska`. §3.4 is therefore correct as written. **An earlier draft of this row said the criterion was unsatisfiable and that the extension decides — that was arm 1 read as the rule, and it is corrected here rather than quietly dropped.** The gated half is the seeded H.264 MP4, which plays end to end under `just it` with resume, progress reporting, subtitle and audio selection and the cellular guard; the MKV half is the spike, because seeding a permanently probed item churns the category fixtures for no new client behaviour (STATE.md's M4 section says so) |
-| **M5** | HLS path + F12 messaging | a transcoded file plays; a 415 explains itself |
+| **M5** | HLS path + F12 messaging | **Met, and playback itself needed no client change at all** — `PlaybackRequest.url` was already `api.fileUrl(...)`, libmpv follows the `307` and decodes the HLS the server produces, so M5 is one error variant, one bounded pre-flight, one `if`, one panel and the tests. Measured end to end under `just it`: the seeded HEVC show plays through the `307` with mpv reporting the playlist's own `3.023 s`, an audio track, a resume offset honoured on a VOD playlist (`Media(start:)` works — nothing had ever tested it), a **backwards** seek, and completion within 500 ms of the duration with the counters reset immediately before. Against a `transcodeEnabled: false` server a real `PlayerController` names transcoding as the cause and **never opens the engine**. The 415 a client can receive is the **file** route's `transcoding disabled`; the hls route's `not transcodable` is unreachable from here (F12) |
 | **M6** | Search, home rows, favourite/rating/watched (F5, F6, F10) | |
 | **M7** | Multi-server + secure storage (F11); background audio, lock screen, PiP (F14) after R2/R3 | |
 | **M8+** | Optional: direct-play capability probe + upstream PR; offline downloads | |

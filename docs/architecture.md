@@ -495,13 +495,28 @@ the cookie handed over is a renewed one; sidecars are fetched through
 `LibraryApi` and passed as `SubtitleTrack.data` rather than as a URL; and F15's
 gap is D10, a per-server refusal (`docs/risks.md` R6).
 
-**`buildSurface()` is on the port for a measured reason.** `VideoController(player)`
-does not construct under `flutter test` — it awaits a platform channel
-`flutter_tester` does not host, and a probe that pumped a `Video` never returned
-and was killed at five minutes. Putting the surface behind the port means a fake
-host returns a coloured box and every screen test runs; the two uncoverable lines
-are confined to the thinnest file in the milestone, and they are what
-`MAX_UNCOVERED=2` names.
+**`buildSurface()` is on the port for a measured reason — and this paragraph
+used to state that reason wrongly.** It said `VideoController(player)` "does not
+construct under `flutter test`" and that `MAX_UNCOVERED=2` named its two
+uncoverable lines. Both halves were retracted at M4.R and corrected in four
+other documents; this one was missed, and it is corrected here rather than
+quietly dropped. Re-measured in a plain `test()` body with a binding up:
+`VideoController(player)` **returns**, `Video(controller: …)` **returns**, and
+`player.dispose()` afterwards **never** returns — the constructor body is a
+fire-and-forget `() async { … }()` whose first statement awaits
+`addPostFrameCallback` (`video_controller.dart:71`), but it also sets
+`isVideoControllerAttached`, and `dispose()` then awaits a completer only that
+parked closure completes. **Pumping** a `Video` is the other non-terminating
+case and is the one M4.0 actually measured; this file generalised it from
+pumping to constructing. `real_mpv_player_test.dart` covers both lines by giving
+that one test its own `Player` and never disposing it, so
+**`tool/coverage-gate.sh` reads `50 0` — the ratchet is 0, not 2**. What still
+cannot be checked headlessly is what those lines *draw*, which is
+`docs/verification-backlog.md` row 16.
+
+Putting the surface behind the port is still right, for the reason that
+survived: a fake host returns a coloured box and every screen test runs without
+a `Player` anything would later have to dispose.
 
 **The progress interval is MEDIA time, not wall clock**, which is upstream's own
 design (`Math.abs(el.currentTime - lastMark) >= 30`). It is why F9 needs no
