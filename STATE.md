@@ -293,6 +293,36 @@ keeps the position: Continue 0:45 is back"* red, along with two more; pointing
 `clearWatchState` at `api.setWatched(false)` turns *"Clear watch state forgets
 it: no Continue anywhere"* red. Restored byte-for-byte and green.
 
+### The mutation numbers, per commit and as a distinct union
+
+Summing per-commit runs double-counts, because a file changed in two commits is
+mutated twice — M5.R/G-F5 says so and M6 is the first milestone where the gap
+is large. Both figures:
+
+| commit | files | mutants | undetected |
+|---|---|---|---|
+| `refactor(core)` scout fix | 1 | 9 | 0 |
+| `feat(core)` applyWatchState + searchIsRunnable | 3 | 25 | 0 |
+| `refactor(api)` the read routes into a part | 2 | 16 | 0 |
+| `feat(api)` home, search, the four writes | 3 | 29 | 0 |
+| `feat(app)` the port and the fake | 1 | 3 | 0 |
+| `build` the mutation cap | 0 | — | — |
+| `refactor(ui)` the file list out | 4 | 137 | 0 |
+| `feat(ui)` F10 on the detail screen | 4 | 91 | 0 |
+| `docs` M6 | 0 | — | — |
+| **sum** | | **310** | **0** |
+
+**The distinct union is 230**, measured in one run against the milestone's base
+(`FILEFIN_MUTANTS_BASE=53dbeff just mutants`): 167 over 7 files in
+`apps/mobile`, 29 over 3 in `filefin_api`, 34 over 4 in `filefin_core`, 0
+undetected in all three. So summing overstates by 80 — `client.dart`,
+`client_browse.dart`, `media_detail_page.dart` and `file_list.dart` were each
+mutated twice.
+
+The `apps/mobile` arm took **25m19s**, which is the number behind "what M6 did
+NOT finish": each further UI commit costs that much gate time, and there were
+three of them left.
+
 ### Gate proof log — M6
 
 | Gate | Direction | Evidence |
