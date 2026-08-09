@@ -87,22 +87,29 @@ class _LibraryShellState extends State<LibraryShell> {
   /// The home tab's state, so a write anywhere can reload its rows.
   final _home = GlobalKey<HomePageState>();
 
-  /// Every tab selected so far, in the order the stack draws them.
-  final _built = <LibraryTab, Widget>{};
+  /// Which tabs have been selected so far.
+  ///
+  /// **A set of tabs, never a map of widgets, and the difference was a
+  /// data-loss bug.** Caching the built `Widget` froze every argument it was
+  /// built from: `widget.onSettings` is a closure `app.dart` rebuilds around
+  /// the current `SavedServer` on every build, so a Home tab holding the
+  /// instance from `initState` kept handing the settings sheet the server as it
+  /// was at sign-in. Wi-Fi only and D10's allowance both reverted to their
+  /// sign-in values on the second visit, and the next toggle wrote the stale
+  /// value back (M6.R/P1.1). `api`, `title` and `onSignIn` were frozen by the
+  /// same mechanism and happened to be stable.
+  ///
+  /// Rebuilding each selected tab on every build is what Flutter expects
+  /// anyway: the `Offstage`'s `ValueKey(tab)` is what carries each tab's
+  /// element — and so its state and its scroll position — across a rebuild that
+  /// inserts a tab ahead of it in the stack.
+  final _built = <LibraryTab>{LibraryTab.home};
 
   LibraryTab _tab = LibraryTab.home;
 
-  @override
-  void initState() {
-    super.initState();
-    // Built here rather than through [_select], which calls `setState`: the
-    // first tab is the initial state rather than a change to it.
-    _built[LibraryTab.home] = _build(LibraryTab.home);
-  }
-
   void _select(LibraryTab tab) => setState(() {
     _tab = tab;
-    _built.putIfAbsent(tab, () => _build(tab));
+    _built.add(tab);
   });
 
   Widget _build(LibraryTab tab) => switch (tab) {
@@ -173,11 +180,11 @@ class _LibraryShellState extends State<LibraryShell> {
       fit: StackFit.expand,
       children: [
         for (final tab in LibraryTab.values)
-          if (_built[tab] case final page?)
+          if (_built.contains(tab))
             Offstage(
               key: ValueKey(tab),
               offstage: tab != _tab,
-              child: TickerMode(enabled: tab == _tab, child: page),
+              child: TickerMode(enabled: tab == _tab, child: _build(tab)),
             ),
       ],
     ),

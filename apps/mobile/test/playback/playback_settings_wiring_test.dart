@@ -124,6 +124,50 @@ void main() {
     expect(saved['lastUser'], 'sam', reason: 'the sign-in is not undone');
   });
 
+  testWidgets('the sheet REOPENS holding what the last visit saved', (
+    tester,
+  ) async {
+    // The case this file did not have, and its absence hid a data-loss bug for
+    // a whole milestone: every case above opens the sheet exactly once.
+    //
+    // `LibraryShell` cached each tab's **widget instance**, so the Home tab's
+    // settings button stayed bound to the `onSettings` closure built at
+    // sign-in — and that closure closed over the `SavedServer` *value* of that
+    // build. `_playbackSettings` read `prefs` fresh but handed the sheet a
+    // server frozen in time, then wrote `upsert(changed)` derived from it. So
+    // the second visit showed Wi-Fi only OFF, and the first toggle on that
+    // visit wrote the stale `false` back over the saved `true`: F13's metered
+    // guard and D10's refusal both silently reverted to their sign-in values.
+    await signIn(tester);
+
+    await tester.tap(find.byTooltip('Playback settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifiOnly')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(400, 20));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Playback settings'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<SwitchListTile>(find.byKey(const Key('wifiOnly'))).value,
+      isTrue,
+      reason: 'the sheet is showing the server as it was at sign-in',
+    );
+
+    // And the half that loses the setting rather than merely mis-drawing it: a
+    // change to an UNRELATED field must not carry the stale value with it.
+    await tester.tap(find.byKey(const Key('allowUnverifiedPlayback')));
+    await tester.pumpAndSettle();
+
+    final saved =
+        (savedJson()['servers']! as List<Object?>).single!
+            as Map<String, Object?>;
+    expect(saved['allowUnverifiedPlayback'], isTrue);
+    expect(saved['wifiOnly'], isTrue, reason: 'the earlier setting survived');
+  });
+
   testWidgets('D10 and the shared block are written together', (tester) async {
     await signIn(tester);
     await tester.tap(find.byTooltip('Playback settings'));

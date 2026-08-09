@@ -550,10 +550,15 @@ red run as a regression.
 
 ### Debt this milestone knowingly accepts
 
-- **Search remembers nothing between visits.** The tab is rebuilt on first
-  selection and the box starts empty, deliberately: a search box that reopens
-  holding somebody's last query is a surprise rather than a convenience. There
-  is also no filter within a category (no server route, C3).
+- ~~**Search remembers nothing between visits.**~~ **Wrong, and corrected at
+  M6.R.** The tab is built on first selection and then kept `Offstage`, so the
+  box, the scope and the results all survive a tab round trip — which
+  `library_shell.dart`'s own doc comment said two files away while
+  `search_page.dart` and this bullet said the opposite. The behaviour is the
+  better one and is now pinned by *"Search REMEMBERS its box, its scope and its
+  results"* rather than described in two places that could drift again. Nothing
+  survives a sign-out or a relaunch. There is still no filter within a category
+  (no server route, C3).
 - **`fixture_run.dart` still hands every suite a copy whose `user_state` mirror
   disagrees with its `meta.json`**, by decision (E-2, above). A future suite
   that reads a listing without writing first will see it, and nothing in the

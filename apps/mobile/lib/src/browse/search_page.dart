@@ -17,10 +17,17 @@ import 'package:flutter/material.dart';
 /// user picked. The widget test that matters here asserts the wire —
 /// `search(Kurosawa, director)`, never `search(Kurosawa, all)`.
 ///
-/// **Nothing is remembered between visits**, and that is a decision: the tab is
-/// rebuilt each time the shell builds it, and a search box that reopens holding
-/// somebody's last query is a surprise rather than a convenience. Recorded in
-/// STATE.md as debt rather than left to be discovered.
+/// **The box, the scope and the results DO survive a tab round trip**, and this
+/// paragraph used to say the opposite. The claim was that the shell rebuilds
+/// this tab on every visit; it does not — `LibraryShell` keeps a selected tab
+/// `Offstage`, which is what its own doc comment says and what
+/// `library_shell_test.dart` now pins. Nothing survives a sign-out or a
+/// relaunch, because the whole shell goes with it.
+///
+/// It is the better behaviour of the two: switching to Home to check something
+/// and coming back is the common move, and re-typing the query afterwards is a
+/// cost with no benefit. Said here because two files disagreeing about state
+/// that lives in one of them is how a "fix" gets made to the wrong one.
 class SearchPage extends StatefulWidget {
   /// Searches through [api]; [onOpen] opens a result.
   const SearchPage({

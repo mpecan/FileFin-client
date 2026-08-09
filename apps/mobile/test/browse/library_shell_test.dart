@@ -136,6 +136,47 @@ void main() {
     expect(bar().selectedIndex, LibraryTab.library.index);
   });
 
+  testWidgets('Search REMEMBERS its box, its scope and its results', (
+    tester,
+  ) async {
+    // `search_page.dart` and STATE.md both said nothing is remembered between
+    // visits, and both were wrong: the tab is `Offstage`, not rebuilt, so all
+    // three survive a round trip — which is what `library_shell.dart`'s own doc
+    // comment claims two files away. The behaviour is the better one, so M6.R
+    // fixed the documents and pinned it here rather than the other way round.
+    api.searchResult = const [film];
+    await show(tester);
+    await tab(tester, 'Search');
+    await tester.enterText(find.byType(TextField), 'movie');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButton<SearchField>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Director').last);
+    await tester.pumpAndSettle();
+    expect(api.calls, contains('search(movie, director)'));
+
+    await tab(tester, 'Home');
+    await tab(tester, 'Search');
+
+    expect(find.widgetWithText(TextField, 'movie'), findsOneWidget);
+    expect(
+      tester
+          .widget<DropdownButton<SearchField>>(
+            find.byType(DropdownButton<SearchField>),
+          )
+          .value,
+      SearchField.director,
+    );
+    expect(find.text('Direct Play Movie'), findsWidgets);
+    // And it costs nothing to come back: the tab was not rebuilt, so no second
+    // request went out for the query that is still on screen.
+    expect(
+      api.calls.where((c) => c.startsWith('search')),
+      hasLength(2),
+      reason: 'one for the text, one for the scope — and none for the return',
+    );
+  });
+
   testWidgets('an offstage tab is not on screen and not findable', (
     tester,
   ) async {
@@ -177,6 +218,42 @@ void main() {
       isTrue,
       reason: 'Library is on screen',
     );
+  });
+
+  testWidgets('a rebuilt shell hands a BUILT tab its new arguments', (
+    tester,
+  ) async {
+    // The general case behind M6.R/P1.1. Caching each tab's widget instance
+    // froze every argument it was constructed from — and `onSettings` is a
+    // closure `app.dart` rebuilds around the current `SavedServer`, so the
+    // Home tab kept calling the one built at sign-in and the playback settings
+    // sheet reverted on every later visit.
+    //
+    // `title` is the visible proxy for all of them, and the second half of the
+    // case is what makes the fix a fix rather than a rebuild: the Library tab
+    // must take the new title WITHOUT refetching, because its state is carried
+    // by the `Offstage`'s `ValueKey(tab)` rather than by a cached widget.
+    final rebuild = ValueNotifier<String>('Attic NAS');
+    addTearDown(rebuild.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<String>(
+          valueListenable: rebuild,
+          builder: (context, title, _) => LibraryShell(api: api, title: title),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tab(tester, 'Library');
+    expect(find.text('Attic NAS'), findsOneWidget);
+
+    rebuild.value = 'Cellar NAS';
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cellar NAS'), findsOneWidget);
+    expect(find.text('Attic NAS'), findsNothing);
+    expect(api.calls.where((c) => c == 'categories'), hasLength(1));
+    expect(find.text('Films'), findsOneWidget);
   });
 
   testWidgets('a home poster opens the detail route', (tester) async {
