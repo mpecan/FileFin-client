@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/browse/home_page.dart';
 import 'package:filefin_mobile/src/browse/media_row.dart';
 import 'package:filefin_mobile/src/browse/poster_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
@@ -25,6 +26,24 @@ void main() {
   final rows = HomeRows.fromJson(
     jsonDecode(
           File('../../test/fixtures/home_populated.json').readAsStringSync(),
+        )
+        as Map<String, Object?>,
+  );
+
+  /// The captured payload whose three buckets are **mutually distinguishable**.
+  ///
+  /// `home_populated.json` cannot bind a heading to a bucket: its `continue`
+  /// and `favorites` are byte-identical, so exchanging those two rows on screen
+  /// while leaving the headings alone changes nothing any assertion could see —
+  /// measured, and green across all 519 tests. This one was captured after one
+  /// extra write (`tool/testserver/capture_fixtures.sh`): the show is watched,
+  /// and `continue` excludes a watched item, so favouriting it gives
+  /// `continue` one item, `favorites` two and `completed` one.
+  final distinct = HomeRows.fromJson(
+    jsonDecode(
+          File(
+            '../../test/fixtures/home_rows_distinct.json',
+          ).readAsStringSync(),
         )
         as Map<String, Object?>,
   );
@@ -88,6 +107,43 @@ void main() {
         .map((r) => r.label);
 
     expect(labels, ['Continue watching', 'Favourites', 'Watched']);
+  });
+
+  testWidgets('each heading draws ITS OWN bucket, not merely three rows', (
+    tester,
+  ) async {
+    // The binding, which nothing asserted until M6.R: exchanging
+    // `rows.completed` and `rows.favorites` under their labels was green across
+    // the whole suite. A label list and a global text count both survive a
+    // symmetric swap; only pairing each heading with the items under it does
+    // not.
+    await show(tester, result: distinct);
+
+    final byLabel = {
+      for (final row in tester.widgetList<MediaRow>(find.byType(MediaRow)))
+        row.label: row.items,
+    };
+
+    expect(byLabel['Continue watching'], distinct.continueRow);
+    expect(byLabel['Favourites'], distinct.favorites);
+    expect(byLabel['Watched'], distinct.completed);
+  });
+
+  testWidgets('the fixture behind that binding really does distinguish them', (
+    tester,
+  ) async {
+    // The property the case above rests on, asserted before it is used: if a
+    // re-capture ever makes two buckets equal, the binding stops being provable
+    // and says so here rather than by quietly passing.
+    expect(distinct.continueRow, isNot(distinct.favorites));
+    expect(distinct.favorites, isNot(distinct.completed));
+    expect(distinct.completed, isNot(distinct.continueRow));
+    // And the property `home_populated.json` carries — one item in two buckets
+    // — survives the extra write rather than being traded away for it.
+    expect(distinct.favorites.map((i) => i.id.value), [
+      '919ac9caad25',
+      'e4285edb34d5',
+    ]);
   });
 
   testWidgets('an empty bucket draws no heading at all', (tester) async {
@@ -231,6 +287,28 @@ void main() {
         tester.widget<ListView>(find.byType(ListView)).childrenDelegate,
         isA<SliverChildBuilderDelegate>(),
       );
+    });
+
+    testWidgets("the two virtualisation flags are THIS file's decision", (
+      tester,
+    ) async {
+      // Ported from `media_grid_test.dart`, where both are red, because
+      // `media_row.dart`'s own comment claims the invariant "must be a property
+      // of this file" and nothing here was asserting it: flipping
+      // `addAutomaticKeepAlives` to true and widening the cache extent to
+      // 40000 px were both green on the row (M6.R/P2.6).
+      //
+      // Neither changes behaviour a test can see today — nothing under
+      // `apps/mobile/lib` mixes in `AutomaticKeepAliveClientMixin`, and a
+      // wider cache extent only builds more — so the widget is what has to be
+      // asserted.
+      await row(tester, many(500));
+      final list = tester.widget<ListView>(find.byType(ListView));
+      final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
+
+      expect(delegate.addAutomaticKeepAlives, isFalse);
+      expect(delegate.childCount, 500);
+      expect(list.scrollCacheExtent, const ScrollCacheExtent.pixels(400));
     });
 
     testWidgets('an empty row is nothing at all — no heading, no strip', (

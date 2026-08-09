@@ -142,6 +142,25 @@ get "/api/media/$DIRECT/file/0/sub/0"         | save subtitle.vtt
 # than a fresh encode.
 get "/api/media/$DIRECT/poster" | save poster.jpg
 
+# A SECOND home payload, whose three buckets are MUTUALLY DISTINGUISHABLE, and
+# it exists because `home_populated.json`'s `continue` and `favorites` are byte
+# identical. That makes the symmetric swap invisible: exchanging two of the
+# three rows on the home screen while leaving the headings alone passed the
+# whole app suite (M6.R/P2.3), because the only distinguishable bucket was
+# `completed`.
+#
+# One write produces it. The show is already watched, and the `continue` bucket
+# EXCLUDES a watched item (`media.go:458-462`), so favouriting it lands it in
+# `favorites` and `completed` and in neither case in `continue`:
+#
+#   continue  [film]        favorites [show, film]      completed [show]
+#
+# Captured after everything above, so no earlier fixture sees the extra
+# favourite — and undone by the reset at the top of the next run, which is what
+# keeps this script idempotent.
+post "/api/media/$TRANS/favorite" '{"favorite":true}' >/dev/null
+get /api/home | save home_rows_distinct.json
+
 # Error and header shapes. These are contract too: F12 promises to explain a
 # 415 in the user's terms, and F3 keys off the 401.
 {

@@ -98,6 +98,26 @@ void main() {
     expect(api.tokens.last!.isCancelled, isFalse);
   });
 
+  testWidgets('the TRIMMED text is what reaches the wire', (tester) async {
+    // `SearchQuery.wireText` trims and `search_query_test.dart` proves the
+    // getter does; nothing proved the CALLER uses it. Rewriting
+    // `asked.wireText` to `asked.text` in `_fetch` was green across the whole
+    // suite (M6.R/P2.4) — and it is not cosmetic: the nine text scopes do not
+    // `TrimSpace` server-side (`db/search.go:52`), so `"  ada  "` on the wire
+    // searches titles for a string with spaces in it and finds nothing, while
+    // the caption on screen quotes the trimmed `ada`. The user is told there
+    // are no matches for a query that was never sent.
+    //
+    // `mutation_test` cannot generate this mutant — it substitutes operators,
+    // not identifiers — so a test is the only thing that can close it.
+    final search = await controller(tester, debounce: Duration.zero);
+
+    search.setText('  ada  ');
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(searches(), ['search(ada, all)']);
+  });
+
   testWidgets('a blank query issues NO request at all', (tester) async {
     final search = await controller(tester, debounce: Duration.zero);
 

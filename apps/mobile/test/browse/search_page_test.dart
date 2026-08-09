@@ -85,6 +85,27 @@ void main() {
     expect(searches(), isNot(contains('search(Kurosawa, all)')));
   });
 
+  testWidgets('the picker SHOWS the scope that was picked', (tester) async {
+    // The wire is well pinned; the display was not. Both
+    // `value: _controller.query.field` → `SearchField.all` and deleting
+    // `notifyListeners()` from `setField` were green across the whole suite
+    // (M6.R/P2.5) — leaving a screen that requests Director, captions Director,
+    // and reads *Everything* in the selector the user just used.
+    await show(tester);
+
+    await pick(tester, 'Director');
+
+    expect(
+      tester
+          .widget<DropdownButton<SearchField>>(
+            find.byType(DropdownButton<SearchField>),
+          )
+          .value,
+      SearchField.director,
+    );
+    expect(find.text(searchFieldLabel(SearchField.director)), findsOneWidget);
+  });
+
   testWidgets('the shipped debounce is 300 ms, on both sides of it', (
     tester,
   ) async {

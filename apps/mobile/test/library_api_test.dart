@@ -36,9 +36,18 @@ void main() {
     unawaited(
       server.forEach((request) async {
         final query = request.uri.query;
+        // THE BODY IS PART OF THE RECORD, and its absence was a whole missing
+        // layer. Three of F10's four writes differ from each other only in what
+        // they send — `{"watched": false}` and `{"watched": true}` are the same
+        // verb on the same path — so a harness that recorded method and path
+        // alone could not tell *mark as unwatched* from *mark as watched*.
+        // Measured: `watched: watched` rewritten to `watched: true` in
+        // `library_api.dart` passed every test in this file.
+        final body = await utf8.decoder.bind(request).join();
         seen.add(
           '${request.method} ${request.uri.path}'
-          '${query.isEmpty ? '' : '?$query'}',
+          '${query.isEmpty ? '' : '?$query'}'
+          '${body.isEmpty ? '' : ' $body'}',
         );
         final response = request.response;
         if (request.uri.path.endsWith('/progress') ||
@@ -95,7 +104,7 @@ void main() {
     );
 
     expect(result.user, 'sam');
-    expect(seen, ['POST /api/login']);
+    expect(seen, ['POST /api/login {"username":"sam","password":"hunter2"}']);
   });
 
   test('categories reaches GET /api/categories', () async {
@@ -168,7 +177,8 @@ void main() {
       ),
     );
 
-    expect(seen, ['POST /api/media/e4285edb34d5/progress']);
+    const body = '{"file":1,"position":12.0,"duration":100.0,"event":"seek"}';
+    expect(seen, ['POST /api/media/e4285edb34d5/progress $body']);
   });
 
   test('home reaches GET /api/home', () async {
@@ -187,16 +197,30 @@ void main() {
     expect(seen, ['GET /api/search?q=Kurosawa&field=director']);
   });
 
-  test('setFavorite POSTs the favorite route', () async {
+  test('setFavorite POSTs the favorite route, and BOTH values', () async {
+    // Both arms, because the route and the verb are identical for the two and
+    // the body is the only thing that differs. `favorite: favorite` rewritten
+    // to `favorite: true` in the port passed every assertion in this file
+    // before the harness read a body — *remove from favourites* favourited.
     await api.setFavorite(const MediaId('e4285edb34d5'), favorite: true);
+    await api.setFavorite(const MediaId('e4285edb34d5'), favorite: false);
 
-    expect(seen, ['POST /api/media/e4285edb34d5/favorite']);
+    expect(seen, [
+      'POST /api/media/e4285edb34d5/favorite {"favorite":true}',
+      'POST /api/media/e4285edb34d5/favorite {"favorite":false}',
+    ]);
   });
 
-  test('setRating POSTs the rating route', () async {
+  test('setRating POSTs the rating route, carrying the number', () async {
+    // 0 as well as 7: 0 is how the server clears a rating, so a port that sent
+    // a constant would be indistinguishable from one that worked at 7 alone.
     await api.setRating(const MediaId('e4285edb34d5'), rating: 7);
+    await api.setRating(const MediaId('e4285edb34d5'), rating: 0);
 
-    expect(seen, ['POST /api/media/e4285edb34d5/rating']);
+    expect(seen, [
+      'POST /api/media/e4285edb34d5/rating {"rating":7}',
+      'POST /api/media/e4285edb34d5/rating {"rating":0}',
+    ]);
   });
 
   test('the port does not soften the rating guard', () async {
@@ -216,11 +240,20 @@ void main() {
     // DELETE drops it, so a port that routed both through one method would
     // erase a position every time a user un-watches something — and the path
     // alone cannot tell them apart.
+    //
+    // Both POST bodies, because the path cannot tell those apart either:
+    // `watched: watched` rewritten to `watched: true` survived this whole file
+    // until the harness above started reading a body, which means *mark as
+    // unwatched* marked watched and nothing here objected.
     await api.setWatched(const MediaId('e4285edb34d5'), watched: false);
+    await api.setWatched(const MediaId('e4285edb34d5'), watched: true);
     await api.clearWatched(const MediaId('e4285edb34d5'));
 
     expect(seen, [
-      'POST /api/media/e4285edb34d5/watched',
+      'POST /api/media/e4285edb34d5/watched {"watched":false}',
+      'POST /api/media/e4285edb34d5/watched {"watched":true}',
+      // The DELETE carries NO body: one with `{"watched": false}` in it would
+      // be `setWatched` wearing the wrong verb.
       'DELETE /api/media/e4285edb34d5/watched',
     ]);
   });

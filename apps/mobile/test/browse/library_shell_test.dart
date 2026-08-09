@@ -116,6 +116,26 @@ void main() {
     expect(find.text('Type to search anything.'), findsOneWidget);
   });
 
+  testWidgets('the navigation bar highlights the tab you are ON', (
+    tester,
+  ) async {
+    // `selectedIndex: _tab.index` → `0` was green across the whole suite
+    // (M6.R/P2.7): the user is on Search and the bar says Home. Every case
+    // above asserts what is *drawn*, and the bar's own selection is the one
+    // piece of state no drawn tab can speak for.
+    await show(tester);
+    NavigationBar bar() =>
+        tester.widget<NavigationBar>(find.byType(NavigationBar));
+
+    expect(bar().selectedIndex, LibraryTab.home.index);
+
+    await tab(tester, 'Search');
+    expect(bar().selectedIndex, LibraryTab.search.index);
+
+    await tab(tester, 'Library');
+    expect(bar().selectedIndex, LibraryTab.library.index);
+  });
+
   testWidgets('an offstage tab is not on screen and not findable', (
     tester,
   ) async {

@@ -62,6 +62,7 @@ except the two marked unauthenticated. `{d}` = `e4285edb34d5`, the film;
 | `media_detail_with_state.json` | `GET /api/media/{d}` — after favorite, rating 8, and progress `{file:0, position:1.5, duration:3.0}` |
 | `media_detail_multifile_advanced.json` | `GET /api/media/{t}` — after `watched:true` and progress `{file:0, position:2.9, duration:3.0}`, which crosses 90% of a non-last file and advances the pointer to `(1, 0s)` |
 | `home_populated.json` | `GET /api/home` — after the state writes above |
+| `home_rows_distinct.json` | `GET /api/home` — captured last, after one further `{"favorite":true}` on `{t}`. The show is watched and `continue` excludes a watched item, so the three buckets come out mutually distinguishable (1 / 2 / 1) where `home_populated.json` has `continue` and `favorites` byte-identical. That identity is what made a symmetric row swap invisible to the whole app suite (M6.R/P2.3) |
 | `search_results.json` | `GET /api/search?q=Movie&field=all` |
 | `search_empty.json` | `GET /api/search?q=zzzznope&field=all` |
 | `hls_index.m3u8` | `GET /api/media/{t}/file/0/hls/index.m3u8` |

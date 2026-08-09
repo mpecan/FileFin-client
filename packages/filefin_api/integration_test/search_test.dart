@@ -174,6 +174,8 @@ void main() {
       (film.title, SearchField.title),
     ];
 
+    var saidYes = 0;
+    var saidYesAndFound = 0;
     for (final (q, field) in cases) {
       final runnable = searchIsRunnable(q, field: field);
       final rows = await client.search(q, field: field);
@@ -183,11 +185,38 @@ void main() {
           isEmpty,
           reason: 'searchIsRunnable said no and the server ran "$q" anyway',
         );
+        continue;
       }
+      saidYes++;
+      if (rows.isNotEmpty) saidYesAndFound++;
     }
 
-    // And the one that proves the loop above is not vacuous: at least one case
-    // is runnable AND returns the film, so "everything is empty" cannot pass.
+    // **The control has to be inside the vocabulary the loop used, and until
+    // M6.R it was not.** The loop asserts only `!runnable ⇒ nothing returned`,
+    // which a `searchIsRunnable` returning false for every input satisfies
+    // trivially — and the control below it called `client.search` directly,
+    // proving the *server* answers rather than that this function ever says
+    // yes. Both halves passed a predicate that had stopped working.
+    //
+    // These two counts cannot: one says the function admits several of these
+    // inputs, the other says at least one of the queries it admitted really was
+    // run by the server. The other direction — `runnable ⇒ the server ran it` —
+    // is covered case by case by the unit tests, which is why this is a floor
+    // rather than an exact expectation.
+    expect(
+      saidYes,
+      greaterThanOrEqualTo(5),
+      reason:
+          'searchIsRunnable admitted almost nothing, so the loop above '
+          'asserted almost nothing',
+    );
+    expect(
+      saidYesAndFound,
+      greaterThanOrEqualTo(1),
+      reason:
+          'nothing it admitted returned a row, so "everything was empty" '
+          'would pass this test',
+    );
     expect(
       idsOf(await client.search(film.title, field: SearchField.title)),
       contains(film.id.value),

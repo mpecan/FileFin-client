@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/app.dart';
+import 'package:filefin_mobile/src/browse/category_tree_page.dart';
+import 'package:filefin_mobile/src/browse/home_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
@@ -206,8 +208,19 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Attic NAS'), findsOneWidget);
+    // NAMED WIDGETS, not the server name. Both tabs' app bars carry the title,
+    // so `find.text('Attic NAS')` matches either one and `openLibrary`'s tap is
+    // a no-op when the shell is already there: making the shell land on Library
+    // instead turned seven cases in `library_shell_test.dart` red and left this
+    // one green (M6.R/P2.8), while its own name is the claim about where the
+    // app lands.
+    expect(find.byType(HomePage), findsOneWidget);
+    expect(find.byType(CategoryTreePage), findsNothing);
+
     await openLibrary(tester);
+
+    expect(find.byType(CategoryTreePage), findsOneWidget);
+    expect(find.byType(HomePage), findsNothing, reason: 'Home went offstage');
     expect(find.text('Films'), findsOneWidget);
   });
 }

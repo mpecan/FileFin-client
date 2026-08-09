@@ -151,6 +151,15 @@ need media_detail_multifile_advanced.json '.files[0].transcode == true' \
 need search_results.json 'length > 0' "search_results.json has no results in it"
 need home_populated.json '(.continue | length) > 0' "the continue row is empty"
 need home_populated.json 'has("favorites") and has("completed")' "a home row key is missing"
+# The one property `home_rows_distinct.json` exists for, and a checksum cannot
+# see it: the three buckets must be MUTUALLY distinguishable. `home_populated`'s
+# `continue` and `favorites` are byte-identical, which is why exchanging two
+# home rows under their headings passed all 519 tests (M6.R/P2.3). A re-capture
+# that lost the distinction would make `home_page_test.dart`'s heading/bucket
+# binding vacuous rather than red, so it fails here first.
+need home_rows_distinct.json '.continue != .favorites and .favorites != .completed and .completed != .continue' \
+    "the three home rows are not mutually distinguishable, so nothing can bind a
+       heading to its bucket. Re-capture: tool/testserver/capture_fixtures.sh"
 need categories.json 'length >= 2 and (.[0].id | type) == "number"' \
     "categories must be a list with a numeric id (CategoryId is an int64, CLAUDE.md §7)"
 # The nesting assertions. `GET /api/categories` is flat and the client builds
