@@ -314,6 +314,23 @@ class AppSettings {
     selectedServerId: selectedServerId,
   );
 
+  /// A copy with [server] gone, and the selection cleared if it named it.
+  ///
+  /// **Clearing the selection is not tidying.** [selectedServer]'s fallback
+  /// already stops a dangling id stranding a launch, so leaving it would look
+  /// harmless — until the user re-adds a server at the same address. The id is
+  /// the origin (see [SavedServer.fromTypedUrl]), so the stale selection would
+  /// match again and the server they removed would silently become the one
+  /// every launch opens.
+  AppSettings remove(ServerId server) => AppSettings(
+    servers: [
+      for (final existing in servers)
+        if (existing.id != server) existing,
+    ],
+    playback: playback,
+    selectedServerId: selectedServerId == server ? null : selectedServerId,
+  );
+
   /// A copy with the playback block replaced.
   AppSettings withPlayback(PlaybackPrefs prefs) => AppSettings(
     servers: servers,

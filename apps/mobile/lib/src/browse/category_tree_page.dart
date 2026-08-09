@@ -16,6 +16,7 @@ class CategoryTreePage extends StatefulWidget {
     required this.title,
     required this.onOpen,
     this.onSignIn,
+    this.onServers,
     this.onSettings,
     this.onSignOut,
     super.key,
@@ -32,6 +33,9 @@ class CategoryTreePage extends StatefulWidget {
 
   /// Where a `SessionExpired` sends the user (F3's last resort).
   final VoidCallback? onSignIn;
+
+  /// Opens F11's server picker.
+  final VoidCallback? onServers;
 
   /// Opens the playback settings sheet.
   ///
@@ -74,6 +78,7 @@ class _CategoryTreePageState extends State<CategoryTreePage> {
     appBar: AppBar(
       title: Text(widget.title),
       actions: libraryAppBarActions(
+        onServers: widget.onServers,
         onSettings: widget.onSettings,
         onSignOut: widget.onSignOut,
       ),

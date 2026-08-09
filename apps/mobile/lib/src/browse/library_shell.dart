@@ -55,6 +55,7 @@ class LibraryShell extends StatefulWidget {
     required this.title,
     this.onPlay,
     this.onSignIn,
+    this.onServers,
     this.onSettings,
     this.onSignOut,
     super.key,
@@ -76,6 +77,11 @@ class LibraryShell extends StatefulWidget {
 
   /// Where a `SessionExpired` sends the user (F3's last resort).
   final VoidCallback? onSignIn;
+
+  /// Opens F11's server picker: switch to another saved server, or forget
+  /// one. The switch itself is `HomeRoute`'s, because closing the previous
+  /// client is.
+  final VoidCallback? onServers;
 
   /// Opens the playback settings sheet.
   final VoidCallback? onSettings;
@@ -128,6 +134,7 @@ class _LibraryShellState extends State<LibraryShell> {
       title: widget.title,
       onOpen: _openDetail,
       onSignIn: widget.onSignIn,
+      onServers: widget.onServers,
       onSettings: widget.onSettings,
       onSignOut: widget.onSignOut,
     ),
@@ -136,6 +143,7 @@ class _LibraryShellState extends State<LibraryShell> {
       title: widget.title,
       onOpen: _openCategory,
       onSignIn: widget.onSignIn,
+      onServers: widget.onServers,
       onSettings: widget.onSettings,
       onSignOut: widget.onSignOut,
     ),

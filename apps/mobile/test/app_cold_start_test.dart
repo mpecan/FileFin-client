@@ -21,20 +21,27 @@ import 'support/fakes.dart';
 void main() {
   late Directory dir;
   late FakeLibraryApi api;
+  late InMemorySecretStore secrets;
+  late List<CertificateFingerprint?> pins;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('filefin-cold-');
     api = FakeLibraryApi();
+    secrets = InMemorySecretStore();
+    pins = [];
     addTearDown(() => dir.deleteSync(recursive: true));
   });
 
   Widget shell() => FileFinScope(
     dependencies: AppDependencies(
-      secrets: InMemorySecretStore(),
+      secrets: secrets,
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
       settings: SettingsStore(dir),
-      apiFactory: (_, {pin}) => api,
+      apiFactory: (_, {pin}) {
+        pins.add(pin);
+        return api;
+      },
     ),
     child: const FileFinApp(),
   );
@@ -126,6 +133,32 @@ void main() {
     await tester.pump();
 
     expect(api.closed, isTrue);
+  });
+
+  testWidgets('a cold start carries F15s accepted pin, not a null one', (
+    tester,
+  ) async {
+    // M7.5 wired the pin into every path that BUILDS a client except this one,
+    // and this is the path F2 exists for. Without it a self-signed server —
+    // F15's stated common case — fails `restore()` with `CertificateNotTrusted`
+    // on every launch, lands on "Signed out", and the user re-types a password
+    // the store already holds.
+    const accepted =
+        '0b:12:19:20:27:2e:35:3c:43:4a:51:58:5f:66:6d:74:'
+        '7b:82:89:90:97:9e:a5:ac:b3:ba:c1:c8:cf:d6:dd:e4';
+    save(selected: const ServerId('http://nas.local'));
+    await secrets.write(
+      const ServerId('http://nas.local'),
+      SecretKind.certificatePin,
+      accepted,
+    );
+    api
+      ..restoreResult = null
+      ..categoriesResult = const <Category>[];
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    expect(pins, [CertificateFingerprint.parse(accepted)]);
   });
 
   testWidgets('a selection naming a server that is gone still launches', (

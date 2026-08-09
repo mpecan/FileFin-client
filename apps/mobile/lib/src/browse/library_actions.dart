@@ -12,9 +12,16 @@ import 'package:flutter/material.dart';
 /// Each action appears only when it has somewhere to go, so a test that is not
 /// about settings or sign-out gets neither.
 List<Widget> libraryAppBarActions({
+  VoidCallback? onServers,
   VoidCallback? onSettings,
   VoidCallback? onSignOut,
 }) => [
+  if (onServers != null)
+    IconButton(
+      onPressed: onServers,
+      tooltip: 'Servers',
+      icon: const Icon(Icons.dns_outlined),
+    ),
   if (onSettings != null)
     IconButton(
       onPressed: onSettings,

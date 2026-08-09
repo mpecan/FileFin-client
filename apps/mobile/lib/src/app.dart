@@ -2,17 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:filefin_api/filefin_api.dart';
-import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/library_shell.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
-import 'package:filefin_mobile/src/playback/player_controller.dart'
-    show PlaybackOutcome;
-import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_route.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
 import 'package:filefin_mobile/src/servers/launch_pages.dart';
+import 'package:filefin_mobile/src/servers/server_api.dart';
+import 'package:filefin_mobile/src/servers/server_list_page.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/servers/sign_in_page.dart';
@@ -97,7 +96,13 @@ class _HomeRouteState extends State<HomeRoute> {
   }
 
   Future<void> _resume(SavedServer target) async {
-    final api = FileFinScope.of(context).apiFactory(target);
+    // `apiForServer`, not `apiFactory`: it resolves F15's accepted fingerprint
+    // out of the secure store first. M7.5 wired the pin into every path that
+    // builds a client EXCEPT this one, and this is the path F2 exists for — so
+    // a self-signed server, F15's stated common case, failed every cold start
+    // with `CertificateNotTrusted` and sent the user to type a password the
+    // store already held.
+    final api = await apiForServer(FileFinScope.of(context), target);
     try {
       await api.restore();
     } on FileFinApiException {
@@ -131,6 +136,73 @@ class _HomeRouteState extends State<HomeRoute> {
       ),
     ),
   );
+
+  /// F11's picker, and the three things it can ask for.
+  ///
+  /// `onAdd` pops this route **before** starting the add-server flow, and that
+  /// is not tidiness: [_signInRoute] pops exactly once on success, which is
+  /// right only while sign-in sits directly on the launch screen. Pushing the
+  /// flow on top of the picker would leave the picker showing over a freshly
+  /// signed-in library.
+  Future<void> _openServers() {
+    final settings = FileFinScope.of(context).settings.read();
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ServerListPage(
+          selected: settings.selectedServerId,
+          onSelect: (server) {
+            Navigator.of(context).pop();
+            unawaited(_switchTo(server));
+          },
+          onRemoved: _serverRemoved,
+          onAdd: () {
+            Navigator.of(context).pop();
+            unawaited(_addServer());
+          },
+        ),
+      ),
+    );
+  }
+
+  /// F11's switch: one method, because closing the previous client is the half
+  /// that leaks a socket when it is written twice.
+  ///
+  /// The selection is written **before** the restore rather than after it, so a
+  /// server whose session has since died is still the one the next launch
+  /// opens — the user asked for it, and landing back on the previous server
+  /// tomorrow is not an answer to that.
+  ///
+  /// Clearing `_api` first is what makes the shell rebuild from nothing:
+  /// `LibraryShell`'s tabs are `Offstage` rather than disposed, so a shell that
+  /// survived the swap would keep the previous server's rows on screen under
+  /// the new server's name.
+  Future<void> _switchTo(SavedServer target) async {
+    final settings = FileFinScope.of(context).settings;
+    settings.write(settings.read().withSelected(target.id));
+    setState(() {
+      _api?.close();
+      _api = null;
+      _server = target;
+      _resuming = true;
+    });
+    await _resume(target);
+  }
+
+  /// A server the picker has just forgotten.
+  ///
+  /// Only the one being *shown* costs a session. Closing the client whenever
+  /// anything is removed would sign a user out of the server they are browsing
+  /// because they tidied up a different one.
+  void _serverRemoved(SavedServer removed) {
+    if (_server?.id != removed.id) return;
+    setState(() {
+      _api?.close();
+      _api = null;
+      // Dropped, unlike in [_sessionExpired]: this server no longer exists, so
+      // offering to sign in to it is offering a screen with nowhere to go.
+      _server = null;
+    });
+  }
 
   /// The sign-in route, built once for both ways in.
   ///
@@ -208,42 +280,6 @@ class _HomeRouteState extends State<HomeRoute> {
     if (mounted) _sessionExpired();
   }
 
-  /// The player route.
-  ///
-  /// Built here rather than inside the detail page so the two ports playback
-  /// needs — the connection sample and the engine factory — come from the one
-  /// scope the whole app is built on, and a widget test substitutes both by
-  /// building that scope.
-  ///
-  /// **It returns the route's result**, which is what carries F9's local
-  /// reflection back to the detail screen: without it `MediaDetailPage` showed
-  /// a resume offset from before playback started and M1's divergence latch
-  /// discharged nothing (M4.R/P3).
-  Future<PlaybackOutcome?> _play(
-    LibraryApi api,
-    SavedServer server,
-    MediaDetail detail,
-    FileIndex file,
-    Duration startAt,
-  ) {
-    final deps = FileFinScope.of(context);
-    return Navigator.of(context).push<PlaybackOutcome>(
-      MaterialPageRoute(
-        builder: (_) => PlayerPage(
-          api: api,
-          hostFactory: deps.playbackHostFactory,
-          network: deps.network,
-          detail: detail,
-          server: server,
-          prefs: deps.settings.read().playback,
-          initialFile: file,
-          startAt: startAt,
-          onSignIn: _sessionExpired,
-        ),
-      ),
-    );
-  }
-
   /// The playback settings sheet, and the write it produces.
   ///
   /// The write is caught here rather than in the sheet because this is the
@@ -286,8 +322,15 @@ class _HomeRouteState extends State<HomeRoute> {
       // route and the home reload it triggers — are a pair that only the
       // owner of the Home tab can wire.
       return LibraryShell(
+        // The KEY is what makes a switch a new shell rather than the old one
+        // wearing a new name. Its tabs are `Offstage`, not disposed, so without
+        // it the Home tab keeps the previous server's rows and never asks the
+        // new client for anything. Measured, not guessed: the assertion in
+        // `app_servers_test.dart` fails without it.
+        key: ValueKey(server.id.value),
         api: api,
         title: server.name,
+        onServers: () => unawaited(_openServers()),
         onSettings: () => _playbackSettings(server),
         // Sign-out on a SessionExpired is a state change here rather than a
         // route push: home, the tree, the grid, search and the detail page can
@@ -298,8 +341,15 @@ class _HomeRouteState extends State<HomeRoute> {
         // sign in again" with no button and no retry.
         onSignIn: _sessionExpired,
         onSignOut: () => unawaited(_signOut(api)),
-        onPlay: (detail, file, startAt) =>
-            _play(api, server, detail, file, startAt),
+        onPlay: (detail, file, startAt) => pushPlayer(
+          context,
+          api: api,
+          server: server,
+          detail: detail,
+          file: file,
+          startAt: startAt,
+          onSignIn: _sessionExpired,
+        ),
       );
     }
     if (_resuming) return const ResumingPage();
@@ -313,6 +363,10 @@ class _HomeRouteState extends State<HomeRoute> {
       onSignIn: target == null
           ? null
           : () => Navigator.of(context).push<void>(_signInRoute(target)),
+      // Offered from here too, and gated on there being something to pick or
+      // forget: with two saved servers and none signed in, [onSignIn] reaches
+      // exactly one of them and this is the only route to the other.
+      onServers: saved.isEmpty ? null : () => unawaited(_openServers()),
     );
   }
 }
