@@ -437,6 +437,22 @@ Search added the only genuinely new shape — a debounce — and it is a
 shrinking what `just mutants` reaches, which is the same argument that decided
 D-Q1 in the first place. D9 stands.
 
+**M6.7 built the shell and the bus still was not needed, which is the stronger
+form of the same claim.** `LibraryShell` holds three tabs over one `LibraryApi`,
+and the one piece of state that genuinely crosses them — "a write happened, so
+the home rows are stale" — travels as the detail route's `bool` result and a
+`GlobalKey<HomePageState>.reload()`. That is the whole mechanism: no shared
+listenable, no second state system, four lines. The tab that has not been
+selected does not exist yet, so there is nothing for a bus to notify anyway.
+
+The one thing M6 did add is a fourth `AsyncController` shape —
+`AsyncController<SearchOutcome>` where the outcome carries its own query — and
+it needed no change to the controller at all. `load()` already cancels and
+re-checks its generation, which is exactly the supersede semantics a search box
+needs, and the blank-query short-circuit lives in the fetch closure rather than
+in a new method. A framework's `AsyncNotifier` would have been the same code
+with a package in front of it.
+
 ## Where the app's live suite lives, and why it is not `integration_test/`
 
 `apps/mobile/test_live/`, run by `tool/run-integration.sh` as an ordinary

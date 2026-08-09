@@ -10,7 +10,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M3** — `apps/mobile`: the app shell, F1's add-server flow, F2's sign-in, and F4's category tree, virtualised poster grid and detail view; every gate's Flutter branch |
 | **Done** | **M4** — playback, the direct path: F7, F8, F9, F13, NF6, D10's TLS refusal, and the `PlaybackHost` seam that makes libmpv testable |
 | **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
-| **Partial** | **M6** — F10 (favourite, rating, and the two un-watches) landed end to end, and so did every layer under F5 and F6: `searchIsRunnable`, `applyWatchState`, `home()`, `search()`, the port and the fake. **The home and search SCREENS did not**, and neither did the live suites. Said plainly in the M6 section below rather than implied |
+| **Done** | **M6** — F5, F6 and F10: search with a debounce and eleven scopes, the three home rows, favourite/rating/the two un-watches, and a three-tab shell whose tabs are built only when they are selected. All three proven against the real binary |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -42,15 +42,17 @@ that has never been committed.
 
 ## M6 — what was built
 
-**Search, home rows and F10 were the milestone; F10 and the layers underneath
-F5/F6 landed, and the three screens did not.** What is in the tree: the two
-pure functions M6 rests on, the six endpoints, the port and the fake, and F10
-on the detail screen end to end — including the POST/DELETE watched
-distinction, which M6.0 measured against the real binary for the first time in
-this repository's history. What is not: `home_page.dart`, `search_page.dart`,
-`library_shell.dart` and the live suites that would gate them. Said plainly
-here rather than implied by silence (DoD 7); "What M6 did NOT finish" below has
-the detail and the reason.
+**Search, home rows and F10 were the milestone, and all three are in.** The two
+pure functions M6 rests on, the six endpoints, the port and the fake, F10 on
+the detail screen, F6's three rows, F5's search, the shell that reaches them,
+and three live suites against the real binary — including the POST/DELETE
+watched distinction, which M6.0 measured for the first time in this
+repository's history and `watch_state_test.dart` now gates.
+
+**It was finished across two sessions.** The first landed M6.0-M6.4 and every
+layer below F5/F6's UI and stopped on wall clock; the second landed M6.5-M6.8.
+Both are recorded below in order, and the numbers are per session where they
+differ.
 
 ### M6.0 — nine experiments, and three of the plan's own predictions were wrong
 
@@ -293,6 +295,110 @@ keeps the position: Continue 0:45 is back"* red, along with two more; pointing
 `clearWatchState` at `api.setWatched(false)` turns *"Clear watch state forgets
 it: no Continue anywhere"* red. Restored byte-for-byte and green.
 
+**M6.5 — the grid out, and the rows in.** `MediaGrid` is `CategoryGridPage`'s
+body, moved unchanged so search could draw the same thing: the same builder
+delegate, the same max-extent grid, the same explicit 400 px cache extent, the
+same `addAutomaticKeepAlives: false`. What stayed behind is what is genuinely
+about a *category* — which listing to fetch, the leaf in the app bar, and an
+empty state whose sentence search could not share, because "no matches for X"
+has to quote a query the grid knows nothing about.
+
+`HomePage` draws the three buckets `GET /api/home` returns, in the order it
+returns them, and `MediaRow` is one labelled strip of it. Both are virtualised:
+`homeBucket` applies no limit, so a heavy user's *Watched* row is as long as
+their library. **Refetched, never predicted** — every write re-stamps `updated`
+and every bucket is `ORDER BY us.updated DESC` (E-3), and a prediction that was
+*more* right than the stale mirror would still look like a bug.
+
+Tested from `home_populated.json` because it is captured rather than written
+and carries one property no hand-written literal would have thought to include:
+**the film is in `continue` AND in `favorites`.** The buckets are independent
+predicates over one `user_state` row, not a partition. The fixture asserts that
+property itself before anything is drawn, so a re-capture that lost it fails
+loudly instead of making the headline case vacuous.
+
+**M6.6 — search, and the three ways it can show nothing.** Four files:
+`SearchQuery` is what is being asked for, `search_field_labels.dart` is every
+word the screen says about a scope, `MediaSearchController` is the debounce and
+the request, `SearchPage` is the widgets.
+
+The three ways are a blank box, a query the server will not run, and a query
+that ran and matched nothing. **On the wire they are indistinguishable** — all
+three are a `200` with an empty array, or no request at all — so if the client
+does not tell them apart nobody can. `searchNotice` is one pure function
+holding that decision and the page has no branching of its own.
+
+Every switch over `SearchField` is exhaustive with no default arm, because
+`db/search.go:70` degrades an unrecognised `field` to `all` rather than
+erroring: a scope the client can send but cannot describe would produce
+plausible results under the wrong label.
+
+`MediaSearchController`, not `SearchController`: `package:flutter/material.dart`
+already exports one and two in scope is an ambiguous-import error.
+
+**M6.7 — the shell, and what a cold start costs.** `LibraryShell` owns Home,
+Library and Search and the routes out of them. **Tabs are built on first
+selection**: `IndexedStack` and `TabBarView` both build every child
+immediately, so either would have made a launch fetch the home rows, the
+category list and an empty search at once, for two screens the user may never
+open. A cold start issues exactly one request and it is `home`. A detail route
+that wrote reloads the rows exactly once, from any tab, including when Home has
+never been on screen.
+
+`TickerMode` is paired with `Offstage` because `Offstage` stops layout and
+paint and **not** tickers — and it had to be asserted directly, since inverting
+its condition passed all 518 tests. That was the one survivor `just mutants`
+found in this step.
+
+Ten existing cases were rewired: Home is tab 0, so anything about the tree taps
+Library first, and the two app-level `SessionExpired` cases now fail `home()`
+too, because a dead session is dead for every route.
+
+**M6.8 — the live suites.** `watch_state_test.dart` is the exit criterion: six
+ordered steps, each differential in the way `playback_test.dart`'s are — the
+prediction `applyWatchState` makes from the payload the server HAD, compared
+field by field against the payload it has AFTER, plus which home bucket the
+item landed in. `search_test.dart` pins E-1 against the binary rather than
+against a fixture that could be re-accepted, and ends with a differential case:
+for fourteen inputs, `searchIsRunnable` false implies the server returned
+nothing, with a positive control so "everything was empty" cannot pass for a
+proof. `home_search_live_test.dart` drives the two new screens over payloads a
+real server sent.
+
+Both floors were raised, **43 → 56** and **25 → 30**, and each raise was proven
+to refuse by deleting one test.
+
+### The E-2 decision, and why the harness was left alone
+
+E-2 measured that a `FixtureRun` copy starts with the `user_state` mirror
+**contradicting** `meta.json` in both directions, so `/api/home`, search and
+every category listing report the OPPOSITE of `/api/media/{id}` until something
+writes. The plan offered two answers: teach `fixture_run.dart` to write the
+mirror, or have every live home/search suite create the state it asserts on.
+
+**The suites create their own state, and the harness was left alone.** Three
+reasons, in order of weight:
+
+1. Writing the mirror means transcribing `db.UpsertUserState`'s projection —
+   which columns, which predicates — into our harness. That is a second copy of
+   upstream logic in a place no test covers, and an upstream schema change would
+   make it **silently wrong** rather than loudly absent. `_repointCache` already
+   shows what it costs to keep such a transcription honest: it has to verify
+   itself afterwards, precisely because a moved column would otherwise leave the
+   harness doing nothing.
+2. A suite that writes what it reads is reproducible on a machine whose seed was
+   never captured against, which is the same argument `_decorrelateWatched`'s own
+   comment makes for replacing the whole `state.<user>` block.
+3. It exercises the write path on the way to the read, so the state under test
+   was produced the way a user would produce it.
+
+The cost is named rather than hidden: `fixture_run.dart` still hands every suite
+a copy whose mirror disagrees with its truth, and any future suite that reads a
+listing without writing first will see it. That is why the divergence is
+**asserted** — `watch_state_test.dart`'s last case pins it in both directions
+and then repairs it with one write, so the day upstream starts reconciling on
+startup, this repository finds out from a red test rather than from a user.
+
 ### The mutation numbers, per commit and as a distinct union
 
 Summing per-commit runs double-counts, because a file changed in two commits is
@@ -310,7 +416,15 @@ is large. Both figures:
 | `refactor(ui)` the file list out | 4 | 137 | 0 |
 | `feat(ui)` F10 on the detail screen | 4 | 91 | 0 |
 | `docs` M6 | 0 | — | — |
-| **sum** | | **310** | **0** |
+| **sum, first session** | | **310** | **0** |
+| `build` the per-mutant timeout | 0 | — | — |
+| `refactor(ui)` the grid out | 2 | 6 | 0 |
+| `feat(ui)` the home rows | 2 | 21 | 0 |
+| `feat(ui)` search | 4 | 43 | 0 |
+| `feat(app)` the shell | 2 | 28 | 0 |
+| `test(it)` the live suites | 0 | — | — |
+| **sum, second session** | | **98** | **0** |
+| **union, second session** | 10 | **98** | **0** |
 
 **The distinct union is 230**, measured in one run against the milestone's base
 (`FILEFIN_MUTANTS_BASE=53dbeff just mutants`): 167 over 7 files in
@@ -319,9 +433,35 @@ undetected in all three. So summing overstates by 80 — `client.dart`,
 `client_browse.dart`, `media_detail_page.dart` and `file_list.dart` were each
 mutated twice.
 
-The `apps/mobile` arm took **25m19s**, which is the number behind "what M6 did
-NOT finish": each further UI commit costs that much gate time, and there were
-three of them left.
+The `apps/mobile` arm took **25m19s**, which is why the first session stopped
+where it did: each further UI commit cost that much gate time, and three were
+left.
+
+**The second session's distinct union is 98 — the same as its sum — and that is
+a property of the diffs rather than luck.** Its four code commits touch **ten
+lib sources and no file twice**:
+
+| commit | lib sources |
+|---|---|
+| `refactor(ui)` the grid out | `media_grid.dart`, `category_grid_page.dart` |
+| `feat(ui)` the home rows | `home_page.dart`, `media_row.dart` |
+| `feat(ui)` search | the four `search_*.dart` |
+| `feat(app)` the shell | `library_shell.dart`, `app.dart` |
+
+`git show --name-only` over the four confirms the sets are disjoint, so the
+double-counting M5.R/G-F5 warns about — and which cost the first session 80
+mutants of overstatement — cannot arise here. **Keeping each commit's diff to
+one file set was the deliberate lever on wall clock**, and this is the
+arithmetic that shows it worked: 98 mutants measured once rather than 178
+measured twice.
+
+A confirming whole-union run (`FILEFIN_MUTANTS_BASE=8dd0d3e just mutants`, ten
+files in one pass) was started and **abandoned at ~50 minutes** rather than
+being allowed to hold the tree. It left a live `ScrollCacheExtent.pixels(-400)`
+in `media_grid.dart`, found by diffing the lib sources immediately afterwards
+exactly as CLAUDE.md says to, and restored before anything else was done. The
+number above stands on the disjointness argument, which is checkable from the
+git history in a second rather than in an hour.
 
 ### Gate proof log — M6
 
@@ -335,7 +475,21 @@ three of them left.
 | `setRating`'s guard | fail | three mutants inside `RangeError.range`'s arguments survived `isA<RangeError>()`; killed by asserting `invalidValue`, `start`, `end`, `name` |
 | mutation whole-run cap | fail | cap forced to 5 s: exit **1**, "exceeded its 5s whole-run cap" |
 | mutation whole-run cap | pass | real cap 1932 s: exit **0**, 137 mutations, 0 undetected, 19m30s |
-| `file-size` | ratchet | **6 warnings → 4** |
+| per-mutant timeout | fail | at `baseline * 6` (42 s) a **detected** `-400` cache-extent mutant reports as a timeout: exit **1** |
+| per-mutant timeout | pass | at `baseline * 12` the same diff exits **0**, 6 mutations, 0 undetected, 0 timeouts |
+| `MediaRow`'s empty guard | fail | deleted: *"an empty bucket draws no heading"* and *"an empty row is nothing at all"* red; the one-item side stays green |
+| home de-duplication | fail | `favorites` filtered against `continue`: *"the captured payload really does hold the film twice"* red |
+| the search scope on the wire | fail | `field: asked.field` → `SearchField.all`: four cases red across two files |
+| the unrunnable short-circuit | fail | deleted: *"an unparseable year is refused before the socket"* and its page twin red |
+| `searchNotice`'s `&&` | fail | `&&` → `||`: *"a RUNNABLE year with no rows says no matches"* and its page twin red |
+| lazy tabs | fail | all three built in `initState`: the two *"costs no request"* cases red |
+| the home reload | fail | unconditional: *"a detail that wrote NOTHING does not reload"* red; removed: the two write cases red |
+| `TickerMode` | fail | condition inverted: *"an offstage tab stops ticking"* red — and it passed all 518 tests before that case existed |
+| `setWatched` verb | fail | pointed at `_sendDelete`: `watch_state_test.dart` step 3 red against the real binary |
+| `clearWatched` verb | fail | pointed at `_sendJson {"watched": false}`: step 6 red, `Expected: <0>  Actual: <45>` |
+| integration floor, api | fail | one test deleted: exit **1**, "only 55 tests ran … the committed floor is 56" |
+| integration floor, app | fail | one test deleted: exit **1**, "only 29 tests ran … the committed floor is 30" |
+| `file-size` | ratchet | **6 warnings → 4**, held at 4 through the second session |
 | `comments` | ratchet | held at **1** — see the note below |
 | `MAX_UNCOVERED` | ratchet | held at **0**; coverage 100% |
 | constitution | ratchet | 0 across all seven, unchanged |
@@ -367,43 +521,43 @@ adds is that **`--stat` is not diffing them**.
 
 ### What M6 did NOT finish, stated plainly
 
-**F5 and F6 have no screen.** `home_page.dart`, `media_row.dart`,
-`media_grid.dart`, the four search files and `library_shell.dart` are not in
-the tree, and neither are the live suites (`watch_state_test.dart`,
-`search_test.dart`, `home_search_live_test.dart`) that would gate them. Both
-integration floors are unchanged at 43 / 25, and `just it` was not re-run
-against new suites because there are none.
+The first session left F5 and F6 without screens and both floors at 43 / 25.
+The second session built `media_grid.dart`, `media_row.dart`, `home_page.dart`,
+the four search files and `library_shell.dart`, added the three live suites and
+raised both floors, so **that gap is closed**. What is left is listed under
+"Debt" below rather than here, because none of it is a half-built thing.
 
-Everything below the UI **is** in the tree and tested: `home()`, `search()`,
-`searchIsRunnable`, the port's six methods and the fake's six, all with unit
-tests. What is missing is three screens, the shell that reaches them, and the
-live suites.
+Two items the first session flagged, and where they stand:
 
-The reason is wall clock rather than design. `just mutants` runs the whole app
-suite once per mutant, and a four-file `apps/mobile/lib` diff now measures at
-**137 mutants and 19m30s** — so each of the three remaining UI commits costs
-20-30 minutes of gate time, and the shell additionally rewires five existing
-test files because Home becomes tab 0 and every test that reaches the category
-tree has to select the Library tab first. That work is understood and drafted;
-it was not run. Nothing about it is blocked.
+1. **E-2's consequence is answered by decision rather than by code** — the live
+   suites create the state they assert on and `fixture_run.dart` is unchanged.
+   The reasoning is under "The E-2 decision" above, and the cost is that any
+   *future* suite reading a listing without writing first will still see a
+   mirror that disagrees with its truth.
+2. **The listing `watched` flag is now tested against the real server in both
+   directions.** `watch_state_test.dart`'s last case asserts that a fresh copy
+   really does report the opposite of the detail, and that one write repairs it.
 
-**Consequences to carry into whoever picks this up:**
-
-1. **E-2 makes a live home suite harder than the plan assumed.** A `FixtureRun`
-   copy starts with `user_state` contradicting `meta.json` in both directions,
-   so a suite must create the state it asserts on. `fixture_run.dart` should
-   also write the mirror — the cheapest fix is a `DELETE FROM user_state` plus
-   an `INSERT` per item beside `_decorrelateWatched`'s `meta.json` write, since
-   `_repointCache` already runs `sqlite3` in that file.
-2. **The listing `watched` flag is untested against the real server in either
-   direction**, and E-2 shows it can be the opposite of the detail's.
-3. `tool/check-fixtures.sh` gained `need search_results.json 'length > 0'`, so
-   a re-capture that empties it fails rather than being laundered by
-   `fixtures-accept`.
+**Two flakes were seen and neither is new.** `real_mpv_player_test.dart` sank
+two `just check` runs with `TestDeviceException` (segfault, then exit code -10)
+and was green on the file alone both times; `playback_live_test.dart` sank one
+`just it` with "did not complete" and was green on re-run. Both are
+`docs/verification-backlog.md` row H, and E-9 already showed the concurrency
+hypothesis does not explain them. No gate was changed for either. The count for
+this milestone is now **four sightings in this session on top of the two the
+first session recorded**, which is worth knowing before anyone reads a single
+red run as a regression.
 
 ### Debt this milestone knowingly accepts
 
-- **F5 and F6 are not on screen** (above). The largest item by far.
+- **Search remembers nothing between visits.** The tab is rebuilt on first
+  selection and the box starts empty, deliberately: a search box that reopens
+  holding somebody's last query is a surprise rather than a convenience. There
+  is also no filter within a category (no server route, C3).
+- **`fixture_run.dart` still hands every suite a copy whose `user_state` mirror
+  disagrees with its `meta.json`**, by decision (E-2, above). A future suite
+  that reads a listing without writing first will see it, and nothing in the
+  harness will say so — the tripwire is `watch_state_test.dart`'s last case.
 - Tags are still not built (A11 renewed): `GET /api/tags` is documented and
   captured, the `tag` scope takes typed text rather than a vocabulary, and
   building a `Tag` model now would be §1 speculation. Recorded again with the
@@ -416,10 +570,16 @@ it was not run. Nothing about it is blocked.
   "what does a failure revert to" has no predictable answer with three pending.
 - **The mirror-vs-truth divergence is exposed, not reconciled.** `docs/server-api.md`
   gained "The mirror and the truth"; nothing in the client tries to repair it.
-- Search remembers nothing between visits, and there is no filter within a
-  category (no server route, C3).
+  It is now *asserted*, which is a different thing from being fixed.
 - Large-response behaviour and the debounce under real typing are unmeasured —
-  `docs/verification-backlog.md` rows E and F.
+  `docs/verification-backlog.md` rows E and F. Both screens are virtualised on
+  M3's NF2 proxies (a bounded live-widget count and a `SliverChildBuilderDelegate`
+  over 500 and 2000 items), which is the same evidence F4's grid has and the
+  same distance from a frame-timing measurement.
+- **The 300 ms debounce is asserted on both sides of its boundary under a fake
+  clock**, which is the opposite of the case it exists for: `flutter_test` types
+  twelve characters in zero simulated milliseconds. Row F is the device
+  measurement and it has not been made.
 - Backlog rows **A, B and C** are filed against M6 and are **not** retired by
   it. A (libmpv and a `503` segment) and B (HLS seek latency, one ffmpeg per
   session) both need a long seeded item, which is a seeding change that would
