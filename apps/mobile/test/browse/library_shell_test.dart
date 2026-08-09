@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/category_tree_page.dart';
 import 'package:filefin_mobile/src/browse/home_page.dart';
@@ -299,6 +301,38 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.calls.where((c) => c == 'home'), hasLength(2));
+  });
+
+  testWidgets('a write still in flight when Back is tapped STILL reloads', (
+    tester,
+  ) async {
+    // The release-mode half of M6.R/P1.3, and a dispose guard alone does not
+    // fix it: the pop value is read the instant the screen closes, so a write
+    // that had not answered yet popped `false` and Home never reloaded even
+    // though the write landed. Tap favourite on a slow link, go Back: the rows
+    // must still be refetched.
+    final gate = Completer<void>();
+    api.writeGate = gate;
+    await show(tester);
+    await tester.tap(find.text('Direct Play Movie'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add to favourites'));
+    await tester.pump();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(api.calls, contains('setFavorite(e4285edb34d5, true)'));
+    expect(api.calls.where((c) => c == 'home'), hasLength(2));
+    expect(
+      tester.takeException(),
+      isNull,
+      reason:
+          'and nothing notified a '
+          'disposed WatchActions on the way out',
+    );
   });
 
   testWidgets('a detail that wrote NOTHING does not reload — the other side', (

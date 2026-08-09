@@ -144,6 +144,46 @@ void main() {
       },
     );
 
+    test('a write that outlives the screen notifies nobody', () async {
+      // `ChangeNotifier` asserts on `notifyListeners()` after disposal, and the
+      // `finally` runs whenever the write answers — which is routinely after
+      // the screen has gone. *Tap favourite, then Back before the response*
+      // threw `A WatchActions was used after being disposed` in debug
+      // (M6.R/P1.3). `AsyncController` has had this guard since M3, with a doc
+      // comment explaining exactly why.
+      final gate = Completer<void>();
+      api.writeGate = gate;
+      final pending = actions.favourite(_watchedAt45, favorite: true);
+      await pumpEventQueue();
+
+      actions.dispose();
+      disposed = true;
+      gate.complete();
+
+      await expectLater(pending, completes);
+    });
+
+    test('a write still on the wire is a reason to reload the rows', () async {
+      // What `MediaDetailPage` pops with. `wrote` alone is read at the instant
+      // the screen closes, so a write that had not answered yet popped `false`
+      // and Home never reloaded — even though the write landed.
+      final gate = Completer<void>();
+      api.writeGate = gate;
+      final pending = actions.favourite(_watchedAt45, favorite: true);
+      await pumpEventQueue();
+
+      expect(actions.wrote, isFalse, reason: 'it has not answered yet');
+      expect(actions.wroteOrWriting, isTrue);
+
+      gate.complete();
+      await pending;
+      expect(actions.wroteOrWriting, isTrue);
+    });
+
+    test('nothing attempted is not a reason to reload — the other side', () {
+      expect(actions.wroteOrWriting, isFalse);
+    });
+
     test('a RangeError is a bug, not a refusal, so it is not caught', () async {
       // The client guards `0..10` and throws rather than sending. Nothing here
       // catches an Error: a rating outside the range can only come from a
@@ -178,6 +218,40 @@ void main() {
         await first;
       },
     );
+
+    test(
+      'the refusal clears when the write it collided with finishes',
+      () async {
+        // It used to be cleared only by the NEXT ACCEPTED WRITE, so a red
+        // sentence saying a save was under way sat on screen indefinitely after
+        // that save had finished — on a screen the user may simply be reading
+        // (M6.R/P1.5). The `finally` clears it now, because the reason for it is
+        // gone the moment the write it named answers.
+        final gate = Completer<void>();
+        api.writeGate = gate;
+        final first = actions.favourite(_watchedAt45, favorite: true);
+        await pumpEventQueue();
+        await actions.rate(_watchedAt45, rating: 9);
+        expect(actions.notice, isNotNull, reason: 'refused while busy');
+
+        gate.complete();
+        await first;
+
+        expect(actions.notice, isNull);
+      },
+    );
+
+    test('a FAILURE is not cleared by the same finally', () async {
+      // The other side of splitting the two sentences. A refusal is true only
+      // while the write it collided with runs; a failure is true until the next
+      // attempt, and one field could not hold both.
+      api.writeFailure = CacheUnavailable(Uri.parse('http://nas/api'));
+
+      await actions.favourite(_watchedAt45, favorite: true);
+
+      expect(actions.notice, isNotNull);
+      expect(actions.notice, contains('rebuilding'));
+    });
 
     test('and the refusal does not leave the screen stuck', () async {
       final gate = Completer<void>();

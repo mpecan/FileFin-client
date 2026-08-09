@@ -126,7 +126,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     canPop: false,
     onPopInvokedWithResult: (didPop, _) {
       if (didPop) return;
-      Navigator.of(context).pop(_watch.wrote);
+      // `wroteOrWriting`, not `wrote`: this is read the instant the screen
+      // closes, so a write still on the wire would otherwise pop `false` and
+      // leave the rows stale for the rest of the session (M6.R/P1.3).
+      Navigator.of(context).pop(_watch.wroteOrWriting);
     },
     child: _scaffold(context),
   );

@@ -40,21 +40,48 @@ class WatchActions extends ChangeNotifier {
 
   bool _busy = false;
   bool _wrote = false;
-  String? _notice;
+  bool _disposed = false;
+  String? _refusal;
+  String? _failure;
 
   /// Whether a write is in flight. Every control is disabled while it is.
   bool get busy => _busy;
 
-  /// Whether any write has succeeded, which is what the home rows need to know.
+  /// Whether any write has succeeded.
   ///
   /// The rows come from the `user_state` mirror and are ordered by an `updated`
   /// stamp that **every** write re-stamps (M6.0/E-3), so a screen that changed
-  /// anything has invalidated an ordering it cannot recompute. This is the flag
-  /// the detail route pops with.
+  /// anything has invalidated an ordering it cannot recompute.
   bool get wrote => _wrote;
 
+  /// Whether the home rows have to be reloaded, **including for a write that
+  /// has not answered yet**.
+  ///
+  /// This is what the detail route pops with, and [wrote] alone was wrong for
+  /// it: the pop is read at the moment the screen closes, so *tap favourite,
+  /// then Back before the server answers* popped `false` and the rows stayed
+  /// stale for the rest of the session even though the write landed
+  /// (M6.R/P1.3). A write that is on the wire is one the server is about to
+  /// apply, and "something changed" is all the pop can honestly say anyway.
+  ///
+  /// **The residual race is named rather than hidden.** The reload is issued
+  /// as soon as the route pops, so on a slow link it can still overtake the
+  /// write it was caused by and refetch the pre-write order. That is no worse
+  /// than the current behaviour and strictly better than never reloading;
+  /// closing it properly means holding the back gesture until the write
+  /// answers, which is a worse trade. STATE.md carries it as debt.
+  bool get wroteOrWriting => _wrote || _busy;
+
   /// What to tell the user right now, or null when there is nothing to say.
-  String? get notice => _notice;
+  ///
+  /// Two fields behind one getter, because the two sentences have different
+  /// lifetimes and one field conflated them. A refusal ("still saving") is true
+  /// only while the write it collided with is running, and the `finally` below
+  /// clears it; a failure is true until something else is attempted. With one
+  /// field the refusal was cleared only by the *next accepted write*, so a red
+  /// sentence saying a save was under way sat on screen indefinitely after that
+  /// save had finished (M6.R/P1.5).
+  String? get notice => _failure ?? _refusal;
 
   /// `POST .../favorite`.
   Future<void> favourite(MediaDetail detail, {required bool favorite}) => _run(
@@ -95,14 +122,15 @@ class WatchActions extends ChangeNotifier {
     Future<void> Function() write,
   ) async {
     if (_busy) {
-      _notice = 'Still saving the last change. Try again in a moment.';
-      notifyListeners();
+      _refusal = 'Still saving the last change. Try again in a moment.';
+      _notify();
       return;
     }
     _busy = true;
-    _notice = null;
+    _refusal = null;
+    _failure = null;
     _publish(applyWatchState(current, next));
-    notifyListeners();
+    _notify();
     try {
       await write();
       _wrote = true;
@@ -111,10 +139,30 @@ class WatchActions extends ChangeNotifier {
       // said something happened, and it did not.
       _publish(current);
       final message = describeApiError(error);
-      _notice = '${message.title}. ${message.detail}';
+      _failure = '${message.title}. ${message.detail}';
     } finally {
       _busy = false;
-      notifyListeners();
+      // The reason for any refusal was this write, and it has finished.
+      _refusal = null;
+      _notify();
     }
+  }
+
+  /// Refuses to notify afterwards, exactly as `AsyncController` does.
+  ///
+  /// `ChangeNotifier` asserts on `notifyListeners()` after disposal, and the
+  /// `finally` above runs whenever the write answers — which is routinely after
+  /// the screen has gone. *Tap favourite, then Back before the response* threw
+  /// `A WatchActions was used after being disposed` in debug (M6.R/P1.3), and
+  /// the crash named the notifier rather than the screen that closed.
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
   }
 }

@@ -190,8 +190,16 @@ class _Rating extends StatelessWidget {
               DropdownButton<int>(
                 value: inRange ? rating : null,
                 hint: Text('$rating'),
+                // `value != rating` as well as non-null: a `DropdownButton`
+                // calls this for the entry that is already selected, and every
+                // write re-stamps `updated`, which is the ordering key of all
+                // three home rows (M6.0/E-3). So re-picking the 7 an item
+                // already has would shuffle somebody's *Continue watching* for
+                // nothing. `rating` rather than `detail.rating` is deliberate:
+                // an out-of-range value is not selected, so every entry
+                // differs from it and all eleven stay pickable.
                 onChanged: (value) {
-                  if (value != null) {
+                  if (value != null && value != rating) {
                     unawaited(actions.rate(detail, rating: value));
                   }
                 },

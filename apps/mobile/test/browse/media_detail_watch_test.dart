@@ -169,6 +169,25 @@ void main() {
       expect(api.calls.last, 'setRating(e4285edb34d5, 7)');
     });
 
+    testWidgets('re-picking the rating it already has writes NOTHING', (
+      tester,
+    ) async {
+      // A `DropdownButton` calls `onChanged` for the entry that is already
+      // selected, and every write re-stamps `updated` — the ordering key of all
+      // three home rows (M6.0/E-3). So re-picking the 8 an item already has
+      // reordered somebody's *Continue watching* for no change at all
+      // (M6.R). The tap has to be a real no-op, not a write of the same value.
+      api.mediaDetailResult = _watchedAt45.copyWith(rating: 8);
+      await pump(tester);
+
+      await tester.tap(find.byType(DropdownButton<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('8').last);
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['mediaDetail(e4285edb34d5)']);
+    });
+
     testWidgets('Not rated is an entry, because 0 is how the server clears', (
       tester,
     ) async {
