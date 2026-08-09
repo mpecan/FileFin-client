@@ -71,6 +71,7 @@ void main() {
   Future<void> signIn(WidgetTester tester) async {
     saveAtticNas();
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hunter2');
@@ -100,6 +101,7 @@ void main() {
     // The button is gated on `onSettings`, which only the signed-in branch
     // passes: a settings sheet with no server to edit has nothing to say.
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('Playback settings'), findsNothing);

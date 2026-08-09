@@ -233,6 +233,7 @@ class AppSettings {
   const AppSettings({
     this.servers = const [],
     this.playback = const PlaybackPrefs(),
+    this.selectedServerId,
   });
 
   /// Decodes the whole file. Throws on anything unexpected — see the class doc.
@@ -244,7 +245,26 @@ class AppSettings {
     playback: PlaybackPrefs.fromJson(
       json['playback']! as Map<String, Object?>,
     ),
+    selectedServerId: _decodeSelected(json),
   );
+
+  /// Reads `selectedServerId`, whose VALUE is nullable but whose KEY is not.
+  ///
+  /// `json['selectedServerId'] as String?` would have read a file written
+  /// before M7.3 as "nothing selected" and carried on, which is the lenient
+  /// decoder §13 forbids for our own formats: a file an older build wrote is
+  /// replaced, not half-read. Requiring the key is what makes that happen, and
+  /// `SettingsStore.read` turns the refusal into empty settings.
+  static ServerId? _decodeSelected(Map<String, Object?> json) {
+    if (!json.containsKey('selectedServerId')) {
+      throw const FormatException(
+        'settings.json has no selectedServerId key, so it was written by a '
+        'build that no longer exists (CLAUDE.md §13)',
+      );
+    }
+    final value = json['selectedServerId'];
+    return value == null ? null : ServerId(value as String);
+  }
 
   /// No servers saved yet: a first launch, or a file we could not read.
   static const empty = AppSettings();
@@ -255,10 +275,32 @@ class AppSettings {
   /// The settings that are not per server (SPEC.md §7).
   final PlaybackPrefs playback;
 
+  /// Which saved server a launch should open (F11), or null before the first
+  /// sign-in.
+  ///
+  /// The id rather than an index, because `servers` is reordered by nothing
+  /// today and by removal tomorrow, and an index would silently select a
+  /// different server the first time one is deleted.
+  final ServerId? selectedServerId;
+
+  /// The server a launch should try, or null when nothing is saved.
+  ///
+  /// Falls back to the first saved server when [selectedServerId] is null or
+  /// names one that is gone. That fallback is not a stand-in for a picker —
+  /// M7.4's picker is what writes the selection — it is what stops a removed
+  /// server stranding every later launch on an empty screen.
+  SavedServer? get selectedServer {
+    for (final server in servers) {
+      if (server.id == selectedServerId) return server;
+    }
+    return servers.isEmpty ? null : servers.first;
+  }
+
   /// Encodes the whole file.
   Map<String, Object?> toJson() => {
     'servers': [for (final server in servers) server.toJson()],
     'playback': playback.toJson(),
+    'selectedServerId': selectedServerId?.value,
   };
 
   /// A copy with [server] added, or replacing an entry with the same id.
@@ -269,12 +311,25 @@ class AppSettings {
       if (!servers.any((e) => e.id == server.id)) server,
     ],
     playback: playback,
+    selectedServerId: selectedServerId,
   );
 
   /// A copy with the playback block replaced.
-  AppSettings withPlayback(PlaybackPrefs prefs) =>
-      AppSettings(servers: servers, playback: prefs);
+  AppSettings withPlayback(PlaybackPrefs prefs) => AppSettings(
+    servers: servers,
+    playback: prefs,
+    selectedServerId: selectedServerId,
+  );
+
+  /// A copy with [server] selected — written when a sign-in succeeds.
+  AppSettings withSelected(ServerId server) => AppSettings(
+    servers: servers,
+    playback: playback,
+    selectedServerId: server,
+  );
 
   @override
-  String toString() => 'AppSettings(${servers.length} server(s), $playback)';
+  String toString() =>
+      'AppSettings(${servers.length} server(s), $playback, '
+      'selected ${selectedServerId?.value ?? 'none'})';
 }

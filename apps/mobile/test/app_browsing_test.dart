@@ -86,6 +86,7 @@ void main() {
       ),
     );
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hunter2');
@@ -114,6 +115,7 @@ void main() {
   /// Signs in to `Attic NAS` and leaves the tree on screen.
   Future<void> signIn(WidgetTester tester) async {
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hunter2');
@@ -226,6 +228,7 @@ void main() {
       ..homeResult = SessionExpired(Uri.parse('http://second.local/api'))
       ..categoriesResult = SessionExpired(Uri.parse('http://second.local/api'));
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     // Reach the SECOND server's sign-in through the add-server flow, since the
     // launch screen's own button is the thing under test.
@@ -271,6 +274,7 @@ void main() {
       ),
     );
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hunter2');

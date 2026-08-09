@@ -12,6 +12,7 @@ import 'package:filefin_mobile/src/playback/player_controller.dart'
 import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
+import 'package:filefin_mobile/src/servers/launch_pages.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/servers/sign_in_page.dart';
@@ -52,10 +53,71 @@ class _HomeRouteState extends State<HomeRoute> {
   LibraryApi? _api;
   SavedServer? _server;
 
+  /// True while F2's cold start is in flight.
+  ///
+  /// It is false unless something is actually happening, which is what keeps
+  /// the first-launch screen an empty state rather than a spinner: with no
+  /// saved server there is nothing to wait for and [_launch] returns without
+  /// setting it.
+  bool _resuming = false;
+
+  /// Whether [_launch] has already run. `didChangeDependencies` fires again on
+  /// every inherited-widget change, and a second launch would build a second
+  /// client for the same server.
+  bool _launched = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Not `initState`: `FileFinScope.of` registers a dependency, which is only
+    // legal from here down.
+    if (_launched) return;
+    _launched = true;
+    _launch();
+  }
+
   @override
   void dispose() {
     _api?.close();
     super.dispose();
+  }
+
+  /// F2's cold start: the saved session, restored without a password typed.
+  ///
+  /// Three outcomes, and the third is the one F2 exists for. No saved server
+  /// lands on *"No server yet"*; a saved server whose secrets are gone lands on
+  /// *"Signed out"*; and a saved server whose session the server has since
+  /// forgotten is renewed silently by F3 from the stored password and lands in
+  /// the library — see `LibraryApi.restore`.
+  void _launch() {
+    final target = FileFinScope.of(context).settings.read().selectedServer;
+    if (target == null) return;
+    _resuming = true;
+    unawaited(_resume(target));
+  }
+
+  Future<void> _resume(SavedServer target) async {
+    final api = FileFinScope.of(context).apiFactory(target);
+    try {
+      await api.restore();
+    } on FileFinApiException {
+      // Every reason a restore can fail ends in the same place: the sign-in
+      // screen, with the server still selected. `restore()` has already
+      // deleted a dead cookie and kept the password, so the NEXT launch is
+      // silent again rather than permanently prompting.
+      api.close();
+      if (mounted) setState(() => _resuming = false);
+      return;
+    }
+    if (!mounted) {
+      api.close();
+      return;
+    }
+    setState(() {
+      _api = api;
+      _server = target;
+      _resuming = false;
+    });
   }
 
   Future<void> _addServer() => Navigator.of(context).push<void>(
@@ -214,7 +276,8 @@ class _HomeRouteState extends State<HomeRoute> {
 
   @override
   Widget build(BuildContext context) {
-    final saved = FileFinScope.of(context).settings.read().servers;
+    final settings = FileFinScope.of(context).settings.read();
+    final saved = settings.servers;
     final server = _server;
     final api = _api;
     if (api != null && server != null) {
@@ -239,10 +302,11 @@ class _HomeRouteState extends State<HomeRoute> {
             _play(api, server, detail, file, startAt),
       );
     }
-    // The server signed out of, when there is one, rather than `saved.first`:
+    if (_resuming) return const ResumingPage();
+    // The server signed out of, when there is one, rather than the selection:
     // with two saved servers the latter sent someone who signed out of the
-    // second to the first, and there is no picker to correct it with.
-    final target = server ?? (saved.isEmpty ? null : saved.first);
+    // second to the first.
+    final target = server ?? settings.selectedServer;
     return NoServerPage(
       savedCount: saved.length,
       onAddServer: _addServer,
@@ -251,74 +315,4 @@ class _HomeRouteState extends State<HomeRoute> {
           : () => Navigator.of(context).push<void>(_signInRoute(target)),
     );
   }
-}
-
-/// What a launch shows before a server is signed in to.
-///
-/// An empty state rather than a spinner, and the distinction is the point:
-/// "nothing here" and "still loading" look identical if you show a spinner for
-/// both, and a first launch has nothing to wait for.
-class NoServerPage extends StatelessWidget {
-  /// Shows the empty state, offering sign-in when [savedCount] is non-zero.
-  const NoServerPage({
-    required this.onAddServer,
-    this.savedCount = 0,
-    this.onSignIn,
-    super.key,
-  });
-
-  /// How many servers `settings.json` holds.
-  final int savedCount;
-
-  /// Starts F1's add-a-server flow.
-  final VoidCallback onAddServer;
-
-  /// Signs in to the saved server, when there is one.
-  final VoidCallback? onSignIn;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('FileFin')),
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.dns_outlined,
-              size: 48,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              savedCount == 0 ? 'No server yet' : 'Signed out',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              savedCount == 0
-                  ? 'Add the address of your FileFin server to browse its '
-                        'library.'
-                  // NOT "a server restart signs everyone out": F3 renews and
-                  // replays that transparently and the user never sees this
-                  // screen for it. What lands here is having no password to
-                  // renew with — which at present is every fresh launch.
-                  : 'Your password is kept only while this app is running, so '
-                        'a fresh launch starts signed out. Sign in again to '
-                        'carry on.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            if (onSignIn != null)
-              FilledButton(onPressed: onSignIn, child: const Text('Sign in')),
-            TextButton(
-              onPressed: onAddServer,
-              child: const Text('Add a server'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }

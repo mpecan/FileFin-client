@@ -51,6 +51,20 @@ abstract base class LibraryApi {
   /// in".
   Future<void> logout();
 
+  /// Signs in again with no password typed, on a cold start (F2, F3).
+  ///
+  /// Two steps, and the second is what makes F2's promise true rather than
+  /// merely stored. The saved session cookie is seeded into the jar and proved
+  /// with `GET /api/me`; if the server has forgotten it — L1, which is routine
+  /// rather than exceptional — F3's renewal signs in again from the stored
+  /// password. Only when there is no password either does this throw
+  /// `SessionExpired`, and only then does a user see a sign-in screen.
+  ///
+  /// The renewal lives here rather than in the app because the app has no
+  /// password to renew with and must never acquire one (§9): the whole point
+  /// of `SecretStore` is that `filefin_api` is the only layer that reads it.
+  Future<void> restore();
+
   /// `GET /api/categories` — the flat list, for `buildCategoryTree`.
   Future<List<Category>> categories({CancelToken? cancelToken});
 
@@ -195,6 +209,23 @@ final class FileFinLibraryApi extends LibraryApi {
 
   @override
   Future<void> logout() => _client.logout();
+
+  @override
+  Future<void> restore() async {
+    try {
+      await _client.sessions.restore();
+    } on SessionExpired {
+      // `restore` has already deleted the dead cookie and KEPT the password
+      // (`session.dart:159`), so this is F3 doing exactly what it does for a
+      // 401 mid-browse. The generation is read rather than assumed: passing a
+      // stale one makes `reauthenticate` return without doing anything, which
+      // would look like a successful restore and land the user on an empty
+      // library.
+      await _client.sessions.reauthenticate(
+        seenGeneration: _client.sessions.generation,
+      );
+    }
+  }
 
   @override
   Future<List<Category>> categories({CancelToken? cancelToken}) =>

@@ -6,6 +6,7 @@ import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/browse/category_tree_page.dart';
 import 'package:filefin_mobile/src/browse/home_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/launch_pages.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +47,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     expect(find.text('No server yet'), findsOneWidget);
     expect(
@@ -60,6 +62,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     // A first launch has nothing to wait for. A spinner here would be a lie
     // about work that is not happening, and it is the shape this screen is
@@ -69,6 +72,7 @@ void main() {
 
   testWidgets('the empty state offers the add-server flow', (tester) async {
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     await tester.tap(find.text('Add a server'));
     await tester.pumpAndSettle();
@@ -110,6 +114,7 @@ void main() {
   ) async {
     // A "Sign in" button with no server to sign in to is a route to nowhere.
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     expect(find.text('Sign in'), findsNothing);
   });
@@ -127,6 +132,7 @@ void main() {
         Category(id: CategoryId(1), leaf: 'Films', name: 'Films'),
       ];
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     await tester.tap(find.text('Add a server'));
     await tester.pumpAndSettle();
@@ -168,6 +174,7 @@ void main() {
       ..loginResult = const AuthResult(user: 'sam')
       ..categoriesResult = const <Category>[];
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     expect(find.text('Signed out'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
@@ -198,6 +205,7 @@ void main() {
     );
     api.loginResult = const AuthResult(user: 'sam');
     await tester.pumpWidget(shell());
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hunter2');
@@ -267,6 +275,7 @@ void main() {
       ),
     );
     await tester.pumpWidget(shell());
+    await tester.pump();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();

@@ -4,31 +4,15 @@ import 'dart:typed_data';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/library_api.dart';
-import 'package:filefin_mobile/src/playback/network_status.dart';
-import 'package:filefin_mobile/src/playback/playback_host.dart';
 
-import 'fake_playback_host.dart';
+/// The two small port fakes live next door and are re-exported here, so no
+/// suite has to know which file a fake is in. They were split out at M7.3 for
+/// `just file-size`, not for a reason anybody reading a test cares about.
+export 'fake_ports.dart';
 
-/// A `NetworkStatus` that answers whatever a test set, with no plugin.
-final class FakeNetworkStatus extends NetworkStatus {
-  /// Answers [answer] until a test changes it.
-  FakeNetworkStatus([this.answer = NetworkType.wifi]);
-
-  /// What the next sample returns.
-  NetworkType answer;
-
-  /// How many times it was sampled — F13 says exactly once, before playing.
-  int samples = 0;
-
-  @override
-  Future<NetworkType> current() async {
-    samples++;
-    return answer;
-  }
-}
-
-/// A playback host factory for a widget test: never libmpv, never a `Video`.
-PlaybackHost Function() fakeHostFactory() => FakePlaybackHost.new;
+/// The URL a fake's `SessionExpired` names. Nothing renders it; the variant
+/// requires one.
+final Uri _nowhere = Uri.parse('http://fake.invalid/api/me');
 
 /// A `LibraryApi` a widget test can make fail without opening a socket.
 ///
@@ -43,14 +27,11 @@ PlaybackHost Function() fakeHostFactory() => FakePlaybackHost.new;
 ///
 /// **The answer ignores the arguments, so every test that cares which item was
 /// asked for must read [calls].** M3's review found five shippable bugs that
-/// passed the whole unit suite and the whole integration suite — a grid that
-/// requested category 999, a detail page with a hard-coded media id, a tile
-/// fetching a neighbour's poster, a dropped `?size=` hint, and a detail route
-/// pushed with a fabricated item — because a fake that answers the same value
-/// whatever it is handed cannot tell a right identifier from a wrong one.
-/// [calls] records the arguments verbatim; asserting the exact string is what
-/// closes that hole, and `expect(api.calls, contains('categoryMedia(1)'))`
-/// costs one line more than `hasLength(1)`.
+/// passed both suites — a grid requesting category 999, a detail page with a
+/// hard-coded media id, a tile fetching a neighbour's poster, a dropped
+/// `?size=` hint, a detail route pushed with a fabricated item — because a
+/// fake that answers the same value whatever it is handed cannot tell a right
+/// identifier from a wrong one. [calls] records the arguments verbatim.
 base class FakeLibraryApi extends LibraryApi {
   /// A fake for one server.
   FakeLibraryApi({this.server = const ServerId('fake')});
@@ -75,6 +56,22 @@ base class FakeLibraryApi extends LibraryApi {
 
   /// What `login()` answers with, or throws.
   Object? loginResult;
+
+  /// Holds `restore()` open until a test completes it.
+  ///
+  /// F2's cold start builds a client BEFORE it knows whether the session is
+  /// alive, so the launch being abandoned mid-restore is a real way to leak a
+  /// socket — and proving the client is released needs a restore that is
+  /// provably still running when the screen goes away.
+  Completer<void>? restoreGate;
+
+  /// What `restore()` throws, or `null` for a session that came back.
+  ///
+  /// **Defaults to `SessionExpired`**, because that is what a fresh
+  /// `SecretStore` really produces and it is what every app test that is not
+  /// about the cold start should see. A `null` default would have made every
+  /// launch land signed in, which is the one outcome F2 has to earn.
+  Object? restoreResult = SessionExpired(_nowhere);
 
   /// What `logout()` throws, or `null` for a server that answered.
   Object? logoutResult;
@@ -191,11 +188,24 @@ base class FakeLibraryApi extends LibraryApi {
       _answer<AuthResult>(loginResult, 'login(${credentials.username})', null);
 
   @override
+  Future<void> restore() async {
+    // Written out rather than routed through `_answer<void>`, for the trap
+    // [_write] names below.
+    calls.add('restore');
+    final gate = restoreGate;
+    if (gate != null) await gate.future;
+    final failure = restoreResult;
+    if (failure != null) {
+      // The field holds whatever the real API threw, which is an Exception.
+      // ignore: only_throw_errors
+      throw failure;
+    }
+  }
+
+  @override
   Future<void> logout() async {
-    // NOT `_answer<void>`: with `T` bound to `void` the throw arm is
-    // unreachable, so a fake set up to fail would quietly succeed — the trap
-    // `postProgress` names above, and the one the "logout that fails still
-    // signs the user out" case rests on.
+    // Same trap as [_write]: `_answer<void>` cannot throw, so the "logout that
+    // fails still signs the user out" case would be vacuous through it.
     calls.add('logout');
     final failure = logoutResult;
     if (failure != null) {
@@ -264,10 +274,8 @@ base class FakeLibraryApi extends LibraryApi {
       '${report.duration}, ${report.event.wire})',
     );
     tokens.add(cancelToken);
-    // NOT `_answer<void>`, and the reason is a trap worth naming: with `T`
-    // bound to `void`, `result is! T` is false for EVERY value, so the throw
-    // arm is unreachable and a fake set up to fail quietly succeeds. Measured:
-    // four `ProgressReporter` failure tests passed against a fake never threw.
+    // Same trap as [_write], and this is where it was measured: four
+    // `ProgressReporter` failure tests passed against a fake that never threw.
     final delay = progressDelay;
     if (delay != null) await Future<void>.delayed(delay);
     final failure = progressResult;
@@ -307,13 +315,11 @@ base class FakeLibraryApi extends LibraryApi {
   }) async {
     // Both arguments in the record: a pre-flight that checked file 0 while the
     // player opened file 1 would pass a fake that only counted calls, and the
-    // guard M5.4 puts in front of this is per FILE.
+    // guard M5.4 puts in front of this is per FILE. Written out rather than
+    // routed through `_answer<void>`, for the trap [_write] names.
     calls.add('requirePlayable(${id.value}, ${file.value})');
     tokens.add(cancelToken);
     final failure = requirePlayableResult;
-    // NOT `_answer<void>`, for the trap `postProgress` names above: with `T`
-    // bound to `void`, `result is! T` is false for every value, so the throw
-    // arm is unreachable and a fake set up to refuse quietly succeeds.
     if (failure != null) {
       // The field holds whatever the real API threw, which is an Exception.
       // ignore: only_throw_errors

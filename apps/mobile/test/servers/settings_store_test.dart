@@ -27,6 +27,80 @@ void main() {
     expect(store.read().servers, isEmpty);
   });
 
+  group('the launch selection (F11)', () {
+    test('nothing is selected before the first sign-in', () {
+      store.write(AppSettings.empty.upsert(home));
+
+      expect(store.read().selectedServerId, isNull);
+    });
+
+    test('the selection round-trips through the file', () {
+      store.write(AppSettings.empty.upsert(home).withSelected(home.id));
+
+      expect(store.read().selectedServerId, home.id);
+      expect(store.read().selectedServer, home);
+    });
+
+    test('an unselected list still offers a server to launch into', () {
+      // Not a stand-in for the picker: it is what stops a first launch after
+      // adding a server — where nothing has been selected yet — landing on an
+      // empty screen with a saved server sitting in the file.
+      store.write(AppSettings.empty.upsert(home));
+
+      expect(store.read().selectedServer, home);
+    });
+
+    test('with two saved, the SELECTED one is chosen, not the first', () {
+      // The case the whole field exists for, and the only one that can tell
+      // `==` from `!=` in the lookup: with one saved server both answer it,
+      // because the fallback below returns the same object the match would
+      // have. `just mutants` found exactly that survivor.
+      final other = SavedServer(
+        id: const ServerId('attic'),
+        name: 'Attic',
+        baseUrl: Uri.parse('http://attic.local'),
+      );
+      store.write(
+        AppSettings.empty.upsert(home).upsert(other).withSelected(other.id),
+      );
+
+      expect(store.read().selectedServer, other);
+      expect(store.read().servers.first, home);
+    });
+
+    test('a selection naming a server that is gone falls back', () {
+      // The case M7.4's removal produces. Without the fallback, deleting the
+      // selected server strands every later launch.
+      final other = SavedServer(
+        id: const ServerId('attic'),
+        name: 'Attic',
+        baseUrl: Uri.parse('http://attic.local'),
+      );
+      store.write(
+        AppSettings.empty.upsert(other).withSelected(const ServerId('gone')),
+      );
+
+      expect(store.read().selectedServer, other);
+    });
+
+    test('nothing saved means nothing to launch into', () {
+      expect(store.read().selectedServer, isNull);
+    });
+
+    test('the selection survives upsert and a playback change', () {
+      // Both copy constructors used to drop whatever field they did not name,
+      // and this one is read on every launch — so a settings-sheet toggle that
+      // silently cleared it would send the next launch to a different server.
+      final saved = AppSettings.empty.upsert(home).withSelected(home.id);
+
+      expect(saved.upsert(home).selectedServerId, home.id);
+      expect(
+        saved.withPlayback(const PlaybackPrefs()).selectedServerId,
+        home.id,
+      );
+    });
+  });
+
   test('a server round-trips through a real file', () {
     store.write(AppSettings.empty.upsert(home));
 
@@ -155,7 +229,11 @@ void main() {
       expect(
         AppSettings.empty.upsert(home).toString(),
         'AppSettings(1 server(s), PlaybackPrefs(every 30s, warn above '
-        '500000000 bytes))',
+        '500000000 bytes), selected none)',
+      );
+      expect(
+        AppSettings.empty.upsert(home).withSelected(home.id).toString(),
+        endsWith('selected home)'),
       );
     },
   );
@@ -199,6 +277,35 @@ void main() {
                 'name': 'Home',
                 'baseUrl': 'http://nas.local',
                 'lastUser': 'sam',
+              },
+            ],
+            'playback': {
+              'progressIntervalSecs': 30,
+              'meteredWarnBytes': 500000000,
+            },
+          }),
+        );
+
+      expect(store.read().servers, isEmpty);
+    });
+
+    test('a file with no selectedServerId reads as empty, M7 s turn', () {
+      // The same mechanism one milestone on, and it is asserted rather than
+      // described for the same reason: F11's launch selection is a new key, so
+      // every file an M6 build wrote fails the strict decode and the saved
+      // server disappears. Correct under §13, and it happens.
+      store.file
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'servers': [
+              {
+                'id': 'home',
+                'name': 'Home',
+                'baseUrl': 'http://nas.local',
+                'lastUser': 'sam',
+                'wifiOnly': false,
+                'allowUnverifiedPlayback': false,
               },
             ],
             'playback': {

@@ -62,10 +62,16 @@ class _SignInPageState extends State<SignInPage> {
       // The username is not a secret and a cold start needs it to renew a
       // session silently (F2). The password never comes near this file's
       // storage — `filefin_api` puts it in the SecretStore.
+      //
+      // The SELECTION is written here too, and this is the only place that
+      // writes it until M7.4's picker: signing in is what makes a server the
+      // one a launch should open, and a saved server nobody ever signed in to
+      // is not it.
       deps.settings.write(
-        deps.settings.read().upsert(
-          widget.server.withLastUser(_user.text.trim()),
-        ),
+        deps.settings
+            .read()
+            .upsert(widget.server.withLastUser(_user.text.trim()))
+            .withSelected(widget.server.id),
       );
       if (!mounted) {
         api.close();

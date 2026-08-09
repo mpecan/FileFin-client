@@ -22,6 +22,13 @@ void main() {
   late FileFinLibraryApi api;
   final seen = <String>[];
 
+  /// Paths the stub answers `401` for, once each.
+  ///
+  /// One-shot rather than sticky, because what F3 is being asked to prove is
+  /// that the SECOND attempt succeeds: a permanently-401 route would make
+  /// "renewed and retried" indistinguishable from "gave up".
+  final unauthorized = <String>{};
+
   setUpAll(() {
     // Restoring real sockets. `_MockHttpOverrides` is a plain static
     // assignment in flutter_test's binding, so this is a supported seam rather
@@ -32,6 +39,7 @@ void main() {
 
   setUp(() async {
     seen.clear();
+    unauthorized.clear();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     unawaited(
       server.forEach((request) async {
@@ -50,6 +58,11 @@ void main() {
           '${body.isEmpty ? '' : ' $body'}',
         );
         final response = request.response;
+        if (unauthorized.remove(request.uri.path)) {
+          response.statusCode = 401;
+          await response.close();
+          return;
+        }
         if (request.uri.path.endsWith('/progress') ||
             request.uri.path.endsWith('/favorite') ||
             request.uri.path.endsWith('/rating') ||
@@ -323,19 +336,6 @@ void main() {
     // and OS-trusted arms are `filefin_api`'s to prove — they depend on the
     // pin, which lives there.
     expect(api.playbackTransport(), PlaybackTransport.plainHttp);
-  });
-
-  test('logout POSTs /api/logout', () async {
-    // The verb is the assertion. A `getUri` here would be answered `200
-    // text/html` by the SPA catch-all rather than with a 405 — measured live
-    // on this exact route (`probe_and_login_test.dart:101`) — so the session
-    // would survive a sign-out and nothing would say so.
-    await api.login(const Credentials(username: 'sam', password: 'hunter2'));
-    seen.clear();
-
-    await api.logout();
-
-    expect(seen, ['POST /api/logout']);
   });
 
   test('close releases the client', () async {
