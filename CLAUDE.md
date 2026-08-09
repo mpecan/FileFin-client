@@ -186,16 +186,32 @@ only ever fall:
   improvement in so it can never regress. `constitution-accept` **refuses** to
   write a raised baseline: a ratchet with a one-command release valve is not a
   ratchet.
-- Three environment overrides exist, and they are the complete list. Each
-  refuses by default, names itself in its own error message, and requires the
-  reason to be written down where a reviewer sees it —
+- **Three environment variables can relax a bound, and they are the complete
+  list.** Each refuses by default, names itself in its own error message, and
+  requires the reason to be written down where a reviewer sees it —
   `FILEFIN_ACCEPT_NEW_DEBT` (raise a constitution baseline; say so in
   STATE.md), `FILEFIN_ACCEPT_FIXTURE_KEY_LOSS` (record a captured JSON key
   disappearing; say so in the commit), `FILEFIN_MUTANTS_ALLOW_ZERO` (accept a
-  diff that produced no mutants; say which of the two causes it was). Nothing
-  else in `tool/` reads the environment except `FILEFIN_MUTANTS_BASE`, which
-  chooses a diff base rather than relaxing a threshold. An undocumented lever
-  that quietly lowers a bar is a gate you have already lost.
+  diff that produced no mutants; say which of the two causes it was). An
+  undocumented lever that quietly lowers a bar is a gate you have already lost.
+
+  **The claim is about levers, not about reading the environment**, and this
+  sentence used to say "nothing else in `tool/` reads the environment except
+  `FILEFIN_MUTANTS_BASE`", which was simply false: `tool/` also reads `CI`,
+  `TMPDIR`, `HOME`, `FILEFIN_BIN`, `FILEFIN_RUN`, `FILEFIN_USER`,
+  `FILEFIN_PASS`, `FILEFIN_PORT`, `FILEFIN_UPSTREAM_CLONE`,
+  `FILEFIN_TRANSCODE_CATEGORY`, `FILEFIN_E5_RUN`, `FILEFIN_E5_PORT` and
+  `LIBMPV_LIBRARY_PATH`. Every one of those names *where something is* or *what
+  is being run against*; none of them moves a threshold, and stating the rule as
+  "reads the environment" made a true and useful claim look like a false one.
+  `FILEFIN_MUTANTS_BASE` is in that group too: it chooses a diff base.
+
+  A fourth lever did exist and is gone. `FILEFIN_MUTANTS_TIMEOUT` arrived at
+  M5.R, named itself nowhere in the output, had no bound in either direction —
+  a large enough value silently disables hang detection — and bypassed both the
+  12x derivation and the floor. It was removed at M6.R rather than documented:
+  the tooling gives, the constitution does not take back, and an override there
+  re-opens exactly what the derivation closed.
 - Gate warnings (`just file-size`, `just comments`) may fall or hold, never rise.
 - Coverage may fall or hold, never drop below the floor.
 

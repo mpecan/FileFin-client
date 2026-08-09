@@ -104,11 +104,72 @@ check_core_purity() {
 # §7: IDs are extension types, never typedefs. A typedef gives a CategoryId
 # exactly where a MediaId is expected — and they are not even the same
 # primitive, so the server answers the mix-up with a 404 rather than an error.
+#
+# **THE SECOND HALF OF §7 WAS ENFORCED BY NOBODY UNTIL M6.R, AND IT IS THE HALF
+# THAT MATTERS MORE.** The rule ends "Declare them `implements Object`, never
+# `implements String`/`int`: the latter forwards assignability to the primitive
+# and defeats the entire rule." This function only grepped for `typedef`, so
+# rewriting `ids.dart:16` to
+#
+#     extension type const MediaId(String value) implements String {}
+#
+# produced "constitution: no new violations" and rc 0 — the exact evasion the
+# sentence names, waved through by the check that cites it.
+#
+# The tree failed closed only BY ACCIDENT: `tool/run-coverage.sh:204`'s
+# no-executable-code exemption hard-codes the literal ` implements Object {}`,
+# so the rewritten file stopped being exempt and the run failed with a §3
+# coverage complaint about a §7 violation. A gate whose only alarm is another
+# gate's unrelated message is a gate you do not have.
+#
+# So the check now looks at the DECLARATION FORM: any `extension type` naming
+# one of the five whose header does not end in `implements Object` is a
+# violation, which covers `implements String`, `implements int` and no
+# `implements` clause at all.
+#
+# The header is a LOGICAL line, accumulated to the first `{` or `;`, for the
+# reason `check_dead_types` records at length: `dart format` wraps a
+# declaration over 80 columns and a per-physical-line match then sees nothing.
+# `ids.dart`'s five are short today; a sixth with a longer representation type
+# would not be.
 check_id_typedefs() {
     local files=() f
     while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_sources)
     if [ ${#files[@]} -eq 0 ]; then return 0; fi
+
     grep -nHE '^[[:space:]]*typedef[[:space:]]+(MediaId|CategoryId|FileIndex|SubtitleIndex|ServerId)[[:space:]]*=' "${files[@]}" || true
+
+    awk '
+        BEGIN {
+            split("MediaId CategoryId FileIndex SubtitleIndex ServerId", a, " ")
+            for (i in a) isId[a[i]] = 1
+        }
+        function emit(buf, start,   hdr, k, w, i, name) {
+            hdr = buf
+            sub(/[{;].*/, "", hdr)
+            k = split(hdr, w, /[[:space:]]+/)
+            name = ""
+            for (i = 1; i <= k; i++) {
+                if (w[i] == "type") {
+                    name = (w[i + 1] == "const") ? w[i + 2] : w[i + 1]
+                    break
+                }
+            }
+            sub(/[(<].*/, "", name)
+            if (!(name in isId)) return
+            # `implements Object` and nothing after it. Anything else — another
+            # interface, the representation type, or no clause at all — is the
+            # assignability leak §7 forbids.
+            if (hdr !~ /implements[[:space:]]+Object[[:space:]]*$/)
+                printf "%s:%d: extension type %s does not `implements Object` (CLAUDE.md §7)\n", FILENAME, start, name
+        }
+        FNR == 1 { buf = ""; start = 0 }
+        {
+            if (buf != "") buf = buf " " $0
+            else if ($0 ~ /^[[:space:]]*extension[[:space:]]+type[[:space:]]/) { buf = $0; start = FNR }
+            if (buf != "" && buf ~ /[{;]/) { emit(buf, start); buf = "" }
+        }
+    ' "${files[@]}" || true
 }
 
 # §5: a sealed-class variant nobody constructs is dead. `analyze` will not tell

@@ -193,6 +193,48 @@ for pkg in $packages; do
        mutation_test would abort on its own baseline check and every mutant
        would read as undetected. Fix the suite first."
 
+    # THE MEASUREMENT IS NOISY, AND EVERYTHING BELOW DERIVES FROM IT. Four runs
+    # of `apps/mobile` on the same machine inside ~70 minutes measured 7, 19, 8
+    # and 8 seconds, so an unclamped multiplier moves the failure boundary by
+    # 2.7x between runs and no boundary can be stated. `packages/filefin_core`
+    # is worse in the other direction: `date +%s` is integer seconds and that
+    # suite finishes inside one, so the measurement is 0 or 1 and `run_cap`
+    # collapsed to its 600 s floor for any diff under eight files — reproducing
+    # the exact bug STATE.md:507 records as fixed, for two of the three
+    # packages.
+    #
+    # Clamping the INPUT is the answer, and the argument for why noise above the
+    # floor is harmless is the load-bearing half:
+    #
+    #   * The measurement is a COLD run by construction — first compile, cold
+    #     package resolution — while every run mutation_test then makes is warm.
+    #     So it over-estimates, and over-estimating a timeout only ever costs
+    #     wall clock on a mutant that was going to fail anyway.
+    #   * The only value that can be WRONG is therefore the smallest one the
+    #     formula can install, and the floor fixes that at 12 x 5 = 60 s. The
+    #     boundary is now checkable, which a value sliding between 84 and 228
+    #     was not. Measured at M6.R on this machine: the `-400` cache-extent
+    #     mutant in `media_grid.dart` — the worst legitimately-DETECTED one
+    #     known, the whole reason 6 became 12 — takes **46 s** and prints
+    #     3,676,139 lines, against a clean warm suite of **11 s** and 577.
+    #     46 < 60, so even the floor clears it.
+    #   * And the floor only ever BINDS for the pure-Dart packages, whose suites
+    #     finish inside a second. Those have no render pipeline and so no
+    #     I/O-storm case at all; `apps/mobile`, which does, measures 8 s cold and
+    #     therefore installs 96 s. The value that could be too small is the one
+    #     applied where the hazard does not exist.
+    #   * A median of N was considered and rejected: N costs one extra full
+    #     suite run each, and `apps/mobile`'s is ~8 s cold but the mutation run
+    #     it feeds is 25 minutes. Paying minutes to smooth a number whose noise
+    #     is already in the safe direction is the wrong trade.
+    #
+    # The ceiling is the mirror image: one pathological cold start (a machine
+    # swapping, a cold CI image) must not install a half-hour per-mutant timeout
+    # and a whole-run cap measured in days, because a gate that takes a day to
+    # report is a gate nobody runs.
+    [ "$baseline_secs" -lt 5 ] && baseline_secs=5
+    [ "$baseline_secs" -gt 120 ] && baseline_secs=120
+
     # THE MULTIPLIER IS SIZED FOR A FAILING RUN, NOT A PASSING ONE, and that
     # distinction cost a false failure at M6.5. It was 6, and the assumption
     # under it — that a killed mutant costs about what a green suite costs — is
@@ -213,11 +255,18 @@ for pkg in $packages; do
     # hiding a loop: an infinite one burns the full timeout whatever it is, the
     # whole-run cap below still bounds the total, and the error message
     # distinguishes the two cases by pointing at the log size first.
-    cmd_timeout="${FILEFIN_MUTANTS_TIMEOUT:-}"
-    if [ -z "$cmd_timeout" ]; then
-        cmd_timeout=$(( baseline_secs * 12 ))
-        [ "$cmd_timeout" -lt 60 ] && cmd_timeout=60
-    fi
+    #
+    # **THERE IS NO ENVIRONMENT OVERRIDE, and its removal at M6.R was the
+    # point.** `FILEFIN_MUTANTS_TIMEOUT` existed from M5.R and was a fifth lever
+    # CLAUDE.md's "three, and they are the complete list" did not mention. It
+    # named itself nowhere in the output, had no bound in either direction — a
+    # large enough value silently disables hang detection altogether — and
+    # bypassed both the 12x derivation and the floor. The tooling gives; the
+    # constitution does not take back. An override here re-opens exactly what
+    # the clamp above closed, and raising the number is an edit in this file
+    # that a reviewer sees in the diff.
+    cmd_timeout=$(( baseline_secs * 12 ))
+    [ "$cmd_timeout" -lt 60 ] && cmd_timeout=60
     echo "mutants: $pkg — suite baseline ${baseline_secs}s, per-mutant timeout ${cmd_timeout}s"
 
     {
@@ -234,10 +283,11 @@ for pkg in $packages; do
         # a `||` rewritten to `&&` in front of a recursive retry burned the full
         # 300 and aborted every mutant behind it.
         #
-        # 6x the measured baseline, floor 30s: generous enough for a loaded
-        # machine or a cold VM, tight enough that a loop is obvious. Override
-        # with FILEFIN_MUTANTS_TIMEOUT when a genuinely slow suite needs it, and
-        # say why in the commit.
+        # **12x the measured baseline, floor 60s.** This comment said "6x,
+        # floor 30s" until M6.R while the code four screens up computed 12 and
+        # 60 — the 6 was replaced at M6.5 when a legitimately-DETECTED mutant
+        # was measured at 6.0x and reported as a hang. There is no override;
+        # the derivation and the clamp above are the whole story.
         printf '    <command group="test" expected-return="0" working-directory="." timeout="%s">%s</command>\n' "$cmd_timeout" "$test_cmd"
         echo '  </commands>'
         echo '  <files>'
@@ -345,7 +395,26 @@ for pkg in $packages; do
         # work out which; a remediator who reads "1/62 undetected" as a real
         # survivor goes hunting for an assertion that does not exist. Scrape the
         # count and say which, because the gate knows and the reader does not.
+        #
+        # **ALL THREE NUMBERS ARE SCRAPED, AND UNTIL M6.R ONLY ONE WAS.** The
+        # block read `Timeouts:` alone and `timeouts > 0` won unconditionally,
+        # so a run reporting `Undetected Mutations: 8 / Timeouts: 1` — seven
+        # genuine survivors and one hang — printed *"That is a HANG, not a
+        # survivor … Do NOT go looking for a missing assertion"* while the
+        # per-file survivor list sat in the `cat`-ed log directly above it. The
+        # third distinct false diagnosis this script has produced this
+        # milestone, and the worst kind: confident, specific, and wrong in the
+        # direction that stops the reader looking.
+        #
+        # The arithmetic is upstream's own (`report_data.dart:155`):
+        # `undetectedMutations = totalRuns - foundMutations`, so BOTH a timeout
+        # and a not-covered mutation are counted as undetected. Subtracting them
+        # is what leaves the real survivors.
+        undetected=$(grep -oE 'Undetected Mutations: [0-9]+' "$log" | grep -oE '[0-9]+' | head -1 || echo 0)
         timeouts=$(grep -oE 'Timeouts: [0-9]+' "$log" | grep -oE '[0-9]+' | head -1 || echo 0)
+        not_covered=$(grep -oE 'Not covered by tests: [0-9]+' "$log" | grep -oE '[0-9]+' | head -1 || echo 0)
+        survivors=$(( ${undetected:-0} - ${timeouts:-0} - ${not_covered:-0} ))
+        [ "$survivors" -lt 0 ] && survivors=0
         # mutation_test validates the suite on unmutated code before it mutates
         # anything, and aborts if that fails. Nothing was mutated, so there are
         # no survivors and no timeouts to scrape — and the first version of this
@@ -359,28 +428,40 @@ for pkg in $packages; do
             echo "       Usual causes: the per-mutant timeout (${cmd_timeout}s) is"
             echo "       shorter than the suite's own runtime, or the suite is"
             echo "       genuinely red. Run the suite by hand first."
-        elif [ "${timeouts:-0}" -gt 0 ]; then
-            echo "ERROR: $pkg — ${timeouts} mutant(s) hit the ${cmd_timeout}s per-mutant"
-            echo "       timeout. That is a HANG, not a survivor: the suite never"
-            echo "       finished, so nothing was measured for those mutants."
-            echo "       CHECK WHICH OF TWO THINGS IT IS BEFORE HUNTING A LOOP. A"
-            echo "       mutant that is DETECTED but makes the render pipeline assert"
-            echo "       once per frame prints tens of thousands of stack traces, and"
-            echo "       the I/O alone can outrun this timeout — measured at M6.5, 483"
-            echo "       lines of output against 2.4 million. Re-run the mutant by hand"
-            echo "       and look at the line count: a loop produces almost none."
-            echo "       Do NOT go looking for a missing assertion. Find the mutant"
-            echo "       that loops — most often a bound written as a condition in"
-            echo "       front of a recursive call, where flipping the operator"
-            echo "       removes the bound — and make the recursion structurally"
-            echo "       bounded. Widening the timeout hides it and costs the gate"
-            echo "       ${cmd_timeout}s per looping mutant, every run, forever."
         else
-            echo "ERROR: $pkg — surviving mutant(s). Each is a change to your code that"
-            echo "       no test objects to. Add the assertion; exclude it in"
-            echo "       mutation_rules.xml only if it is genuinely equivalent, with a"
-            echo "       reason and a retirement condition."
-            echo "       (Timeouts: 0 — so these are real survivors, not a wedged run.)"
+            echo "ERROR: $pkg — ${undetected} undetected = ${survivors} surviving"
+            echo "       mutant(s) + ${timeouts} timeout(s) + ${not_covered} not covered."
+            echo "       THEY ARE DIFFERENT PROBLEMS AND A RUN CAN HAVE BOTH."
+            if [ "$survivors" -gt 0 ]; then
+                echo
+                echo "       ${survivors} SURVIVOR(S). Each is a change to your code that no"
+                echo "       test objects to. The per-file listing above names them"
+                echo "       ('N not detected'). Add the assertion; exclude it in"
+                echo "       mutation_rules.xml only if it is genuinely equivalent, with a"
+                echo "       reason and a retirement condition."
+            fi
+            if [ "${timeouts:-0}" -gt 0 ]; then
+                echo
+                echo "       ${timeouts} mutant(s) hit the ${cmd_timeout}s per-mutant timeout."
+                echo "       That is a HANG, not a survivor: the suite never finished, so"
+                echo "       nothing was measured for those mutants."
+                echo "       CHECK WHICH OF TWO THINGS IT IS BEFORE HUNTING A LOOP. A"
+                echo "       mutant that is DETECTED but makes the render pipeline assert"
+                echo "       once per frame prints tens of thousands of stack traces, and"
+                echo "       the I/O alone can outrun this timeout — measured at M6.5, 483"
+                echo "       lines of output against 2.4 million. Re-run the mutant by hand"
+                echo "       and look at the line count: a loop produces almost none."
+                echo "       Otherwise find the mutant that loops — most often a bound"
+                echo "       written as a condition in front of a recursive call, where"
+                echo "       flipping the operator removes the bound — and make the"
+                echo "       recursion structurally bounded. Widening the timeout hides it"
+                echo "       and costs the gate ${cmd_timeout}s per looping mutant, forever."
+            fi
+            if [ "${not_covered:-0}" -gt 0 ]; then
+                echo
+                echo "       ${not_covered} mutation(s) were reported as not covered by any"
+                echo "       test, which is a survivor with a different name."
+            fi
         fi
         status=1
     fi

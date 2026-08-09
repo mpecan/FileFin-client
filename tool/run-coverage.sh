@@ -14,6 +14,18 @@ cd "$(repo_root)"
 
 OUT="coverage"
 LCOV="$OUT/lcov.info"
+# The combined report is BUILT UNDER A DIFFERENT NAME and moved into place only
+# once every check below has passed, and that is a foot-gun rather than a live
+# hole. `just check` composes `coverage` and `coverage-gate` correctly, so the
+# gate never saw a rejected report — but this script used to write
+# `coverage/lcov.info` before the "every lib source produced a record" check,
+# so a hand-run `bash tool/coverage-gate.sh` after a FAILED `just coverage`
+# read the file that had just been rejected and reported "100% (2677/2677),
+# exit 0" with an untested file sitting in the tree (M6.R/P3.8). A partial
+# artefact with the final artefact's name is how a gate gets believed twice.
+# `.partial` is deliberately not `*.lcov`, so the `cat` glob below cannot pick
+# up its own output.
+LCOV_STAGING="$OUT/lcov.info.partial"
 
 if no_dart_packages; then
     echo "coverage: no Dart package in the tree yet — nothing to measure (M0 only)"
@@ -144,7 +156,7 @@ if [ ${#ignoring[@]} -gt 0 ]; then
        the §3 floor written as a comment. Only generated files may carry it."
 fi
 
-cat "$OUT"/*.lcov > "$LCOV"
+cat "$OUT"/*.lcov > "$LCOV_STAGING"
 
 # The floor's blind spot, and the reason it could not be breached by adding
 # untested code.
@@ -212,7 +224,7 @@ while IFS= read -r src; do
     [ -n "$src" ] || continue
     # SF: paths may be absolute or repo-relative depending on how the package
     # was resolved, so the match is anchored on the repo-relative suffix.
-    if grep -qE "^SF:(.*/)?${src//./\\.}\$" "$LCOV"; then
+    if grep -qE "^SF:(.*/)?${src//./\\.}\$" "$LCOV_STAGING"; then
         continue
     fi
     if has_no_executable_code "$src"; then
@@ -234,5 +246,9 @@ if [ ${#exempt[@]} -gt 0 ]; then
     echo "coverage: ${#exempt[@]} lib source(s) have no executable code and so no record:"
     printf '  %s\n' "${exempt[@]}"
 fi
+
+# Only now. Every refusal above leaves NO `coverage/lcov.info` at all, so a
+# hand-run gate fails on a missing file instead of passing on a rejected one.
+mv "$LCOV_STAGING" "$LCOV"
 
 echo "coverage: wrote $LCOV from $measured package(s), covering every lib source"
