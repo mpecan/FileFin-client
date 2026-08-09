@@ -71,9 +71,20 @@ ResumeChoice offerResume(MediaDetail detail) {
 ///
 /// Written in terms of [offerResume] rather than beside it, so the two can
 /// never disagree about whether a pointer resolves.
+///
+/// **No default arm, and that is the point of the second `ResumeAvailable()`
+/// case.** It used to end `_ => 0`, because the first arm is *guarded* and a
+/// guarded pattern cannot make a switch exhaustive on its own. Measured both
+/// directions at M6.1 by adding a third [ResumeChoice] variant: against
+/// `_ => 0` the analyzer found no issue and the new variant would silently have
+/// started every file at 0, and against the three arms below it fails with
+/// `non_exhaustive_switch_expression`. Splitting the guard into "matched" and
+/// "any other `ResumeAvailable`" keeps the same answer for both and makes a
+/// fourth variant a compile error rather than a wrong number.
 int startSecondsFor(MediaDetail detail, FileIndex picked) =>
     switch (offerResume(detail)) {
       ResumeAvailable(:final file, :final seconds) when file == picked =>
         seconds,
-      _ => 0,
+      ResumeAvailable() => 0,
+      NoResume() => 0,
     };
