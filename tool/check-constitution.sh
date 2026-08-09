@@ -458,6 +458,35 @@ check_app_no_raw_http() {
     if [ ${#outside[@]} -eq 0 ]; then return 0; fi
     grep -nHE "package:media_kit" "${outside[@]}" \
         | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(///|//|\*)" || true
+
+    # THE TWO ALLOWED FILES ARE THEMSELVES CHECKED, for the two ways a file
+    # that MAY import media_kit can hand it to one that may not — neither of
+    # which contains the string above in the receiving file at all:
+    #
+    #   part 'mpv_part.dart';                        the part uses `Player`
+    #                                                with no import line
+    #   export 'package:media_kit/media_kit.dart';   any third file importing
+    #                                                this one gets `Player`
+    #
+    # Both were measured to pass silently at M4.R/G6. Both need a one-line
+    # change inside an allowed file, so they were always review-visible — but
+    # STATE.md's claim that the rest of the app "cannot reach libmpv at all"
+    # was enforced for DIRECT imports only, and a claim a gate does not cover
+    # is a claim that decays. Neither construct exists anywhere in
+    # `apps/mobile/lib` today, so the correct count is zero and any use is new
+    # debt that has to be argued for.
+    #
+    # The allowed list is rebuilt rather than shared with the loop above,
+    # because that loop keeps the files it must NOT look at.
+    local allowed=()
+    for f in "${files[@]}"; do
+        case "$f" in
+            */lib/src/playback/mpv_player.dart) allowed+=("$f") ;;
+            */lib/src/playback/media_kit_playback_host.dart) allowed+=("$f") ;;
+        esac
+    done
+    if [ ${#allowed[@]} -eq 0 ]; then return 0; fi
+    grep -nHE "^[[:space:]]*(export|part)[[:space:]]" "${allowed[@]}" || true
 }
 
 CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http"

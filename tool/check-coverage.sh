@@ -23,11 +23,13 @@ set -euo pipefail
 # something this gate enforced.
 #
 # MAX_UNCOVERED is the ratchet that closes that: an absolute count of uncovered
-# lines, committed, which may only ever fall. It is 0 today because the tree is
-# at 0. Raising it is a deliberate edit to this file, visible in a diff, with a
-# reason in STATE.md — not an environment variable, because CLAUDE.md's list of
-# three overrides is the complete list and a fourth would be exactly the
-# "undocumented lever that quietly lowers a bar" it warns about.
+# lines, committed, which may only ever fall. **The value in force is the third
+# argument, passed by `tool/coverage-gate.sh`, not the default below** — read
+# that file for the number and for the one time it was not 0. Raising it is a
+# deliberate edit to that file, visible in a diff, with a reason in STATE.md —
+# not an environment variable, because CLAUDE.md's list of three overrides is
+# the complete list and a fourth would be exactly the "undocumented lever that
+# quietly lowers a bar" it warns about.
 #
 # The percentage floor stays, because it is what CLAUDE.md §3 states and because
 # the two fail on different things: the ratchet catches an untested function in

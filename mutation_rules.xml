@@ -184,17 +184,44 @@
       <mutation text="$1-$2"/>
     </regex>
     <!-- checks if neighboring arguments may have been mixed up -->
+    <!--
+         **`)` IS EXCLUDED FROM EVERY ARGUMENT GROUP, and that is ours rather
+         than the builtin's** (M4.R/G5). Upstream's classes are `[^,:;{}(]+?`,
+         which forbid `(` and permit `)` — so on a nested widget tree the match
+         runs off the end of the innermost call and eats the RUN OF CLOSING
+         PARENTHESES that closes the enclosing ones. What comes out is not a
+         swapped argument list; it is the source re-punctuated. Measured on
+         `_FailureBanner` (`player_page.dart`), where `arg4` produced three
+         mutants of which two were shuffles of `],`, `),` and `);` — one of
+         them a WHITESPACE-ONLY rewrite that no assertion in any language could
+         kill.
+
+         M4 answered that instance by hoisting `Theme.of(context)` in
+         `UnverifiedTlsBanner` so the `TextStyle(...)` collapsed onto one line
+         and the match disappeared. That worked, and it is an exclusion enforced
+         by FORMATTING: the next `dart format` change, or the next edit that
+         re-wraps that call, brings the equivalent mutant back with nothing in
+         this file naming it. Narrowing the class is the structural fix.
+
+         **Nothing legitimate is lost, and that follows from the classes
+         themselves rather than from measurement.** An argument may not contain
+         `(`, so an argument containing `)` is necessarily unbalanced — it can
+         only be a closing parenthesis belonging to an enclosing call. Every
+         genuine two-, three- or four-argument call these rules were written for
+         still matches, including every `Object.hash(...)` the exclusions below
+         exist for. Verified by count: see the M4.R entry in STATE.md.
+      -->
     <!-- switch function call arguments. Matches 2 args -->
-    <regex pattern="([\s][a-zA-Z]+?[^(;\s{}]*?)\s*\(([^,:;{}(]+?),([^,:;{}(]+?)\)\s*;" id="builtin.function.arg2">
+    <regex pattern="([\s][a-zA-Z]+?[^(;\s{}]*?)\s*\(([^,:;{}()]+?),([^,:;{}()]+?)\)\s*;" id="builtin.function.arg2">
       <mutation text="$1($3,$2);"/>
     </regex>
     <!-- switch function call arguments. Matches 3 args -->
-    <regex pattern="([\s][a-zA-Z]+?[^\(;\s{}]*?)\s*\(([^,:;{}(]+?),([^,:;{}(]+?),([^,:;{}(]+?)\)\s*;" id="builtin.function.arg3">
+    <regex pattern="([\s][a-zA-Z]+?[^\(;\s{}]*?)\s*\(([^,:;{}()]+?),([^,:;{}()]+?),([^,:;{}()]+?)\)\s*;" id="builtin.function.arg3">
       <mutation text="$1($3,$2,$4);"/>
       <mutation text="$1($2,$4,$3);"/>
     </regex>
     <!-- switch function call arguments. Matches 4 args -->
-    <regex pattern="([\s][a-zA-Z]+?[^\(;\s{}]*?)\s*\(([^,:;{}(]+?),([^,:;{}(]+?),([^,:;{}(]+?),([^,:;{}(]+?)\)\s*;"  id="builtin.function.arg4">
+    <regex pattern="([\s][a-zA-Z]+?[^\(;\s{}]*?)\s*\(([^,:;{}()]+?),([^,:;{}()]+?),([^,:;{}()]+?),([^,:;{}()]+?)\)\s*;"  id="builtin.function.arg4">
       <mutation text="$1($3,$2,$4,$5);"/>
       <mutation text="$1($2,$4,$3,$5);"/>
       <mutation text="$1($2,$3,$5,$4);"/>
@@ -369,13 +396,24 @@
          assumed.** `id` is an extension type over String, so the (id, name)
          swap merely EXCHANGES the hashes of `(ServerId('a'), 'b')` and
          `(ServerId('b'), 'a')` — they stay distinct, and any `isNot`
-         assertion passes either way. That leaves a golden value, and there is
-         none to pin: `Object.hash` is seeded per process. Three runs of the
-         same two-line program printed `'a'.hashCode` as 170824770 every time
-         and `Object.hash('a', 'b')` as 480010859, 191724426 and 356100938. The
-         only test that would kill these is
+         assertion passes either way. That leaves a golden value, and the only
+         test that would kill these is
          `expect(server.hashCode, Object.hash(id, name, baseUrl, lastUser))`,
-         which is the implementation copied into the test file.
+         which is the implementation copied into the test file. It is a change
+         detector, and that is the whole reason to reject it.
+
+         **An earlier draft of this paragraph gave a second reason and it was
+         FALSE** (found at M4.R/G2, and left here because a wrong reason inside
+         an exclusion is how the next widening starts from a false premise —
+         which this file warns about two entries up). It said such a test
+         "would not even be stable: `Object.hash` is seeded per process". The
+         seed is indeed per process — three runs printed `Object.hash('a','b')`
+         as 458304581, 435016163 and 508756647 — but **both sides of the
+         assertion are computed in the same process**, so it is perfectly
+         stable, and it distinguishes the swap every time (`hash(a,b)` never
+         equalled `hash(b,a)` in any run). The mutants ARE killable. They are
+         excluded because the only thing that kills them is a copy of the
+         implementation, not because nothing could.
 
          Field order in `==` IS observable and IS killed — `settings_store_test`
          compares servers differing in one field at a time, and those mutants
@@ -435,8 +473,9 @@
          EXCHANGES the hashes of `(10, 30)` and `(30, 10)`; they stay distinct
          and any `isNot` assertion passes either way. The only test that could
          separate them is `expect(prefs.hashCode, Object.hash(a, b))`, which is
-         the implementation copied into the test file, and it would not even be
-         stable: `Object.hash` is seeded per process.
+         the implementation copied into the test file. That is the reason, and
+         it is the ONLY reason: a stability argument that used to sit here was
+         measured at M4.R/G2 and is false — see the `SavedServer` entry above.
 
          Field order in `==` IS observable and IS killed —
          `settings_store_test` compares prefs differing in one field at a time.
@@ -473,9 +512,11 @@
          hand-written two-or-more-argument `Object.hash` in this tree produces
          an unkillable argument-swap mutant**, for the reason set out under
          `PosterKey` above — `a == b implies a.hashCode == b.hashCode` holds
-         under every permutation of the same fields, unequal values stay
-         unequal under every permutation, and `Object.hash` is seeded per
-         process so there is no golden value to pin.
+         under every permutation of the same fields, and unequal values stay
+         unequal under every permutation. The only golden value available is
+         `Object.hash` itself, which is the implementation in the test file.
+         (Not because it would be unstable — that claim sat here until M4.R/G2
+         measured it and found it false; see the `SavedServer` entry above.)
 
          Here both fields are `String`, so the swap merely exchanges the hashes
          of `('1', 'English')` and `('English', '1')`. `==` compares both and
