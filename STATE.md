@@ -11,6 +11,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M4** — playback, the direct path: F7, F8, F9, F13, NF6, D10's TLS refusal, and the `PlaybackHost` seam that makes libmpv testable |
 | **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
 | **Done** | **M6** — F5, F6 and F10: search with a debounce and eleven scopes, the three home rows, favourite/rating/the two un-watches, and a three-tab shell whose tabs are built only when they are selected. All three proven against the real binary |
+| **Done** | **M6.R** — remediated against three adversarial reviews: six product defects (one of them data loss), nine test holes that were surviving mutants, and six gate defects — including a mutation gate that reported seven survivors as a hang and a §7 clause enforced by nobody |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
@@ -37,6 +38,151 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M6.R — the review, and the six product defects it found
+
+Three adversarial reviewers read M6. Everything below was **confirmed with a red
+test before it was fixed**, and every product defect on the list exists because
+a test was green when it should have been red — so each fix ships with the
+assertion that would have caught it, seen failing first.
+
+### The product defects
+
+| # | Defect | Commit |
+|---|---|---|
+| P1.1 | **Data loss.** `LibraryShell` cached each tab's built `Widget`, freezing every argument it was constructed from. `onSettings` is a closure `app.dart` rebuilds around the current `SavedServer`, so the settings sheet was handed the server as it was at sign-in: Wi-Fi only and D10's allowance read wrong on the second visit and the next toggle wrote the stale value back over the saved one. An M6 regression — `9c890bc` rebuilt that closure every `build` | `fix(app)` |
+| P1.2 | Playing an item never refreshed the home rows. Watching past 90% moved it from `continue` to `completed` server-side while Home kept showing it under *Continue watching*, in its pre-playback order, for the rest of the session | `fix(ui)` |
+| P1.3 | `notifyListeners()` after dispose (a debug crash naming the notifier rather than the screen), **and** the release-mode half a guard does not fix: the pop value was read at the instant the screen closed, so a write still on the wire popped `false` and the rows stayed stale | `fix(ui)` |
+| P1.4 | An unrelated write wiped an out-of-range rating off the screen. `WatchState.fromDetail` read anything outside `0..10` as 0 and `applyWatchState` wrote it back, so tapping the heart on an item the server reports as `rating: 99` said *Not rated* | `fix(core)` |
+| P1.5 | The "Still saving" refusal never cleared. It rendered in `colorScheme.error` and was cleared only by the *next accepted write* | `fix(ui)` |
+| P1.6 | Two documents contradicted the behaviour on search persistence. The behaviour was the better one, so the documents were fixed and a test pins it | `fix(app)` |
+
+Three of the four "suspected, reasoning only" items were real and are fixed:
+re-picking the rating an item already has re-posted it and reordered all three
+home rows; clearing the search box showed the old query's results for a whole
+debounce period while `_fetch`'s own doc claimed otherwise; and the two above
+that are P1.3 and P1.5.
+
+**One suspected item is NOT a defect, and one is filed as debt.**
+
+`_sendDelete` not calling `_refuseHtml` is **not** an inconsistency with `_send`
+— it is consistent with `_sendJson`, which does not call it either, and for the
+same stated reason: both routes answer `204` with no body, so there is no media
+type to check. What is true of all three write helpers is that a `200 text/html`
+from the SPA catch-all on a wrong path would read as success. That is one
+residual risk shared by three methods rather than an asymmetry in one, and it is
+filed under Debt rather than fixed, because closing it means a media-type
+assertion on a response that is specified to have no body.
+
+The remaining suspected item — a failed watch write reverting to the detail
+captured at tap time, which can undo a playback fold if the user plays while a
+write is in flight — is real and is **filed as debt**, not fixed. Closing it
+means giving `WatchActions` a reader for the currently-published detail and
+changing the revert from "field for field back to what was there" (which is
+asserted) to "the inverse state applied to whatever is on screen now". That is a
+design change with its own trade-offs, not a scout fix.
+
+### The test holes that let all of it through
+
+Each is a surviving mutant a reviewer made against the full suite and got green.
+All are now red, proven by applying the mutant and restoring it.
+
+- **The port had no body coverage at all.** `library_api_test.dart`'s harness
+  recorded `'METHOD path?query'` and never read a request body, so
+  `watched: watched` → `watched: true` passed the only test of
+  `FileFinLibraryApi`: *mark as unwatched* marked watched. Same for `favorite`.
+- **The three home rows were not bound to their headings**, and the captured
+  fixture is what hid it: `home_populated.json` has `continue` and `favorites`
+  byte-identical, so a symmetric swap was invisible. `home_rows_distinct.json`
+  was **captured** (§8, not hand-written) after one further favourite on the
+  already-watched show, giving 1 / 2 / 1, and `check-fixtures.sh` asserts the
+  distinction so a re-capture that lost it fails loudly.
+- `asked.wireText` → `asked.text`, which `mutation_test` cannot generate at all
+  (it substitutes operators, not identifiers) — untrimmed text on the wire,
+  where the nine text scopes do not `TrimSpace`.
+- The scope picker's display: both `value: …query.field` → `SearchField.all` and
+  deleting `setField`'s `notifyListeners()`.
+- `MediaRow`'s two virtualisation flags, red on `MediaGrid` and green on the row
+  whose own comment claims the invariant is a property of that file.
+- `selectedIndex: _tab.index` → `0`.
+- `app_test.dart`'s *"lands on Home with Library a tap away"* named something it
+  could not see: both tabs' app bars carry the server name and `openLibrary`'s
+  tap is a no-op when already there.
+- `search_test.dart`'s differential loop was one-directional and its
+  "not vacuous" control called `client.search` directly, proving the server
+  answers rather than that `searchIsRunnable` ever says yes.
+
+### The gates, which are the instrument
+
+- **The mutation gate hid real survivors behind a hang.** It scraped `Timeouts:`
+  and never `Undetected Mutations:`, and `timeouts > 0` won unconditionally, so
+  `Undetected 8 / Timeouts 1` — seven survivors and one hang — printed only
+  *"That is a HANG… Do NOT go looking for a missing assertion"*. Fixed to scrape
+  all three counters, with the arithmetic taken from upstream
+  (`report_data.dart:155`), and proven against synthetic logs in four shapes.
+- **`baseline_secs` is clamped to `[5, 120]`.** It measured 7, 19, 8, 8 on one
+  machine inside 70 minutes, and `date +%s` is integer seconds so both pure-Dart
+  packages measured 0-1 and `run_cap` collapsed to its 600 s floor for any diff
+  under eight files — **the claim at "the whole-run cap counted FILES where it
+  meant MUTANTS… fixed" below was false for two of the three packages** until
+  M6.R. The reasoning for why noise above the floor is harmless is in the
+  script.
+- **P3.2 is settled by measurement rather than by a run that was killed.** The
+  `-400` cache-extent mutant — the worst legitimately-DETECTED one known, the
+  reason 6 became 12 — takes **46 s** and prints **3,676,139** lines, against a
+  clean warm suite of **11 s** and 577. The floor installs 60 s, so the passing
+  direction holds at the *smallest* value the formula can install, which is
+  strictly stronger than proving it at 84. And the floor only ever binds for the
+  pure-Dart packages, which have no render pipeline and so no I/O-storm case.
+- **`FILEFIN_MUTANTS_TIMEOUT` is removed**, and CLAUDE.md's surrounding claim —
+  "nothing else in `tool/` reads the environment except `FILEFIN_MUTANTS_BASE`"
+  — was factually false and is reworded. `tool/` reads thirteen other variables;
+  every one names *where something is* rather than moving a threshold.
+- **§7's load-bearing clause was enforced by nobody.** `id_typedefs` grepped
+  only for `typedef`, so `extension type const MediaId(String value) implements
+  String {}` — the exact evasion the rule's own paragraph names — passed with
+  rc 0. The tree failed closed only **by accident**, through
+  `run-coverage.sh`'s exemption regex, so the message a reviewer got was a §3
+  coverage complaint about a §7 violation. The check now reads the declaration
+  form off a logical line; four evasions probed, four caught.
+- **`run-coverage.sh` published a rejected report.** It wrote
+  `coverage/lcov.info` before the every-source-has-a-record check, so a
+  hand-run `coverage-gate.sh` after a failed `just coverage` printed
+  `100% (2677/2677)`, exit 0, over an untested file. Now staged and moved into
+  place only on success. `just check` composed them correctly, so this was a
+  foot-gun rather than a live hole.
+
+### CI HAS NEVER RUN, on any commit in this repository
+
+`git remote -v` is empty. There is no remote, so `.github/workflows/ci.yml` has
+never executed — not once, on any of the commits this file describes. Every
+statement anywhere in this repository about what CI enforces is **unexercised**:
+the `$CI` branch in `check-mutants.sh` that refuses a base resolving to HEAD,
+the `fetch-depth: 0`, the pinned action SHAs, the hook installation step. They
+are written and they are reviewed; they have never been observed to work.
+
+This is recorded rather than repaired: inventing a remote is not the remediator's
+call. It is the single largest unexercised claim in the tree.
+
+### §5's only mechanical arm measured nothing this milestone
+
+`dead_types` looks for sealed-class variants nobody constructs, and M6 added no
+sealed classes. So the six new `LibraryApi` methods, `MediaRow`, `HomePage`,
+`SearchPage`, `MediaSearchController` and `WatchActions` are all outside
+anything it can see: a public member with no consumer outside its own library is
+§5's other sentence, and nothing checks it.
+
+**Proposed, not built** — a `public_member_no_consumer` check with the same
+logical-line accumulation `dead_types` already has: collect `^\s*(Future<…>|
+void|…)\s+name(` declarations in `lib/` that are not `@override` and not
+private, and report any whose identifier appears in no other file under `lib/`
+or `test/`. Two known false-positive classes to answer first, which is why it is
+a proposal rather than a commit: an abstract port method is *declared* in one
+file and *implemented* in another with `@override`, and a freezed factory's name
+appears only inside generated code. Both are tractable; neither is a five-line
+grep, and a §5 check that cries wolf is one people route around.
 
 ---
 
@@ -592,11 +738,39 @@ red run as a regression.
   shipped Android and iOS libmpv) needs a device, which M6 never had. Each
   re-filed here with its reason rather than slipped silently, as M5 re-filed
   row 22.
-- **`FILEFIN_MUTANTS_TIMEOUT` is a fifth environment override that CLAUDE.md's
-  "three, and they are the complete list" does not mention.** It arrived at
-  M5.R and is a per-mutant timeout — it relaxes a bound, which is the class the
-  ratchet section is about. Not touched here; named so it is a decision next
-  time rather than an omission.
+- ~~**`FILEFIN_MUTANTS_TIMEOUT` is a fifth environment override**~~ — **paid at
+  M6.R.** Removed rather than documented, and CLAUDE.md's surrounding claim
+  reworded, because it was factually false as well as incomplete.
+
+### Debt M6.R knowingly accepts, on top of the above
+
+- **A failed watch write still reverts to the detail captured at tap time.**
+  Play is deliberately not disabled while a write is in flight, so *tap
+  favourite on a slow link → play → the write fails* republishes the
+  pre-playback detail and undoes F9's fold. Real, and not fixed: closing it
+  means giving `WatchActions` a reader for the currently-published detail and
+  changing the revert from "field for field back to what was there" — which is
+  asserted, in `watch_actions_test.dart` — to "the inverse state applied to
+  whatever is on screen now". That is a design change, not a scout fix.
+- **The reload a pop triggers can still overtake the write that caused it.**
+  `wroteOrWriting` pops `true` for a write on the wire, and the shell then
+  refetches immediately, so on a slow enough link the rows come back in their
+  pre-write order. Strictly better than never reloading, which is what it
+  replaced; closing it properly means holding the back gesture until the write
+  answers, which is a worse trade for the user.
+- **`_send` refuses an HTML body on a 2xx; `_sendJson` and `_sendDelete` do
+  not.** All three write helpers expect a `204` with no body, so there is
+  nothing to check a media type on — but the consequence is that a
+  `200 text/html` from the SPA catch-all, which is what a wrong path produces,
+  would read as a successful write on any of the four F10 routes. One residual
+  risk shared by three methods rather than an inconsistency in one. Named here
+  because a reviewer flagged the DELETE alone and the answer is that it is the
+  rule rather than the exception.
+- **CI has never run.** See the M6.R section above. Not repairable from here.
+- **§5 has no mechanical check for "a public member with no consumer outside its
+  own library".** `dead_types` covers sealed variants only, and M6 added none —
+  so everything M6 built is outside it. A design for the check is in the M6.R
+  section, with the two false-positive classes that have to be answered first.
 
 ---
 
