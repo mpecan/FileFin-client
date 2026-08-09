@@ -41,7 +41,10 @@ void main() {
           '${query.isEmpty ? '' : '?$query'}',
         );
         final response = request.response;
-        if (request.uri.path.endsWith('/progress')) {
+        if (request.uri.path.endsWith('/progress') ||
+            request.uri.path.endsWith('/favorite') ||
+            request.uri.path.endsWith('/rating') ||
+            request.uri.path.endsWith('/watched')) {
           response.statusCode = 204;
         } else if (request.uri.path.contains('/sub/')) {
           response.headers.contentType = ContentType('text', 'vtt');
@@ -168,6 +171,60 @@ void main() {
     expect(seen, ['POST /api/media/e4285edb34d5/progress']);
   });
 
+  test('home reaches GET /api/home', () async {
+    await api.home();
+
+    expect(seen, ['GET /api/home']);
+  });
+
+  test('search puts BOTH the query and the scope on the wire', () async {
+    // A port that dropped `field` would still return plausible results — an
+    // unrecognised scope degrades to `all` upstream (`db/search.go:74`) — so
+    // the query string is the only thing that can tell a forwarded selector
+    // from a discarded one.
+    await api.search('Kurosawa', field: SearchField.director);
+
+    expect(seen, ['GET /api/search?q=Kurosawa&field=director']);
+  });
+
+  test('setFavorite POSTs the favorite route', () async {
+    await api.setFavorite(const MediaId('e4285edb34d5'), favorite: true);
+
+    expect(seen, ['POST /api/media/e4285edb34d5/favorite']);
+  });
+
+  test('setRating POSTs the rating route', () async {
+    await api.setRating(const MediaId('e4285edb34d5'), rating: 7);
+
+    expect(seen, ['POST /api/media/e4285edb34d5/rating']);
+  });
+
+  test('the port does not soften the rating guard', () async {
+    // The delegation is thin on purpose: the range check lives in
+    // `filefin_api` and a port that caught or clamped it would be a second
+    // place for the rule to live and disagree.
+    await expectLater(
+      api.setRating(const MediaId('e4285edb34d5'), rating: 11),
+      throwsA(isA<RangeError>()),
+    );
+    expect(seen, isEmpty);
+  });
+
+  test('setWatched POSTs and clearWatched DELETEs, on ONE path', () async {
+    // The tripwire, at the port. These are two different operations against
+    // the same URL (M6.0/E-5): the POST keeps the resume pointer and the
+    // DELETE drops it, so a port that routed both through one method would
+    // erase a position every time a user un-watches something — and the path
+    // alone cannot tell them apart.
+    await api.setWatched(const MediaId('e4285edb34d5'), watched: false);
+    await api.clearWatched(const MediaId('e4285edb34d5'));
+
+    expect(seen, [
+      'POST /api/media/e4285edb34d5/watched',
+      'DELETE /api/media/e4285edb34d5/watched',
+    ]);
+  });
+
   test('subtitleText reaches the sidecar route and returns WebVTT', () async {
     final text = await api.subtitleText(
       const MediaId('e4285edb34d5'),
@@ -253,6 +310,18 @@ Object _bodyFor(String path) {
     return [
       {'id': 1, 'name': 'Films', 'leaf': 'Films', 'parentId': 0},
     ];
+  }
+  if (path.endsWith('/api/search')) {
+    return [
+      {'id': 'e4285edb34d5', 'title': 'Direct Play Movie', 'year': 2020},
+    ];
+  }
+  if (path.endsWith('/api/home')) {
+    return {
+      'continue': <Object?>[],
+      'favorites': <Object?>[],
+      'completed': <Object?>[],
+    };
   }
   if (path.endsWith('/media')) {
     return [

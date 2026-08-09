@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:filefin_api/filefin_api.dart';
@@ -91,6 +92,23 @@ base class FakeLibraryApi extends LibraryApi {
   /// What `subtitleText()` answers with, or throws.
   Object? subtitleResult;
 
+  /// What `home()` answers with, or throws.
+  Object? homeResult;
+
+  /// What `search()` answers with, or throws.
+  Object? searchResult;
+
+  /// What every watch-state write throws, or `null` for a `204`.
+  Object? writeFailure;
+
+  /// Holds every watch-state write open until a test completes it.
+  ///
+  /// A gate rather than a delay: F10 allows **one write in flight per screen**
+  /// and refuses a second visibly, and proving that needs a write that is
+  /// provably still running when the second tap arrives. A `Duration` under
+  /// `FakeAsync` would need the test to guess how far to pump.
+  Completer<void>? writeGate;
+
   /// What `playbackHeaders()` answers with, or throws.
   Object? playbackHeadersResult;
 
@@ -130,6 +148,28 @@ base class FakeLibraryApi extends LibraryApi {
     // ignore: only_throw_errors
     if (result is Object && result is! T) throw result;
     return result as T;
+  }
+
+  /// One `Future<void>` write: recorded, optionally held, optionally failed.
+  ///
+  /// **NOT `_answer<void>`, and this is the third place that trap has to be
+  /// named.** With `T` bound to `void`, `result is! T` is false for every
+  /// value, so the throw arm is unreachable and a fake set up to fail quietly
+  /// succeeds — measured at M4, where four `ProgressReporter` failure tests
+  /// passed against a fake that never threw. F10 reverts an optimistic update
+  /// on failure, so a fake that cannot fail would leave that revert covered by
+  /// nothing at all.
+  Future<void> _write(String call, CancelToken? token) async {
+    calls.add(call);
+    tokens.add(token);
+    final gate = writeGate;
+    if (gate != null) await gate.future;
+    final failure = writeFailure;
+    if (failure != null) {
+      // The field holds whatever the real API threw, which is an Exception.
+      // ignore: only_throw_errors
+      throw failure;
+    }
   }
 
   @override
@@ -275,6 +315,53 @@ base class FakeLibraryApi extends LibraryApi {
     calls.add('playbackTransport');
     return transport;
   }
+
+  @override
+  Future<HomeRows> home({CancelToken? cancelToken}) async =>
+      _answer<HomeRows>(homeResult, 'home', cancelToken);
+
+  @override
+  Future<List<MediaSummary>> search(
+    String query, {
+    SearchField field = SearchField.all,
+    CancelToken? cancelToken,
+  }) async => _answer<List<MediaSummary>>(
+    searchResult,
+    // The scope is in the record because sending the wrong one is invisible
+    // otherwise: an unrecognised `field` degrades to `all` upstream
+    // (`db/search.go:74`), so a screen that dropped the selector still returns
+    // plausible results and quietly ignores what the user picked.
+    'search($query, ${field.wire})',
+    cancelToken,
+  );
+
+  @override
+  Future<void> setFavorite(
+    MediaId id, {
+    required bool favorite,
+    CancelToken? cancelToken,
+  }) => _write('setFavorite(${id.value}, $favorite)', cancelToken);
+
+  @override
+  Future<void> setRating(
+    MediaId id, {
+    required int rating,
+    CancelToken? cancelToken,
+  }) => _write('setRating(${id.value}, $rating)', cancelToken);
+
+  @override
+  Future<void> setWatched(
+    MediaId id, {
+    required bool watched,
+    CancelToken? cancelToken,
+  }) => _write('setWatched(${id.value}, $watched)', cancelToken);
+
+  @override
+  Future<void> clearWatched(MediaId id, {CancelToken? cancelToken}) =>
+      // Distinguishable from `setWatched(id, false)` by construction: these
+      // two strings are the tripwire a UI that collapsed the two operations
+      // into one boolean trips.
+      _write('clearWatched(${id.value})', cancelToken);
 
   @override
   void close() => closed = true;

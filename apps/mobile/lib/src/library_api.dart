@@ -49,6 +49,58 @@ abstract base class LibraryApi {
   /// `GET /api/media/{id}` — the full detail payload.
   Future<MediaDetail> mediaDetail(MediaId id, {CancelToken? cancelToken});
 
+  /// `GET /api/home` — the continue / favourites / completed rows (F6).
+  ///
+  /// **Refetched after a write, never predicted.** The rows come from the
+  /// `user_state` mirror rather than from `meta.json` (`media.go:227`), the
+  /// mirror upsert is best-effort, and the bucket order is `updated DESC` where
+  /// `updated` is re-stamped by *every* write — so setting a rating re-orders
+  /// the continue row (M6.0/E-3). None of that is derivable from what a client
+  /// holds.
+  Future<HomeRows> home({CancelToken? cancelToken});
+
+  /// `GET /api/search?q=&field=` — the field selector's results (F5).
+  Future<List<MediaSummary>> search(
+    String query, {
+    SearchField field,
+    CancelToken? cancelToken,
+  });
+
+  /// `POST /api/media/{id}/favorite` (F10).
+  Future<void> setFavorite(
+    MediaId id, {
+    required bool favorite,
+    CancelToken? cancelToken,
+  });
+
+  /// `POST /api/media/{id}/rating` — 1-10, 0 clears; anything else throws (F10).
+  Future<void> setRating(
+    MediaId id, {
+    required int rating,
+    CancelToken? cancelToken,
+  });
+
+  /// `POST /api/media/{id}/watched` — sets or clears the flag and **keeps the
+  /// resume pointer** (F10).
+  ///
+  /// Four methods rather than one with a boolean, and this pair is why. See
+  /// [clearWatched].
+  Future<void> setWatched(
+    MediaId id, {
+    required bool watched,
+    CancelToken? cancelToken,
+  });
+
+  /// `DELETE /api/media/{id}/watched` — clears the flag **and nils the
+  /// pointer** (F10).
+  ///
+  /// Measured against v0.20.3 at M6.0/E-5: after `setWatched(watched: false)`
+  /// the item is back in `continue` with its position intact; after this it is
+  /// in no home row at all and the position is gone. Collapsing the two into
+  /// one boolean would erase a resume position every time a user un-watches
+  /// something.
+  Future<void> clearWatched(MediaId id, {CancelToken? cancelToken});
+
   /// `GET /api/media/{id}/poster` — bytes, or null when there is no poster.
   Future<Uint8List?> posterBytes(
     MediaId id, {
@@ -187,6 +239,42 @@ final class FileFinLibraryApi extends LibraryApi {
 
   @override
   PlaybackTransport playbackTransport() => _client.playbackTransport();
+
+  @override
+  Future<HomeRows> home({CancelToken? cancelToken}) =>
+      _client.home(cancelToken: cancelToken);
+
+  @override
+  Future<List<MediaSummary>> search(
+    String query, {
+    SearchField field = SearchField.all,
+    CancelToken? cancelToken,
+  }) => _client.search(query, field: field, cancelToken: cancelToken);
+
+  @override
+  Future<void> setFavorite(
+    MediaId id, {
+    required bool favorite,
+    CancelToken? cancelToken,
+  }) => _client.setFavorite(id, favorite: favorite, cancelToken: cancelToken);
+
+  @override
+  Future<void> setRating(
+    MediaId id, {
+    required int rating,
+    CancelToken? cancelToken,
+  }) => _client.setRating(id, rating: rating, cancelToken: cancelToken);
+
+  @override
+  Future<void> setWatched(
+    MediaId id, {
+    required bool watched,
+    CancelToken? cancelToken,
+  }) => _client.setWatched(id, watched: watched, cancelToken: cancelToken);
+
+  @override
+  Future<void> clearWatched(MediaId id, {CancelToken? cancelToken}) =>
+      _client.clearWatched(id, cancelToken: cancelToken);
 
   @override
   void close() => _client.close();
