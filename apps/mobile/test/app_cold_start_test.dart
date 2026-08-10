@@ -6,6 +6,7 @@ import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/browse/home_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/launch_pages.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +60,32 @@ void main() {
     SettingsStore(dir).write(settings);
   }
 
+  /// The launch screen's icon, its colour, and the two strings — which is how
+  /// a user tells a failed launch from an ordinary signed-out one before
+  /// reading a word.
+  ///
+  /// Both keys and both branches of the icon/colour ternary were mutable with
+  /// nothing objecting: `problem == null` -> `!=` swapped the icon and the
+  /// colour, and `Key('launch-headline')` -> `Key('launch+headline')` changed a
+  /// key no test looked up. Four survivors, all here.
+  (IconData, Color, String, String) launchScreen(WidgetTester tester) {
+    final icon = tester.widget<Icon>(
+      find.descendant(
+        of: find.byType(NoServerPage),
+        matching: find.byType(Icon),
+      ),
+    );
+    return (
+      icon.icon!,
+      icon.color!,
+      tester.widget<Text>(find.byKey(const Key('launch-headline'))).data!,
+      tester.widget<Text>(find.byKey(const Key('launch-detail'))).data!,
+    );
+  }
+
+  ColorScheme colours(WidgetTester tester) =>
+      Theme.of(tester.element(find.byType(NoServerPage))).colorScheme;
+
   testWidgets('with nothing saved it does not even try', (tester) async {
     await tester.pumpWidget(shell());
     await tester.pump();
@@ -103,7 +130,9 @@ void main() {
     await tester.pumpWidget(shell());
     await tester.pump();
 
-    expect(api.calls, ['restore']);
+    // The close is in the record now, and it is the half that matters here:
+    // the client was built before anything was known about the session.
+    expect(api.calls, ['restore', 'close']);
     expect(api.closed, isTrue, reason: 'the client it built is released');
     expect(find.text('Signed out'), findsOneWidget);
     expect(
@@ -160,6 +189,112 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(pins, [CertificateFingerprint.parse(accepted)]);
+  });
+
+  testWidgets('a CHANGED certificate says so, and offers NO sign-in', (
+    tester,
+  ) async {
+    // The event F15 exists to make visible, on the one path that used to hide
+    // it. `_resume` caught every `FileFinApiException` and rendered the same
+    // silent "Signed out — your password is in the secure store", which is an
+    // invitation to retype a password at a server whose identity has just
+    // failed. `describeApiError` had the words all along; nothing called them.
+    save(selected: const ServerId('http://nas.local'));
+    api.restoreResult = CertificatePinMismatch(
+      Uri.parse('http://nas.local/api/me'),
+      expected: 'aa:bb',
+      actual: 'cc:dd',
+    );
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    final (icon, colour, headline, detail) = launchScreen(tester);
+    expect(icon, Icons.gpp_maybe_outlined);
+    expect(colour, colours(tester).error);
+    expect(headline, "This server's certificate has changed");
+    expect(detail, allOf(contains('aa:bb'), contains('cc:dd')));
+    expect(
+      find.widgetWithText(FilledButton, 'Sign in'),
+      findsNothing,
+      reason: 'F15 calls a changed certificate a rejection, not another prompt',
+    );
+    // The two ways out are still there, which is what stops the rejection
+    // being a dead end.
+    expect(find.widgetWithText(TextButton, 'Servers'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Add a server'), findsOneWidget);
+  });
+
+  testWidgets('a server that is merely OFF does not claim you signed out', (
+    tester,
+  ) async {
+    save(selected: const ServerId('http://nas.local'));
+    api.restoreResult = ConnectionFailed(
+      Uri.parse('http://nas.local/api/me'),
+      cause: 'connection refused',
+    );
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cannot reach the server'), findsOneWidget);
+    expect(find.text('Signed out'), findsNothing);
+    // Still offered here, unlike the certificate case: a server that is off
+    // comes back, and there is nothing suspicious about typing a password at
+    // it once it does.
+    expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
+  });
+
+  testWidgets('an ORDINARY expiry keeps the wording F2 wrote for it', (
+    tester,
+  ) async {
+    // The control for the two above: `SessionExpired` is the common outcome
+    // and the signed-out screen already says the right thing about it, so it
+    // must NOT be replaced by `describeApiError`'s more clinical sentence.
+    save(selected: const ServerId('http://nas.local'));
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    final (icon, colour, headline, detail) = launchScreen(tester);
+    expect(
+      icon,
+      Icons.dns_outlined,
+      reason: 'nothing is wrong with the server',
+    );
+    expect(colour, colours(tester).primary);
+    expect(headline, 'Signed out');
+    expect(detail, contains("device's secure store"));
+  });
+
+  testWidgets('an unreadable stored pin does not brick the launch', (
+    tester,
+  ) async {
+    // `CertificateFingerprint.parse` throws a raw `ArgumentError`, and
+    // `apiForServer` is called OUTSIDE `_resume`'s try — which catches only
+    // `FileFinApiException`. So one unreadable byte in the Keychain hung every
+    // launch for ever: `_resuming` never cleared, `ResumingPage` is a bare
+    // spinner with no button, and `_launched` latches. There was no route left
+    // to the picker, to add-server or to sign-out.
+    save(selected: const ServerId('http://nas.local'));
+    await secrets.write(
+      const ServerId('http://nas.local'),
+      SecretKind.certificatePin,
+      'this is not a fingerprint',
+    );
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('resuming')), findsNothing);
+    expect(find.text('Signed out'), findsOneWidget);
+    expect(pins, [isNull], reason: 'the client was built, and built unpinned');
+    expect(
+      await secrets.read(
+        const ServerId('http://nas.local'),
+        SecretKind.certificatePin,
+      ),
+      isNull,
+      reason:
+          'a value nothing can ever read again is deleted, so the next '
+          'connection is F15s prompt rather than a protection that lapsed',
+    );
   });
 
   testWidgets('a selection naming a server that is gone still launches', (

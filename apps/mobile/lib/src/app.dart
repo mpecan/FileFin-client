@@ -65,6 +65,14 @@ class _HomeRouteState extends State<HomeRoute> {
   /// client for the same server.
   bool _launched = false;
 
+  /// Why the last launch did not reach a library, unless it merely expired.
+  ///
+  /// **Every reason used to land on the same silent "Signed out" screen**,
+  /// including the one F15 exists to make loud: a `CertificatePinMismatch`
+  /// read as an invitation to retype a password at a server whose identity had
+  /// just failed. The words existed in `describeApiError`; nothing called them.
+  FileFinApiException? _launchFailure;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -105,13 +113,18 @@ class _HomeRouteState extends State<HomeRoute> {
     final api = await apiForServer(FileFinScope.of(context), target);
     try {
       await api.restore();
-    } on FileFinApiException {
-      // Every reason a restore can fail ends in the same place: the sign-in
-      // screen, with the server still selected. `restore()` has already
-      // deleted a dead cookie and kept the password, so the NEXT launch is
-      // silent again rather than permanently prompting.
+    } on FileFinApiException catch (error) {
+      // `SessionExpired` ends on the sign-in screen with the server still
+      // selected: `restore()` has deleted the dead cookie and kept the
+      // password, so the NEXT launch is silent again. Every OTHER reason is a
+      // different problem and now says which — see [_launchFailure].
       api.close();
-      if (mounted) setState(() => _resuming = false);
+      if (mounted) {
+        setState(() {
+          _resuming = false;
+          _launchFailure = error is SessionExpired ? null : error;
+        });
+      }
       return;
     }
     if (!mounted) {
@@ -122,6 +135,7 @@ class _HomeRouteState extends State<HomeRoute> {
       _api = api;
       _server = target;
       _resuming = false;
+      _launchFailure = null;
     });
   }
 
@@ -176,14 +190,24 @@ class _HomeRouteState extends State<HomeRoute> {
   /// `LibraryShell`'s tabs are `Offstage` rather than disposed, so a shell that
   /// survived the swap would keep the previous server's rows on screen under
   /// the new server's name.
+  ///
+  /// The write is caught, and this was the one `SettingsStore` call site of
+  /// five that did not: `_switchTo` runs `unawaited(...)` with no
+  /// `runZonedGuarded`, so a full disk closed the picker and said nothing.
+  /// The switch still goes ahead; only the NEXT launch is affected.
   Future<void> _switchTo(SavedServer target) async {
     final settings = FileFinScope.of(context).settings;
-    settings.write(settings.read().withSelected(target.id));
+    try {
+      settings.write(settings.read().withSelected(target.id));
+    } on FileSystemException catch (e) {
+      _say(describeSettingsWriteFailure(e));
+    }
     setState(() {
       _api?.close();
       _api = null;
       _server = target;
       _resuming = true;
+      _launchFailure = null;
     });
     await _resume(target);
   }
@@ -273,9 +297,7 @@ class _HomeRouteState extends State<HomeRoute> {
     try {
       await api.logout();
     } on FileFinApiException catch (error) {
-      _messenger?.showSnackBar(
-        SnackBar(content: Text(describeApiError(error).title)),
-      );
+      _say(describeApiError(error).title);
     }
     if (mounted) _sessionExpired();
   }
@@ -298,17 +320,19 @@ class _HomeRouteState extends State<HomeRoute> {
           try {
             settings.write(settings.read().upsert(changed).withPlayback(prefs));
           } on FileSystemException catch (e) {
-            _messenger?.showSnackBar(
-              SnackBar(content: Text(describeSettingsWriteFailure(e))),
-            );
+            _say(describeSettingsWriteFailure(e));
           }
         },
       ),
     );
   }
 
-  ScaffoldMessengerState? get _messenger =>
-      mounted ? ScaffoldMessenger.maybeOf(context) : null;
+  /// Everything this route has to tell a user with no panel to put it in: a
+  /// settings write that failed, and a sign-out the server did not answer.
+  void _say(String message) =>
+      (mounted ? ScaffoldMessenger.maybeOf(context) : null)?.showSnackBar(
+        SnackBar(content: Text(message)),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -357,10 +381,12 @@ class _HomeRouteState extends State<HomeRoute> {
     // with two saved servers the latter sent someone who signed out of the
     // second to the first.
     final target = server ?? settings.selectedServer;
+    final failure = _launchFailure;
     return NoServerPage(
       savedCount: saved.length,
+      problem: failure == null ? null : describeApiError(failure),
       onAddServer: _addServer,
-      onSignIn: target == null
+      onSignIn: target == null || failure is CertificatePinMismatch
           ? null
           : () => Navigator.of(context).push<void>(_signInRoute(target)),
       // Offered from here too, and gated on there being something to pick or

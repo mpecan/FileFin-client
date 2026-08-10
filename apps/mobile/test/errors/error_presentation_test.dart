@@ -197,6 +197,13 @@ void main() {
     expect(message.detail, contains('AA:BB'));
     expect(message.detail, contains('CC:DD'));
     expect(message.retryable, isFalse);
+    // It may NOT claim nothing was sent: on a pooled connection the rejection
+    // lands only once the response headers are back, and 106 bytes — a GET
+    // carrying the session cookie — had reached the peer
+    // (`errors_certificates.dart:53-62`). M7.5 paid that in `toString()` and
+    // left the user-facing string making the claim.
+    expect(message.detail, contains('refused'));
+    expect(message.detail, isNot(contains('Nothing has been sent')));
   });
 
   group('the whole sealed hierarchy, one row per variant', () {

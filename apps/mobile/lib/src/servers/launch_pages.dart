@@ -6,6 +6,7 @@
 /// reasons.
 library;
 
+import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:flutter/material.dart';
 
 /// What a launch shows before a server is signed in to.
@@ -18,6 +19,7 @@ class NoServerPage extends StatelessWidget {
   const NoServerPage({
     required this.onAddServer,
     this.savedCount = 0,
+    this.problem,
     this.onSignIn,
     this.onServers,
     super.key,
@@ -26,10 +28,27 @@ class NoServerPage extends StatelessWidget {
   /// How many servers `settings.json` holds.
   final int savedCount;
 
+  /// Why the launch did not reach a library, when the reason is not an
+  /// ordinary expired session.
+  ///
+  /// **The screen used to collapse every reason into "Signed out".** A
+  /// `CertificatePinMismatch` — the one event pinning exists to make visible —
+  /// rendered as an invitation to retype a password, and "your server is off"
+  /// read as "you have been signed out". `SessionExpired` keeps the wording
+  /// below because that IS what it means and F2's promise is that it is the
+  /// rare one; everything else says what actually happened.
+  final ErrorMessage? problem;
+
   /// Starts F1's add-a-server flow.
   final VoidCallback onAddServer;
 
   /// Signs in to the saved server, when there is one.
+  ///
+  /// `HomeRoute` withholds it on a `CertificatePinMismatch`, and that is the
+  /// point of [problem] rather than a side effect: F15 calls a changed
+  /// certificate a rejection rather than another prompt, so the one thing this
+  /// screen must not do is invite a password at a server whose identity has
+  /// just failed. [onServers] and [onAddServer] are how a user acts on it.
   final VoidCallback? onSignIn;
 
   /// Opens F11's picker. Offered from here as well as from the signed-in
@@ -37,6 +56,23 @@ class NoServerPage extends StatelessWidget {
   /// only ever reach their first: [onSignIn] goes to one server, and this is
   /// the only screen with none of them open.
   final VoidCallback? onServers;
+
+  /// The wording for the two launches that are not a failure at all.
+  ///
+  /// NOT *"a server restart signs everyone out"*: F3 renews and replays that
+  /// transparently and the user never sees this screen for it. What lands here
+  /// is having no password to renew with — after a sign-out, or after one that
+  /// no longer works.
+  ///
+  /// **It said the opposite until M7.4**, and had done since M7.2 made the
+  /// store persistent: *"your password is kept only while this app is running,
+  /// so a fresh launch starts signed out"* was true at M3 and became a false
+  /// statement about where a credential lives (§9) the moment
+  /// `PlatformSecretStore` landed.
+  String get _ordinaryDetail => savedCount == 0
+      ? 'Add the address of your FileFin server to browse its library.'
+      : 'Sign in again to carry on. Your password is kept in this '
+            "device's secure store, so a launch does not normally ask for it.";
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -48,35 +84,24 @@ class NoServerPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.dns_outlined,
+              problem == null ? Icons.dns_outlined : Icons.gpp_maybe_outlined,
               size: 48,
-              color: Theme.of(context).colorScheme.primary,
+              color: problem == null
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
             ),
             const SizedBox(height: 16),
             Text(
-              savedCount == 0 ? 'No server yet' : 'Signed out',
+              problem?.title ??
+                  (savedCount == 0 ? 'No server yet' : 'Signed out'),
+              key: const Key('launch-headline'),
               style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              savedCount == 0
-                  ? 'Add the address of your FileFin server to browse its '
-                        'library.'
-                  // NOT "a server restart signs everyone out": F3 renews and
-                  // replays that transparently and the user never sees this
-                  // screen for it. What lands here is having no password to
-                  // renew with — after a sign-out, or after one that no longer
-                  // works.
-                  //
-                  // **It said the opposite until M7.4**, and had done since
-                  // M7.2 made the store persistent: *"your password is kept
-                  // only while this app is running, so a fresh launch starts
-                  // signed out"* was true at M3 and became a false statement
-                  // about where a credential lives (§9) the moment
-                  // `PlatformSecretStore` landed.
-                  : 'Sign in again to carry on. Your password is kept in this '
-                        "device's secure store, so a launch does not normally "
-                        'ask for it.',
+              problem?.detail ?? _ordinaryDetail,
+              key: const Key('launch-detail'),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),

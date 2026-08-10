@@ -194,12 +194,13 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     ),
 
   // F15's loud half: a CHANGED fingerprint blocks rather than re-accepting,
-  // and both values are shown because a user cannot judge it otherwise.
+  // shows both values, and says "refused" — never "nothing was sent", which
+  // `errors_certificates.dart:53-62` measured at 106 bytes already gone.
   CertificatePinMismatch(:final expected, :final actual) => ErrorMessage(
     title: "This server's certificate has changed",
     detail:
         'It was accepted as $expected and now presents $actual. That can mean '
         'the certificate was renewed — or that something is impersonating the '
-        'server. Nothing has been sent to it.',
+        'server. The connection was refused.',
   ),
 };

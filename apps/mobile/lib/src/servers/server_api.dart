@@ -20,13 +20,48 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 Future<LibraryApi> apiForServer(
   AppDependencies deps,
   SavedServer server,
+) async => deps.apiFactory(server, pin: await _acceptedPin(deps, server));
+
+/// The pin the user accepted, or null once an unreadable one is forgotten.
+///
+/// **`parse` is strict on purpose and it must not be able to brick a launch.**
+/// A value that is not a fingerprint is not something to read tolerantly — a
+/// pin that quietly matches nothing is a pin that has silently stopped
+/// protecting anything — but `parse` throws a raw `ArgumentError`, and this
+/// call sits on F2's cold-start path OUTSIDE `HomeRoute._resume`'s `try`, which
+/// catches only `FileFinApiException`. One unreadable byte therefore hung every
+/// launch for ever: `_resuming` never cleared, `ResumingPage` is a bare spinner
+/// with no button, `_launched` latches, and there was no route left to the
+/// picker, to add-server or to sign-out.
+///
+/// **"It can only be a value we wrote wrong" was true of our writes and false
+/// of the store they live in.** `settings.json` is ours; the Keychain and the
+/// Keystore are not, and `flutter_secure_storage` documents decrypt failures on
+/// Android after a backup restore or a keystore reset. §13 gives us no
+/// migration path and needs none — this is not an older format, it is an
+/// unreadable value.
+///
+/// Deleting it rather than ignoring it is what stops the app running unpinned
+/// for ever against a byte string it will never read again. What happens next
+/// is F15's trust-on-first-use prompt, which is a decision somebody takes
+/// rather than a protection that quietly lapsed.
+///
+/// `avoid_catching_errors` is right nearly everywhere and wrong here, for the
+/// reason `FileFinClient._uri` records: the rejected value came out of a
+/// platform store rather than out of a caller's hand, so this is the boundary
+/// that turns it into a recoverable outcome instead of a crash.
+Future<CertificateFingerprint?> _acceptedPin(
+  AppDependencies deps,
+  SavedServer server,
 ) async {
   final stored = await deps.secrets.read(server.id, SecretKind.certificatePin);
-  return deps.apiFactory(
-    server,
-    // `parse` rather than a tolerant read. A value that is not a fingerprint
-    // can only be one we wrote wrong, and a pin that quietly matches nothing
-    // is a pin that silently stops protecting anything.
-    pin: stored == null ? null : CertificateFingerprint.parse(stored),
-  );
+  if (stored == null) return null;
+  try {
+    return CertificateFingerprint.parse(stored);
+    // The value came out of a platform store, not a caller's hand — see above.
+    // ignore: avoid_catching_errors
+  } on ArgumentError {
+    await deps.secrets.delete(server.id, SecretKind.certificatePin);
+    return null;
+  }
 }
