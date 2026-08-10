@@ -153,7 +153,6 @@ void main() {
       expect(cleared.watched, isFalse);
       expect(cleared.pointer, isNull);
       expect(clearWatched(cleared), cleared);
-      expect(clearProgress(cleared), cleared);
     });
   });
 

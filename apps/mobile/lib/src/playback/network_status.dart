@@ -1,5 +1,6 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:filefin_core/filefin_core.dart';
+import 'package:meta/meta.dart';
 
 /// What kind of connection the device is on (F13).
 ///
@@ -49,6 +50,9 @@ abstract base class NetworkStatus {
 /// The residual, and it is the exact case F13 exists for: **a tethered hotspot
 /// is reported as `wifi`**, so the guard does not fire.
 /// `docs/verification-backlog.md` row 20 carries the device experiment.
+/// Public only so a test can reach it; nothing outside this library calls
+/// it (§5, `public_member_no_consumer`).
+@visibleForTesting
 NetworkType networkTypeOf(List<ConnectivityResult> results) {
   final usable = results.where((r) => r != ConnectivityResult.none).toList();
   if (usable.isEmpty) return NetworkType.none;

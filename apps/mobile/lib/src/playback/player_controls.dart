@@ -3,6 +3,9 @@ import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:flutter/material.dart';
 
 /// `mm:ss`, or `h:mm:ss` past an hour.
+/// Public only so a test can reach it; nothing outside this library calls
+/// it (§5, `public_member_no_consumer`).
+@visibleForTesting
 String formatPosition(Duration d) {
   // ONE named constant for both minute divisions rather than two literal 60s,
   // and it is the mutation gate that asks for it. Dart defines `a % b` to land

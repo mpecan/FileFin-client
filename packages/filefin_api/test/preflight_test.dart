@@ -28,9 +28,14 @@ void main() {
     client = ClientHarness.build(stub, urls, InMemorySecretStore()).client;
     addTearDown(client.close);
     // From `ApiPaths`, never a literal, so renaming a route cannot leave this
-    // stub silently answering the old one.
+    // stub silently answering the old one. The HLS path is the exception and
+    // has to be written out: `FileFinUrls` stopped expressing it at M7.R,
+    // because nothing in this client ever requests it — libmpv follows the
+    // `307` over its own socket — and §1 says delete rather than keep a
+    // builder for a route with no caller. What is asserted here is that dio
+    // does NOT follow the redirect, so the literal is the thing under test.
     path = urls.file(_id, _file).path;
-    hlsPath = urls.hlsIndex(_id, _file).path;
+    hlsPath = '$path/hls/index.m3u8';
   });
 
   void serve(StubResponse response) => stub.on('HEAD', path, (_) => response);

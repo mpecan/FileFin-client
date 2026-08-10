@@ -669,11 +669,14 @@ that literally would widen the message to cover a case that cannot arrive:
 | `.../file/{n}/hls/index.m3u8` | `not transcodable` | transcoding is off **or the file does not need it** (`playback.go:153`) | no |
 
 `PlaybackRequest.url` is always the **file** route and libmpv follows the `307`
-itself, so nothing in `filefin_api` ever requests the hls route — `hlsIndex` and
-`hlsSegment` exist on `FileFinUrls` and have no production consumer, which is a
-decision recorded in `urls.dart` rather than an oversight. `TranscodingDisabled`
-therefore carries no body: only one shape can reach it, and under the `HEAD`
-pre-flight that shape has no body at all (measured, M5.0/E-K).
+itself, so nothing in this client ever requests the hls route. **`FileFinUrls`
+stopped expressing it at M7.R and that is §1 rather than an oversight**:
+`hlsIndex` and `hlsSegment` were two builders with no caller in any milestone,
+and "it keeps the document expressible" is exactly the speculative construction
+§1 forbids. The routes stay documented here, which is where the contract lives;
+git remembers the builders. `TranscodingDisabled` therefore carries no body:
+only one shape can reach it, and under the `HEAD` pre-flight that shape has no
+body at all (measured, M5.0/E-K).
 
 Status `200`, `400` bad `{n}`, `404` no such file, `415` not transcodable,
 `500` transcode failed, `503` cache unavailable.

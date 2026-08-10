@@ -135,14 +135,6 @@ void main() {
         'https://h/api/media/$_id/file/1',
       );
       expect(
-        urls.hlsIndex(_id, _file).toString(),
-        'https://h/api/media/$_id/file/1/hls/index.m3u8',
-      );
-      expect(
-        urls.hlsSegment(_id, _file, 'seg0.ts').toString(),
-        'https://h/api/media/$_id/file/1/hls/seg0.ts',
-      );
-      expect(
         urls.subtitle(_id, _file, const SubtitleIndex(2)).toString(),
         'https://h/api/media/$_id/file/1/sub/2',
       );
@@ -235,8 +227,6 @@ void main() {
       ApiPaths.mediaDetail(_id),
       ApiPaths.poster(_id),
       ApiPaths.file(_id, _file),
-      ApiPaths.hlsIndex(_id, _file),
-      ApiPaths.hlsSegment(_id, _file, 'seg0.ts'),
       ApiPaths.subtitle(_id, _file, const SubtitleIndex(2)),
       ApiPaths.progress(_id),
       ApiPaths.watched(_id),
@@ -277,10 +267,6 @@ void main() {
       expect(() => urls.mediaDetail(const MediaId('')), throwsArgumentError);
       expect(() => urls.poster(const MediaId('')), throwsArgumentError);
       expect(() => urls.progress(const MediaId('')), throwsArgumentError);
-      expect(
-        () => urls.hlsSegment(_id, _file, ''),
-        throwsArgumentError,
-      );
     });
 
     test('a dot segment throws, because escaping it does not help', () {
@@ -289,8 +275,6 @@ void main() {
       // '/api/x'. Rejecting the value is the only defence.
       expect(() => urls.mediaDetail(const MediaId('..')), throwsArgumentError);
       expect(() => urls.mediaDetail(const MediaId('.')), throwsArgumentError);
-      expect(() => urls.hlsSegment(_id, _file, '..'), throwsArgumentError);
-      expect(() => urls.hlsSegment(_id, _file, '.'), throwsArgumentError);
     });
 
     test('the error names the value, the parameter and the reason', () {
@@ -325,23 +309,15 @@ void main() {
     });
 
     test('a dot inside a longer segment is untouched', () {
-      // `seg0.ts` and `index.m3u8` are the real segment names, and `..a` is the
-      // nearest miss to the rejected value — none of them is a dot segment.
-      expect(
-        urls.hlsSegment(_id, _file, 'seg0.ts').toString(),
-        'https://h/api/media/$_id/file/1/hls/seg0.ts',
-      );
-      expect(
-        urls.hlsIndex(_id, _file).toString(),
-        'https://h/api/media/$_id/file/1/hls/index.m3u8',
-      );
+      // `..a` and `...` are the nearest misses to the two rejected values, and
+      // neither is a dot segment.
       expect(
         urls.mediaDetail(const MediaId('..a')).toString(),
         'https://h/api/media/..a',
       );
       expect(
-        urls.hlsSegment(_id, _file, '...').toString(),
-        'https://h/api/media/$_id/file/1/hls/...',
+        urls.mediaDetail(const MediaId('...')).toString(),
+        'https://h/api/media/...',
       );
     });
   });

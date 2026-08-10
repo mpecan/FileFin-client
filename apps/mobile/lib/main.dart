@@ -42,6 +42,11 @@ Future<void> main() async {
 /// and it is not made at launch: nothing touches the Keychain until something
 /// asks for a secret, which is why `main()` still has exactly one plugin call
 /// on its own critical path (NF1).
+/// It is called by [main] above, in this same file, and by `main_test.dart`.
+/// `main.dart` has no `part`, so it is its own library and the check reports
+/// it for the same reason it reports the seven below — this is the same
+/// class, not one of its own (§5, `public_member_no_consumer`).
+@visibleForTesting
 Widget buildApp(Directory support) {
   final secrets = PlatformSecretStore();
   return FileFinScope(

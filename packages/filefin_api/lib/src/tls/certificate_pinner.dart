@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:filefin_api/src/tls/fingerprint.dart';
 import 'package:filefin_api/src/tls/pin_decision.dart';
+import 'package:meta/meta.dart';
 
 /// Holds one server's pin and answers both of TLS's synchronous questions.
 ///
@@ -47,6 +48,9 @@ class CertificatePinner {
   /// reached `badCertificateCallback` — and that hook is handed the
   /// certificate where verification failed, which for a real chain is the CA.
   /// See [connect].
+  /// Public only so a test can reach it; nothing outside this library calls
+  /// it (§5, `public_member_no_consumer`).
+  @visibleForTesting
   SecurityContext? get securityContext {
     if (pin == null) return null;
     // `withTrustedRoots: false` is SecurityContext's own default, so the

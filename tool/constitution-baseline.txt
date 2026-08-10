@@ -7,4 +7,4 @@ dead_types 0
 undocumented_endpoint 0
 secret_tostring 0
 app_no_raw_http 0
-public_member_no_consumer 9
+public_member_no_consumer 0

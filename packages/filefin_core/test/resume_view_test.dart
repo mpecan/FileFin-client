@@ -186,12 +186,6 @@ void main() {
   });
 
   group('the remaining mutations', () {
-    test('clearProgress drops the pointer and nothing else', () {
-      final out = clearProgress(pointing(2, 30, watched: true));
-      expect(out.pointer, isNull);
-      expect(out.watched, isTrue);
-    });
-
     test('setFavorite sets and clears', () {
       expect(setFavorite(const WatchState(), favorite: true).favorite, isTrue);
       expect(

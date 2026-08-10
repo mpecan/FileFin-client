@@ -1,5 +1,6 @@
 import 'package:filefin_core/src/ids.dart';
 import 'package:filefin_core/src/resume/watch_state.dart';
+import 'package:meta/meta.dart';
 
 /// The fraction of a file that must be played for it to count as watched —
 /// upstream's `WatchedThreshold` (`state/engine.go:7`).
@@ -20,6 +21,9 @@ const watchedThreshold = 0.90;
 /// the bug the captured vectors exist to catch: `continueSeconds =
 /// pointer?.seconds ?? 0` reports a stale pointer's seconds where the server
 /// reports 0.
+/// Public only so a test can reach it; nothing outside this library calls
+/// it (§5, `public_member_no_consumer`).
+@visibleForTesting
 int resolveIndex(ResumePointer? pointer, int fileCount) {
   if (pointer == null) return -1;
   final index = pointer.file.value;
@@ -156,10 +160,6 @@ WatchState setWatched(WatchState state, {required bool watched}) =>
 /// too.
 WatchState clearWatched(WatchState state) =>
     state.copyWith(watched: false, pointer: null);
-
-/// `DELETE /api/media/{id}/progress` — clears the pointer only
-/// (`media.go:443`). `watched`, `favorite` and `rating` are untouched.
-WatchState clearProgress(WatchState state) => state.copyWith(pointer: null);
 
 /// `POST /api/media/{id}/favorite` (`media.go:394`).
 WatchState setFavorite(WatchState state, {required bool favorite}) =>

@@ -7,9 +7,9 @@ import 'package:meta/meta.dart';
 /// Every interpolated value goes through [_seg]. A path template is a string,
 /// so a parameter containing `/` would otherwise merge into the template and be
 /// split back out as two segments — the request would address a different route
-/// and the failure would arrive as a 404 from somewhere else. `hlsSegment`'s
-/// segment name comes straight out of a server-supplied playlist, so that is
-/// not a hypothetical.
+/// and the failure would arrive as a 404 from somewhere else. `MediaId` comes
+/// straight off the wire and defaults to `MediaId('')` (§8), so that is not a
+/// hypothetical.
 ///
 /// One class and one full literal per route is a structural decision, not a
 /// stylistic one. `undocumented_endpoint` (`tool/check-constitution.sh`, §8)
@@ -99,32 +99,6 @@ abstract final class ApiPaths {
   static String file(MediaId id, FileIndex n) =>
       '/api/media/${_seg(id.value)}/file/${_seg(n.value)}';
 
-  /// `GET` — the VOD playlist. `415` for a file that does not need transcoding.
-  ///
-  /// **Neither this nor [hlsSegment] has a production consumer, and after M5 —
-  /// the milestone about the HLS path — they still do not. A decision.**
-  /// `PlaybackRequest.url` is always [file], and libmpv follows the server's
-  /// `307` over its own socket, so nothing in `filefin_api` ever addresses
-  /// these two routes. Building them anyway would be §1's speculative
-  /// construction.
-  ///
-  /// They stay for two concrete reasons rather than out of sentiment.
-  /// [hlsSegment] is the **motivating example** in [_seg]'s own documentation
-  /// of why `''`, `'.'` and `'..'` are refused — a segment name is the one path
-  /// component that comes from a *file the server generated* rather than from a
-  /// typed id — and `urls_test.dart` exercises that refusal through it. And
-  /// they keep `docs/server-api.md`'s two HLS routes expressible in the one
-  /// place URLs are built, so a reader comparing the document against the code
-  /// does not conclude the contract is half transcribed.
-  static String hlsIndex(MediaId id, FileIndex n) =>
-      '/api/media/${_seg(id.value)}/file/${_seg(n.value)}/hls/index.m3u8';
-
-  /// `GET` — one segment. `503` while it is still being produced is routine.
-  ///
-  /// No production consumer, deliberately — see [hlsIndex].
-  static String hlsSegment(MediaId id, FileIndex n, String segment) =>
-      '/api/media/${_seg(id.value)}/file/${_seg(n.value)}/hls/${_seg(segment)}';
-
   /// `GET` — the k-th sidecar subtitle, converted SRT to WebVTT per request.
   static String subtitle(MediaId id, FileIndex n, SubtitleIndex k) =>
       '/api/media/${_seg(id.value)}/file/${_seg(n.value)}/sub/${_seg(k.value)}';
@@ -206,13 +180,6 @@ class FileFinUrls {
 
   /// `GET /api/media/{id}/file/{n}`.
   Uri file(MediaId id, FileIndex n) => _resolve(ApiPaths.file(id, n));
-
-  /// `GET /api/media/{id}/file/{n}/hls/index.m3u8`.
-  Uri hlsIndex(MediaId id, FileIndex n) => _resolve(ApiPaths.hlsIndex(id, n));
-
-  /// `GET /api/media/{id}/file/{n}/hls/{seg}`.
-  Uri hlsSegment(MediaId id, FileIndex n, String segment) =>
-      _resolve(ApiPaths.hlsSegment(id, n, segment));
 
   /// `GET /api/media/{id}/file/{n}/sub/{k}`.
   Uri subtitle(MediaId id, FileIndex n, SubtitleIndex k) =>

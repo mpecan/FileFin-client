@@ -611,8 +611,23 @@ check_public_member_no_consumer() {
 
     local work
     work=$(mktemp -d)
+    # COMMENTS ARE STRIPPED BEFORE THE INDEX IS BUILT, and that is a defect
+    # this check had from the day it landed. The index was every identifier in
+    # every file INCLUDING its prose, so a `///` in one file naming a symbol
+    # declared in another counted as a consumer — a §5 check defeated by
+    # somebody documenting the thing. Measured at M7.R: rebuilding from code
+    # alone takes the count 9 -> 13, and two of the four it uncovers are
+    # genuine violations of exactly the class this check exists for
+    # (`engine.dart resolveIndex`, `player_controls.dart formatPosition`,
+    # each with one cross-file occurrence and that occurrence a comment).
+    #
+    # `sed 's://.*::'` also cuts a `//` inside a string literal, which loses a
+    # few identifiers out of URLs. That direction is safe: fewer consumers
+    # means more reports, and the ratchet is what turns a report into a
+    # decision.
     for f in "${all[@]}"; do
-        grep -oE '[A-Za-z_][A-Za-z0-9_]*' "$f" 2>/dev/null | sort -u | sed "s|^|$f\t|"
+        sed -e 's://.*::' "$f" 2>/dev/null |
+            grep -oE '[A-Za-z_][A-Za-z0-9_]*' | sort -u | sed "s|^|$f\t|"
     done > "$work/uses"
 
     awk '
@@ -626,12 +641,34 @@ check_public_member_no_consumer() {
             if (n ~ /^(main|build|createState|initState|dispose|toString|noSuchMethod|didChangeDependencies|didUpdateWidget|debugFillProperties)$/) return
             print "DECL\t" FILENAME "\t" FNR "\t" n
         }
-        FNR == 1 { gen = 0; prev = "" }
+        FNR == 1 { gen = 0; prev = ""; depth = 0; inType = 0 }
         /^[[:space:]]*part[[:space:]]+.*\.(g|freezed)\.dart.;/ { gen = 1 }
         {
             line = bare($0)
             over = (prev ~ /^[[:space:]]*@override[[:space:]]*$/)
             vis = (prev ~ /@visibleForTesting/)
+            here = depth
+            wasType = inType
+            opens = gsub(/{/, "{", line)
+            closes = gsub(/}/, "}", line)
+            if (here == 0 && opens > closes) {
+                inType = (line ~ /(^|[^A-Za-z0-9_])(class|mixin|extension|enum)([^A-Za-z0-9_]|$)/)
+            }
+            depth += opens - closes
+            if (depth < 0) depth = 0
+            # A declaration is a member only at brace depth 0, or at depth 1
+            # INSIDE A TYPE. Depth alone does not separate the two: a nested
+            # local function sits at depth 1 inside a top-level function body
+            # and is indented exactly like a class member —
+            # `category_tree.dart:109 order`, a comparator closure inside
+            # `buildCategoryTree` that no other file could name if it tried.
+            if (here > 1 || (here == 1 && !wasType)) { prev = $0; next }
+            # A line opening with a statement keyword is not a declaration.
+            # `return decode(await ...)` matched the call-shaped pattern below
+            # and was reported as declaring `decode`
+            # (`poster_image_provider.dart:104`); the emit filter only checks
+            # the identifier before the `(`, which there is the callee.
+            if (line ~ /^[[:space:]]*(return|await|yield|throw|assert|rethrow|if|for|while|switch|do|else|final|var|const|new|super|this)[^A-Za-z0-9_]/) { prev = $0; next }
             if (match(line, /^[[:space:]]*(static[[:space:]]+)?[A-Za-z_][A-Za-z0-9_<>,?[:space:]]*[[:space:]]+get[[:space:]]+[a-z_][A-Za-z0-9_]*/)) {
                 n = substr(line, RSTART, RLENGTH); sub(/.*[[:space:]]get[[:space:]]+/, "", n)
                 emit(n, over, gen, vis)
