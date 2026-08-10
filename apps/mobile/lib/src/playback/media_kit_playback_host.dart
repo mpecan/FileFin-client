@@ -1,3 +1,4 @@
+import 'package:filefin_mobile/src/playback/ca_bundle.dart';
 import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:flutter/widgets.dart';
@@ -57,6 +58,18 @@ final class MediaKitPlaybackHost extends PlaybackHost {
   /// showing a second of the beginning first.
   @override
   Future<void> open(PlaybackRequest request) async {
+    // On Android, mpv uses mbedTLS or GnuTLS, neither of which knows where
+    // the system trust store is. The device's live CA certificates (system
+    // AND user-installed) are exported to a PEM file at startup by
+    // `CaBundle`; handing that to mpv as `tls-ca-file` gives it the same
+    // trust store the platform HTTP stack uses, and `tls-verify=yes` then
+    // verifies against the device's actual roots rather than a bundled
+    // snapshot. On every other platform the system libmpv uses the OS trust
+    // store natively.
+    final caPath = await CaBundle.path;
+    if (caPath != null) {
+      await _player.setProperty('tls-ca-file', caPath);
+    }
     await _player.setProperty('tls-verify', request.verifyTls ? 'yes' : 'no');
     await _player.open(
       Media(

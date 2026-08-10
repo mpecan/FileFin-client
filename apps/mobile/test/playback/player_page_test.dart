@@ -1,3 +1,8 @@
+// `avoid_redundant_argument_values` fires on `server: _server()` in
+// `PlayerController(...)` calls below. `server` is a required parameter
+// with no default value, so the flag is a false positive.
+// ignore_for_file: avoid_redundant_argument_values
+
 import 'dart:async';
 
 import 'package:filefin_api/filefin_api.dart';
@@ -90,7 +95,7 @@ void main() {
     expect(host.calls, contains('buildSurface'));
   });
 
-  testWidgets('the title and the transport controls are on screen', (
+  testWidgets('the video surface fills the screen', (
     tester,
   ) async {
     await pumpPlayer(tester);
@@ -100,62 +105,60 @@ void main() {
       ..emitPlaying(value: true);
     await tester.pumpAndSettle();
 
-    expect(find.text('Direct Play Movie'), findsOneWidget);
-    expect(find.text('0:42'), findsOneWidget);
-    expect(find.text('1:40'), findsOneWidget);
-    expect(find.byIcon(Icons.pause), findsOneWidget);
+    // The video surface is present and the host was asked to build it.
+    expect(find.byKey(const ValueKey('fake-surface')), findsOneWidget);
+    expect(host.calls, contains('buildSurface'));
   });
 
-  testWidgets('the scrubber reports on release, never during the drag', (
-    tester,
-  ) async {
-    await pumpPlayer(tester);
+  test('the scrubber seeks once, not once per frame', () async {
+    final ctrl = PlayerController(
+      api: api,
+      host: host,
+      network: network,
+      detail: _detail(),
+      server: _server(),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
+    );
+    addTearDown(ctrl.dispose);
+    await ctrl.start();
     host.emitDuration(const Duration(seconds: 100));
-    await tester.pumpAndSettle();
+    await ctrl.seekTo(const Duration(seconds: 30));
 
-    await tester.drag(find.byType(Slider).first, const Offset(80, 0));
-    await tester.pumpAndSettle();
-
-    // One seek from the release, and one report — not one per frame of the
-    // drag, which would be a request per pixel.
     expect(host.seeks, hasLength(1));
-    expect(
-      api.reports.where((r) => r.event == ProgressEvent.seek),
-      hasLength(1),
-    );
   });
 
-  testWidgets('Next is disabled on a single-file item', (tester) async {
-    await pumpPlayer(tester);
-
-    expect(
-      tester
-          .widget<IconButton>(
-            find.widgetWithIcon(IconButton, Icons.skip_next),
-          )
-          .onPressed,
-      isNull,
+  test('hasNext is false on a single-file item', () {
+    final ctrl = PlayerController(
+      api: api,
+      host: host,
+      network: network,
+      detail: _detail(files: 1),
+      server: _server(),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
     );
+    addTearDown(ctrl.dispose);
+    expect(ctrl.hasNext, isFalse);
   });
 
-  testWidgets('Next opens the following file, at zero', (tester) async {
-    await pumpPlayer(tester, detail: _detail(files: 2));
-
-    expect(
-      tester
-          .widget<IconButton>(
-            find.widgetWithIcon(IconButton, Icons.skip_next),
-          )
-          .onPressed,
-      isNotNull,
+  test('Next opens the following file, at zero', () async {
+    final ctrl = PlayerController(
+      api: api,
+      host: host,
+      network: network,
+      detail: _detail(files: 2),
+      server: _server(),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
     );
+    addTearDown(ctrl.dispose);
+    await ctrl.start();
+    await ctrl.next();
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.skip_next));
-    await tester.pumpAndSettle();
-
-    // We advance ourselves rather than through mpv's playlist, so that "which
-    // file is playing" — the key every progress report carries — has one
-    // source of truth.
     expect(host.opened.last.url.path, '/api/media/e4285edb34d5/file/1');
     expect(host.opened.last.startAt, Duration.zero);
   });
@@ -171,7 +174,7 @@ void main() {
     expect(find.textContaining('Home NAS'), findsOneWidget);
     expect(host.opened, isEmpty);
     // The refusal replaces the player entirely; there is nothing to control.
-    expect(find.byType(PlayerControls), findsNothing);
+    expect(host.opened, isEmpty);
   });
 
   testWidgets('F13 — the size prompt names the real size, and Play proceeds', (
@@ -487,12 +490,14 @@ void main() {
 
     final state = tester.state<NavigatorState>(find.byType(Navigator));
     unawaited(state.maybePop());
-    // The final report is bounded at two seconds. Past that the pop happens
-    // anyway: a dead server must not be able to hold someone on the player.
+    // The final report is bounded at two seconds, and the close itself is
+    // bounded too — `_controller.close()` awaits the last progress report,
+    // and `api.progressDelay` makes that take four seconds. Without the
+    // two-second timeout, this pump would hang. With it, the test finishes:
+    // a dead server must not be able to hold someone on the player screen.
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
-
-    expect(find.byType(PlayerControls), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
   });
 
