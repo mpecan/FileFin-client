@@ -120,6 +120,20 @@ final class FileFinAudioHandler extends BaseAudioHandler {
 Future<NowPlayingHost>? _session;
 
 /// Starts the process's one media session, or returns the one already open.
+///
+/// **A FAILED start is memoised too, and that is forced rather than chosen.**
+/// The review asked for the rejected future to be cleared so a second player
+/// screen could try again; `AudioService.init` cannot be tried again.
+/// `audio_service.dart:1007` opens with `assert(_cacheManager == null)` and
+/// `:1012` assigns `_cacheManager` **before** the platform `configure` call
+/// that is the thing which can fail — so after a failed init a retry trips that
+/// assert in a debug build and silently re-registers every callback in a
+/// release one. Clearing the memo would trade a cached failure for a worse
+/// one.
+///
+/// What that costs is bounded because `PlayerPage._bindSession` catches: a
+/// session that will not start is a lock screen with no controls, not a film
+/// that will not play.
 Future<NowPlayingHost> openNowPlaying() => _session ??= _openSession();
 
 Future<NowPlayingHost> _openSession() async => AudioServiceNowPlaying(

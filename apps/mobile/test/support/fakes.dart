@@ -157,6 +157,15 @@ base class FakeLibraryApi extends LibraryApi {
     return result as T;
   }
 
+  /// Reproduces whatever the real API threw, if the test set anything. One
+  /// helper rather than five copies of the same five lines, each of them a
+  /// place for the `_answer<void>` trap [_write] names to creep back in.
+  // `only_throw_errors` is right about production code and wrong about a fake
+  // whose whole job is to reproduce a real failure, including things that are
+  // neither an Exception nor an Error.
+  // ignore: only_throw_errors
+  void _rethrow(Object? failure) => failure == null ? null : throw failure;
+
   /// One `Future<void>` write: recorded, optionally held, optionally failed.
   ///
   /// **NOT `_answer<void>`, and this is the third place that trap has to be
@@ -171,12 +180,7 @@ base class FakeLibraryApi extends LibraryApi {
     tokens.add(token);
     final gate = writeGate;
     if (gate != null) await gate.future;
-    final failure = writeFailure;
-    if (failure != null) {
-      // The field holds whatever the real API threw, which is an Exception.
-      // ignore: only_throw_errors
-      throw failure;
-    }
+    _rethrow(writeFailure);
   }
 
   @override
@@ -194,12 +198,7 @@ base class FakeLibraryApi extends LibraryApi {
     calls.add('restore');
     final gate = restoreGate;
     if (gate != null) await gate.future;
-    final failure = restoreResult;
-    if (failure != null) {
-      // The field holds whatever the real API threw, which is an Exception.
-      // ignore: only_throw_errors
-      throw failure;
-    }
+    _rethrow(restoreResult);
   }
 
   @override
@@ -207,12 +206,7 @@ base class FakeLibraryApi extends LibraryApi {
     // Same trap as [_write]: `_answer<void>` cannot throw, so the "logout that
     // fails still signs the user out" case would be vacuous through it.
     calls.add('logout');
-    final failure = logoutResult;
-    if (failure != null) {
-      // The field holds whatever the real API threw, which is an Exception.
-      // ignore: only_throw_errors
-      throw failure;
-    }
+    _rethrow(logoutResult);
   }
 
   @override
@@ -278,12 +272,7 @@ base class FakeLibraryApi extends LibraryApi {
     // `ProgressReporter` failure tests passed against a fake that never threw.
     final delay = progressDelay;
     if (delay != null) await Future<void>.delayed(delay);
-    final failure = progressResult;
-    if (failure != null) {
-      // The field holds whatever the real API threw, which is an Exception.
-      // ignore: only_throw_errors
-      throw failure;
-    }
+    _rethrow(progressResult);
   }
 
   @override
@@ -319,12 +308,7 @@ base class FakeLibraryApi extends LibraryApi {
     // routed through `_answer<void>`, for the trap [_write] names.
     calls.add('requirePlayable(${id.value}, ${file.value})');
     tokens.add(cancelToken);
-    final failure = requirePlayableResult;
-    if (failure != null) {
-      // The field holds whatever the real API threw, which is an Exception.
-      // ignore: only_throw_errors
-      throw failure;
-    }
+    _rethrow(requirePlayableResult);
   }
 
   @override
@@ -394,6 +378,22 @@ base class FakeLibraryApi extends LibraryApi {
       // into one boolean trips.
       _write('clearWatched(${id.value})', cancelToken);
 
+  /// Releases the client, and **records it in [calls] like every other call**.
+  ///
+  /// The order is the assertion `HomeRoute._signOut` needs — `logout()` first,
+  /// then the close, because closing releases the sockets the request travels
+  /// on. Reverse those two statements and with the real client the
+  /// `POST /api/logout` that ends the SERVER session never leaves the device.
+  /// A fake recording only a boolean could not tell the two orders apart, and
+  /// that reversal was green across the whole suite.
+  ///
+  /// **A fake that REFUSED every call after this would measure the harness**,
+  /// not the app: every app-level suite hands out one fake per `apiFactory`
+  /// call, so 36 `login`, 8 `probeServer` and 17 `home` calls land on a closed
+  /// fake and none is a defect. STATE.md carries the gap and its fix.
   @override
-  void close() => closed = true;
+  void close() {
+    calls.add('close');
+    closed = true;
+  }
 }

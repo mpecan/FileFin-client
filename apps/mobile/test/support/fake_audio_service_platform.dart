@@ -25,7 +25,13 @@ class FakeAudioServicePlatform extends AudioServicePlatform
   @override
   Future<void> configure(ConfigureRequest request) async => calls.add(
     'configure(${request.config.androidNotificationChannelId}'
-    '|${request.config.androidNotificationChannelName})',
+    '|${request.config.androidNotificationChannelName}'
+    // `ongoing` is in the record because it is the flag that decides whether
+    // the foreground notification can be swiped away — and swiping it away
+    // stops the service and with it the audio the user is listening to.
+    // Recording two channel strings and not this one left `true` -> `false`
+    // green everywhere.
+    '|ongoing:${request.config.androidNotificationOngoing})',
   );
 
   @override

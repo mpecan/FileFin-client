@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 
 import 'support/fixtures.dart';
 import 'support/stub_server.dart';
+import 'support/tls_stub.dart';
 
 void main() {
   late StubServer stub;
@@ -29,6 +30,63 @@ void main() {
   /// cannot leave this stub answering the old one.
   void serveState(StubResponse response) =>
       stub.on('GET', urls.state.path, (_) => response);
+
+  group('F15 at the probe, the first request any address ever gets', () {
+    // These two live here rather than in `certificate_pinner_test.dart`
+    // because what they pin is `probe`'s own branch — `server_probe.dart:93` —
+    // rather than anything the pinner decides. They need a real TLS handshake,
+    // so they stand up a `TlsStub` instead of this file's `StubServer`.
+    test('F1 s probe hands a certificate question to the USER (F15)', () async {
+      // Until M7.5 `probe()` was never given a pinner, so `mapDioException`
+      // could not build a certificate error and the refusal collapsed into
+      // `ConnectionFailed` -> `ServerUnreachable`. F1 renders that as "Nothing
+      // answered at that address" — about a self-signed server that answered
+      // perfectly well, which is F15's stated common case, with no way to
+      // accept it. Every shipped client had this defect.
+      final stub = await TlsStub.serving('a');
+      addTearDown(stub.close);
+      final client = FileFinClient.forServer(
+        server: const ServerId('tls'),
+        baseUrl: stub.baseUrl,
+        secrets: InMemorySecretStore(),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.probeServer(),
+        throwsA(isA<CertificateNotTrusted>()),
+      );
+      // Thrown rather than returned, and nothing was sent: the refusal happened
+      // inside the handshake.
+      expect(stub.bytesReceived, 0);
+    });
+
+    test('F1 s probe hands a CHANGED certificate to the user too', () async {
+      // The other arm of `probe`'s F15 branch, and it had no test at all:
+      // dropping `|| mapped is CertificatePinMismatch` (`server_probe.dart:93`)
+      // was green across the whole suite. It is reachable, too:
+      // `AddServerPage._check` builds through `apiForServer`, so re-checking an
+      // address whose certificate has been swapped comes through here — and
+      // without the arm F1
+      // reports *"Nothing answered at that address"* about a server that
+      // answered with the wrong identity, which is the exact message F15 exists
+      // to replace.
+      final stub = await TlsStub.serving('a');
+      addTearDown(stub.close);
+      final client = FileFinClient.forServer(
+        server: const ServerId('tls'),
+        baseUrl: stub.baseUrl,
+        secrets: InMemorySecretStore(),
+        pin: derFingerprint('b'),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.probeServer(),
+        throwsA(isA<CertificatePinMismatch>()),
+      );
+    });
+  });
 
   test('a captured real /api/state is a FileFin server (F1)', () async {
     serveState(

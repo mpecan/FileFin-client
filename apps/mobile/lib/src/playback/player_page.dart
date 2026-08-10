@@ -106,8 +106,22 @@ class _PlayerPageState extends State<PlayerPage> {
   /// that round trip, and binding afterwards would publish metadata for a
   /// controller `dispose` has already torn down and leave a transport
   /// notification with nothing behind it.
+  ///
+  /// **A start that fails is caught here and nowhere else could catch it.**
+  /// This is invoked `unawaited(...)` from `initState`, so a throw is an
+  /// unhandled async error with no handler above it — and there is nothing to
+  /// retry either: `AudioService.init` asserts on a second call
+  /// (`audio_service.dart:1007`) and sets the flag it asserts on before the
+  /// platform call that can fail, so `openNowPlaying`'s memo is right to keep
+  /// a failure. What the user gets is a lock screen with no controls, which is
+  /// what the sentence above promises.
   Future<void> _bindSession() async {
-    final session = await widget.nowPlayingFactory();
+    final NowPlayingHost session;
+    try {
+      session = await widget.nowPlayingFactory();
+    } on Object {
+      return;
+    }
     if (_gone) {
       await session.clear();
       return;

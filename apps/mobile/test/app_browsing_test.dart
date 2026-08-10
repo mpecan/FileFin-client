@@ -288,6 +288,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Signed out'), findsOneWidget);
+    // **And it did NOT log out, which is the whole distinction from
+    // `_signOut`.** A `SessionExpired` means the server has already forgotten
+    // this session; `logout()` also deletes the stored PASSWORD, which is what
+    // F3 renews from and what F2's silent cold start needs — so routing this
+    // callback to `_signOut` would turn every server restart into a password
+    // prompt, the exact case F2 exists to remove. Swapping the two was green
+    // across four cases before this line.
+    expect(api.calls, isNot(contains('logout')));
   });
   testWidgets('tapping Play pushes the player, wired from the SCOPE', (
     tester,

@@ -179,9 +179,14 @@ void main() {
       final host = await openNowPlaying();
 
       expect(platform.calls, contains('setHandlerCallbacks'));
+      // `ongoing` is in the assertion because it is the flag that decides
+      // whether the foreground notification can be swiped away — and swiping
+      // it away stops the service and, with it, the audio the user is
+      // listening to. Two channel strings and no `ongoing` left `true` ->
+      // `false` green everywhere.
       expect(
         platform.calls,
-        contains('configure(dev.filefin.playback|Playback)'),
+        contains('configure(dev.filefin.playback|Playback|ongoing:true)'),
       );
 
       final seen = <TransportCommand>[];

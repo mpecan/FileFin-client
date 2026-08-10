@@ -133,6 +133,14 @@ void main() {
       (surfaced.buildSurface() as Video).controller,
       same((surface as Video).controller),
     );
+    // **F14's Android half, and nothing pinned it.** The argument DEFAULTS TO
+    // TRUE (`video_texture.dart:132`) and on `AppLifecycleState.paused` the
+    // widget calls `player.pause()` itself — inside `media_kit_video`, before
+    // the OS has any say — so `false` -> `true` here silently undoes the whole
+    // feature. STATE.md:719 says "without it nothing else in F14 matters"; it
+    // was green everywhere, including this file run alone. The field is public
+    // on `Video`, so one `expect` is the whole cost.
+    expect(surface.pauseUponEnteringBackgroundMode, isFalse);
   });
 
   test('the default constructor loads libmpv before building the player', () {
