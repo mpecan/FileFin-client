@@ -513,11 +513,20 @@ check_app_no_raw_http() {
         case "$f" in
             */lib/src/playback/mpv_player.dart) ;;
             */lib/src/playback/media_kit_playback_host.dart) ;;
+            */lib/src/playback/audio_service_now_playing.dart) ;;
             *) outside+=("$f") ;;
         esac
     done
     if [ ${#outside[@]} -eq 0 ]; then return 0; fi
-    grep -nHE "package:media_kit" "${outside[@]}" \
+    # **`package:audio_service` rides here from M7.6, and it is the same rule
+    # for a different bypass.** It opens no socket, so the HTTP half above does
+    # not apply — what it does is run a foreground service and a `MediaSession`
+    # whose callbacks reach Dart from native code, which is a second entry into
+    # this app that no widget should be able to open. `NowPlayingHost` is the
+    # port, `audio_service_now_playing.dart` is the only translation, and this
+    # is what stops that claim being merely a doc comment (CLAUDE.md: a rule
+    # with no check is a rule that gets ignored).
+    grep -nHE "package:media_kit|package:audio_service" "${outside[@]}" \
         | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(///|//|\*)" || true
 
     # THE TWO ALLOWED FILES ARE THEMSELVES CHECKED, for the two ways a file
@@ -544,13 +553,115 @@ check_app_no_raw_http() {
         case "$f" in
             */lib/src/playback/mpv_player.dart) allowed+=("$f") ;;
             */lib/src/playback/media_kit_playback_host.dart) allowed+=("$f") ;;
+            */lib/src/playback/audio_service_now_playing.dart) allowed+=("$f") ;;
         esac
     done
     if [ ${#allowed[@]} -eq 0 ]; then return 0; fi
     grep -nHE "^[[:space:]]*(export|part)[[:space:]]" "${allowed[@]}" || true
 }
 
-CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http"
+# §5's OTHER sentence, and the arm that was designed at M6 and unbuilt until
+# M7.8: "Public members need a consumer outside their own library."
+#
+# `dead_types` covers sealed variants and nothing else, so everything M6 and M7
+# built was outside every mechanical check §5 had. **M7.0/E-1 is the argument
+# for finally building it**: `SessionManager.restore()` and
+# `FileFinClient.logout()` were fully built, unit-tested AND integration-tested
+# with no production caller, for two milestones, and nothing noticed.
+#
+# **A CONSUMER MEANS ANOTHER FILE UNDER lib/, AND THE TEST SUITE DOES NOT
+# COUNT.** That is stricter than §5 reads, and it is deliberate: with tests
+# counting, this check reports ZERO on this tree — including at the commit
+# where `restore()` had a unit test, an integration test and no caller. A rule
+# that cannot see the defect it was designed for is not the rule worth writing.
+# What it measures is therefore "shipping code uses this", which is §1 and §5
+# read together.
+#
+# THREE EXEMPTIONS, each a false-positive CLASS rather than a nuisance, and
+# each named because an exemption a gate does not mention is a blind spot
+# rather than a decision.
+#
+#   1. A name that carries `@override` ANYWHERE. An abstract port method is
+#      declared in one file and implemented in another, and its call sites go
+#      through the port's type — so the declaration's own identifier legitimately
+#      appears nowhere else. That is `PlaybackHost`, `NowPlayingHost`,
+#      `LibraryApi`, `SecretStore` and every implementation of them.
+#   2. A file carrying a `part '*.g.dart'` or `part '*.freezed.dart'`
+#      directive. A freezed factory's name appears only inside generated code,
+#      which every gate here excludes, so every model would report.
+#   3. `@visibleForTesting`, and the framework's own entry points — `main`,
+#      `build`, `createState`, `initState`, `dispose`. Flutter calls those, we
+#      do not, and `main` is never `@override`.
+#
+# The scan is two passes over one file list rather than a grep per declaration:
+# the second shape is O(declarations x files) and this tree has ~250 of the
+# first. The identifier index goes through a temp file because a `-v` argument
+# holding 26 000 pairs is longer than `execve` accepts — measured, not guessed.
+#
+# **The baseline is not zero and every entry in it is real**, which is the
+# whole reason to add the check at the end rather than to skip it. STATE.md's
+# M7.8 section lists all nine with the class each belongs to.
+check_public_member_no_consumer() {
+    local files=() f
+    while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(dart_lib_sources)
+    if [ ${#files[@]} -eq 0 ]; then return 0; fi
+
+    local all=()
+    while IFS= read -r f; do [ -n "$f" ] && all+=("$f"); done < <(dart_lib_sources)
+
+    local work
+    work=$(mktemp -d)
+    for f in "${all[@]}"; do
+        grep -oE '[A-Za-z_][A-Za-z0-9_]*' "$f" 2>/dev/null | sort -u | sed "s|^|$f\t|"
+    done > "$work/uses"
+
+    awk '
+        function bare(s,   t) { t = s; sub(/\/\/.*/, "", t); return t }
+        function emit(n, over, gen, vis) {
+            if (n == "" || n ~ /^_/) return
+            if (n ~ /^(return|await|yield|throw|new|else|case|assert|if|for|while|do|in|is|as|switch|try|catch|finally|rethrow|set|get|late|required|covariant|external|abstract|operator)$/) return
+            if (over) { print "OVERRIDE\t" n; return }
+            if (gen) return
+            if (vis) return
+            if (n ~ /^(main|build|createState|initState|dispose|toString|noSuchMethod|didChangeDependencies|didUpdateWidget|debugFillProperties)$/) return
+            print "DECL\t" FILENAME "\t" FNR "\t" n
+        }
+        FNR == 1 { gen = 0; prev = "" }
+        /^[[:space:]]*part[[:space:]]+.*\.(g|freezed)\.dart.;/ { gen = 1 }
+        {
+            line = bare($0)
+            over = (prev ~ /^[[:space:]]*@override[[:space:]]*$/)
+            vis = (prev ~ /@visibleForTesting/)
+            if (match(line, /^[[:space:]]*(static[[:space:]]+)?[A-Za-z_][A-Za-z0-9_<>,?[:space:]]*[[:space:]]+get[[:space:]]+[a-z_][A-Za-z0-9_]*/)) {
+                n = substr(line, RSTART, RLENGTH); sub(/.*[[:space:]]get[[:space:]]+/, "", n)
+                emit(n, over, gen, vis)
+            } else if (match(line, /^[[:space:]]*(static[[:space:]]+)?[A-Za-z_][A-Za-z0-9_<>,?[:space:]]*[[:space:]]+[a-z_][A-Za-z0-9_]*[[:space:]]*\(/)) {
+                n = substr(line, RSTART, RLENGTH); sub(/[[:space:]]*\(.*/, "", n); sub(/.*[[:space:]]/, "", n)
+                emit(n, over, gen, vis)
+            }
+            prev = $0
+        }
+    ' "${files[@]}" > "$work/decls"
+
+    awk -F'\t' '
+        FILENAME ~ /uses$/ { if ($2 != "") seen[$2] = seen[$2] "\n" $1; next }
+        $1 == "OVERRIDE" { over[$2] = 1; next }
+        $1 == "DECL" && !(($2 SUBSEP $4) in already) { already[$2 SUBSEP $4] = 1; d[++n] = $0 }
+        END {
+            for (i = 1; i <= n; i++) {
+                split(d[i], p, "\t")
+                if (p[4] in over) continue
+                elsewhere = 0
+                m = split(seen[p[4]], w, "\n")
+                for (j = 1; j <= m; j++) if (w[j] != "" && w[j] != p[2]) { elsewhere = 1; break }
+                if (!elsewhere) printf "%s:%s: public member %s has no consumer outside its own file\n", p[2], p[3], p[4]
+            }
+        }
+    ' "$work/uses" "$work/decls" || true
+    rm -rf "$work"
+}
+
+CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http public_member_no_consumer"
 
 # --- ratchet ----------------------------------------------------------------
 

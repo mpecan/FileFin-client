@@ -189,6 +189,65 @@ void main() {
       );
     });
 
+    group('the SPA catch-all is not a successful write (M7.8)', () {
+      // **A write against a route that does not exist SUCCEEDED until M7.8.**
+      // The server registers its SPA catch-all outside the route table
+      // (`server.go:352`), so an unmatched `/api/*` path answers `200 text/html`
+      // with `index.html` rather than a 404 or a 405 — and `_sendJson` and
+      // `_sendDelete` looked only at the status. Every F10 write then reported
+      // success to a screen that had already drawn the change optimistically.
+      //
+      // **F11 makes it likelier rather than rarer**, which is why it was
+      // paid here: a user who can save several servers can save a base URL
+      // with a stray path on it, and after that nothing they tap is stored.
+      //
+      // `StubServer` answers an unregistered path exactly the way the real
+      // server does, so registering nothing IS the case under test.
+      test('every POST refuses HTML', () async {
+        for (final call in <(String, Future<void> Function())>[
+          ('favorite', () => client.setFavorite(_id, favorite: true)),
+          ('rating', () => client.setRating(_id, rating: 5)),
+          ('watched', () => client.setWatched(_id, watched: true)),
+          (
+            'progress',
+            () => client.postProgress(
+              _id,
+              const ProgressReport(
+                file: FileIndex(0),
+                position: 1,
+                duration: 2,
+              ),
+            ),
+          ),
+        ]) {
+          await expectLater(
+            call.$2(),
+            throwsA(isA<NotAFileFinServerResponse>()),
+            reason: '${call.$1} read the catch-all as a successful write',
+          );
+        }
+      });
+
+      test('the DELETE refuses HTML too', () async {
+        // Its own case, because it is its own helper: `_sendDelete` exists
+        // because the VERB is what distinguishes the two un-watch operations,
+        // and a fix applied to `_sendJson` alone would leave this one silent.
+        await expectLater(
+          client.clearWatched(_id),
+          throwsA(isA<NotAFileFinServerResponse>()),
+        );
+      });
+
+      test('a real 204 with no content type is still a success', () async {
+        // The other direction, and it is the one that would break users: these
+        // routes answer `204` with no body and no `Content-Type` at all, so a
+        // check that demanded JSON would refuse every legitimate write.
+        stub.on('POST', urls.favorite(_id).path, _noContent);
+        await client.setFavorite(_id, favorite: true);
+        expect(stub.requests.single.method, 'POST');
+      });
+    });
+
     test('an unusable media id is a failed Future, not a raw Error', () async {
       // `MediaId('')` is the models' own default, so a payload with a missing
       // `id` produces one, and `Uri` would delete the empty segment and address

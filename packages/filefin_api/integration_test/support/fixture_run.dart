@@ -126,6 +126,7 @@ class FixtureRun {
     await config.writeAsString(jsonEncode(json));
     await _repointCache(root, from: '${seeded.path}/data');
     await _decorrelateWatched(root);
+    await _repairMirror(root);
     return FixtureRun._(root, port);
   }
 
@@ -275,6 +276,59 @@ class FixtureRun {
         },
       };
       meta.writeAsStringSync(jsonEncode(json));
+    }
+  }
+
+  /// Makes the cache's `user_state` projection agree with the `meta.json`
+  /// [_decorrelateWatched] just wrote (M7.8).
+  ///
+  /// **A copy used to hand out a library that contradicted itself, and M6 chose
+  /// to assert the divergence rather than repair it.** `meta.json` is the
+  /// truth and `user_state` is the server's projection of it, rebuilt on a
+  /// cache rebuild — so rewriting one and not the other left `/api/home`,
+  /// search and every category listing reporting the OPPOSITE of
+  /// `/api/media/{id}` until something wrote. That was defensible while every
+  /// suite wrote before it read; **M7.3 and M7.4's suites read a listing on a
+  /// fresh copy**, which is exactly the case M6.0/E-2's decision named as its
+  /// cost.
+  ///
+  /// The repair is one `UPDATE` in the same `sqlite3` the harness already
+  /// shells to for [_repointCache], and it writes the same four facts
+  /// [_decorrelateWatched] does: watched iff the item is under `Films/`,
+  /// nothing favourited, nothing rated, no progress. `watch_state_test.dart`'s
+  /// divergence tripwire changed with it, deliberately, in the same commit —
+  /// it now asserts that a fresh copy AGREES, which is a regression test for
+  /// this method rather than a description of a bug.
+  ///
+  /// It verifies for the reason [_repointCache] does: an upstream schema change
+  /// that renamed these columns would otherwise leave the harness silently
+  /// doing nothing.
+  static Future<void> _repairMirror(Directory root) async {
+    final db = _cacheDatabase(root);
+    const update = '''
+UPDATE user_state SET
+  watched = (SELECT media.path LIKE '%/Films/%' FROM media
+             WHERE media.id = user_state.media_id),
+  favorite = 0, rating = 0, has_progress = 0, updated = 1;
+PRAGMA wal_checkpoint(TRUNCATE);
+SELECT count(*), sum(favorite), sum(rating), sum(has_progress) FROM user_state;
+''';
+    final result = await Process.run('sqlite3', [db.path, update]);
+    if (result.exitCode != 0) {
+      throw StateError(
+        'could not repair the user_state mirror in ${db.path}: '
+        '${result.stderr}',
+      );
+    }
+    final row = '${result.stdout}'.trim().split('\n').last.split('|');
+    if (row.length != 4 ||
+        row.first == '0' ||
+        row.skip(1).any((v) => v != '0')) {
+      throw StateError(
+        'repairing the user_state mirror left it wrong (${result.stdout}). '
+        'The columns have moved; find them with `sqlite3 <cache.db> '
+        '.schema user_state` and update this method.',
+      );
     }
   }
 

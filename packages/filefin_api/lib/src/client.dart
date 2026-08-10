@@ -243,20 +243,34 @@ class FileFinClient {
   /// A sibling of [_send] rather than a seventh copy of its try/catch: `just
   /// dupes` (15 lines / 50 tokens / 5%) would fire on the duplication, and
   /// more importantly two copies is two chances to map an error differently.
-  /// The `204` routes here answer no body at all, so there is nothing to read
-  /// and no media type to check.
+  ///
+  /// **It checks the media type, and until M7.8 it did not.** These routes
+  /// answer `204` with no body, so the original reasoning was that there was
+  /// nothing to read and no media type to check — which is true of the route
+  /// behaving correctly and false of the case the check exists for. The SPA
+  /// catch-all sits outside the route table (`server.go:352`), so an unmatched
+  /// `/api/*` path answers `200 text/html`, and a helper that looked only at
+  /// the status read that as a successful write. Every F10 write then reported
+  /// success to a screen that had already drawn the change.
+  ///
+  /// **F11 makes it likelier rather than rarer**, which is why it was paid
+  /// here: a user who can save several servers can save a base URL with a
+  /// stray path on it, and after that nothing they tap is stored anywhere.
+  /// A genuine `204` carries no `Content-Type` at all and passes untouched —
+  /// [_refuseHtml] refuses `text/html` and nothing else.
   Future<void> _sendJson(
     Uri url,
     Map<String, Object?> body, {
     CancelToken? cancelToken,
   }) async {
     try {
-      await _dio.postUri<void>(
+      final response = await _dio.postUri<void>(
         url,
         data: body,
         cancelToken: cancelToken,
         options: Options(contentType: Headers.jsonContentType),
       );
+      _refuseHtml(response.headers, url);
     } on DioException catch (e) {
       throw _asOurs(e, url);
     }
@@ -272,9 +286,16 @@ class FileFinClient {
   /// operations. `DELETE .../watched` drops the resume pointer where
   /// `POST {"watched": false}` keeps it, so a `DELETE` carrying a body would be
   /// the other operation wearing the wrong verb.
+  /// It checks the media type for the reason [_sendJson] does, and it needs
+  /// its own call: a fix applied to the POST helper alone would have left the
+  /// un-watch that drops the resume pointer reading the catch-all as success.
   Future<void> _sendDelete(Uri url, {CancelToken? cancelToken}) async {
     try {
-      await _dio.deleteUri<void>(url, cancelToken: cancelToken);
+      final response = await _dio.deleteUri<void>(
+        url,
+        cancelToken: cancelToken,
+      );
+      _refuseHtml(response.headers, url);
     } on DioException catch (e) {
       throw _asOurs(e, url);
     }

@@ -24,15 +24,14 @@ import 'support/harness.dart';
 /// the item landed in. A prediction that is optimistic and wrong is worse than
 /// no prediction, and only a live server can say which it is.
 ///
-/// **Each test creates the state it asserts on, and that is forced rather than
-/// preferred (M6.0/E-2).** A `FixtureRun` copy starts with the `user_state`
-/// mirror *contradicting* `meta.json` in both directions — the film's
-/// `meta.json` says watched while the copied mirror says the show is — so
-/// `/api/home`, search and the category listings each report the OPPOSITE of
-/// `/api/media/{id}` until something writes. One write repairs one row, so a
-/// suite that writes before it reads is reproducible on any machine; a suite
-/// that trusted the seeded mirror would be asserting whatever the last
-/// `fixtures-capture` happened to leave behind.
+/// **Each test still creates the state it asserts on, and the reason has
+/// changed at M7.8.** It used to be forced: a `FixtureRun` copy handed out a
+/// library whose `user_state` mirror *contradicted* its own `meta.json` in both
+/// directions, so `/api/home`, search and every category listing reported the
+/// OPPOSITE of `/api/media/{id}` until something wrote. `FixtureRun._repairMirror`
+/// closes that — a copy is self-consistent now — and writing first remains the
+/// right shape anyway, because a suite that asserts on state it wrote is
+/// reproducible whatever a future seed happens to contain.
 void main() {
   late FileFinClient client;
   late MediaId show;
@@ -237,30 +236,43 @@ void main() {
     expect((await client.home()).continueRow.first.id, film);
   });
 
-  test('the mirror and the truth: one write repairs one row (E-2)', () async {
-    // The divergence M6.0 measured, exposed rather than reconciled. In a fresh
-    // copy `meta.json` says the film is watched and the copied `user_state`
-    // mirror says the show is, so a listing's `watched` flag is the OPPOSITE
-    // of the detail's — on every machine, in every copy. `MediaSummary.watched`
-    // comes from the mirror (`server/search.go:47-60`) and
-    // `MediaDetail.watched` from `meta.json` via `state.View`.
-    final categories = await client.categories();
-    final films = categories.firstWhere((c) => c.leaf == 'Films').id;
-    final film = (await client.categoryMedia(films)).single;
+  test(
+    'a fresh copy AGREES with itself before anything writes (M7.8)',
+    () async {
+      // **This assertion is inverted from M6's, and the inversion is the fix.**
+      // It used to assert the divergence: `meta.json` said the film was watched
+      // while the copied `user_state` mirror said the show was, so a listing's
+      // `watched` flag was the opposite of the detail's in every copy on every
+      // machine. `MediaSummary.watched` comes from the mirror
+      // (`server/search.go:47-60`) and `MediaDetail.watched` from `meta.json`
+      // via `state.View`, so the two really are different sources — which is
+      // exactly why the harness writes both, and `_repairMirror` now does.
+      //
+      // Deleting that call turns this test red on the FILM, which is the arm
+      // that matters: `meta.json` says watched and an unrepaired mirror says
+      // not.
+      final categories = await client.categories();
+      final films = categories.firstWhere((c) => c.leaf == 'Films').id;
+      final shows = categories.firstWhere((c) => c.leaf == 'Shows').id;
 
-    // Before any write: the two disagree. This is the bug-shaped truth.
-    final truth = await detail(film.id);
-    expect(truth.watched, isTrue, reason: 'meta.json marks the film watched');
-    expect(
-      film.watched,
-      isFalse,
-      reason: 'the copied mirror has not been told',
-    );
+      for (final summary in [
+        (await client.categoryMedia(films)).single,
+        (await client.categoryMedia(shows)).single,
+      ]) {
+        final truth = await detail(summary.id);
+        expect(
+          summary.watched,
+          truth.watched,
+          reason:
+              'the listing and the detail read different sources; a copy '
+              'must not hand out a library that contradicts itself',
+        );
+      }
 
-    // One write rewrites the row from `meta.json`, and they agree again.
-    await client.setFavorite(film.id, favorite: true);
-
-    final repaired = (await client.categoryMedia(films)).single;
-    expect(repaired.watched, truth.watched);
-  });
+      // And the film is the one that is watched, so the agreement above is not
+      // two falses agreeing by accident.
+      expect((await client.categoryMedia(films)).single.watched, isTrue);
+      expect((await client.categoryMedia(shows)).single.watched, isFalse);
+    },
+  );
 }
