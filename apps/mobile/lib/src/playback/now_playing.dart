@@ -10,7 +10,9 @@ import 'package:flutter/widgets.dart';
 /// `s.auth` and every media-session artwork API takes a **URI the OS
 /// fetches for itself**, unauthenticated — so publishing one would either show
 /// nothing or leak the session cookie into a request we do not control.
-/// `docs/architecture.md` carries the same reasoning for the poster cache.
+/// `browse/poster_image_provider.dart` carries the same reasoning for the
+/// poster cache. It said `docs/architecture.md` until M7.R, and M7.9 had
+/// deleted that paragraph in the same audit that corrected the diagram.
 @immutable
 class NowPlayingItem {
   /// The item's [title], the file's [subtitle], and how long the file is.

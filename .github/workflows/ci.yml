@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install libmpv
+      - name: Install libmpv and jq
         # `just check` runs `apps/mobile/test/playback/real_mpv_player_test.dart`,
         # which drives a REAL mpv context headlessly — media_kit's core is pure
         # Dart over `dart:ffi`, so a `Player` constructs under `flutter test`
@@ -53,7 +53,14 @@ jobs:
         # media_kit's own Linux default-name list. The unversioned `libmpv.so`
         # that `libmpv-dev` adds was absent and is not needed — nothing here
         # compiles against the headers.
-        run: sudo apt-get update && sudo apt-get install -y libmpv2
+        #
+        # `jq` is here because `tool/check-fixtures.sh:61` refuses without it
+        # and the structural half of the §8 gate cannot run — and until M7.R it
+        # was never installed. It worked only because the `ubuntu-latest` image
+        # happens to ship jq, which is a dependency on an image's contents
+        # rather than on anything this workflow states. Installing it makes the
+        # dependency true rather than lucky.
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 jq
 
       - name: Set up just
         # extractions/setup-just v4.0.0

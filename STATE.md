@@ -48,6 +48,190 @@ that has never been committed.
 
 ---
 
+## M7.R — what three adversarial reviews found, and what was done
+
+The milestone's own gates were green when this started: `just check` 0, `just
+it` 0, coverage 100%, and every constitution count at or under its baseline.
+Everything below was invisible to all of that, which is the point of the
+exercise.
+
+### One finding was overturned, and it was settled live
+
+`docs/server-api.md` was reported as contradicting itself on whether
+`POST /api/logout` is authenticated. It does not: line 36 reads "**Everything
+except** `GET /api/state`, `POST /api/login` and `POST /api/logout` is wrapped
+in `s.auth(...)`", and logout is inside the exception list. Rather than rest on
+reading the sentence properly, it was **measured against v0.20.3**:
+
+| Request | Result |
+|---|---|
+| `POST /api/logout`, no cookie at all | **204**, empty body |
+| `POST /api/logout`, `filefin_session=deadbeef…` (a session the server never had) | **204**, empty body |
+| `POST /api/logout`, a live session | **204**, empty body |
+| control: `GET /api/me`, no cookie | **401** |
+
+The control is what makes the three 204s mean something. The doc is right, and
+now carries the measurement.
+
+### Six product defects, every one of them on a path a user reaches
+
+- **A launch that failed for any reason but an expiry said the same thing.**
+  `_resume` collapsed every `FileFinApiException` into "Signed out — sign in
+  again, your password is in the secure store". A `CertificatePinMismatch` —
+  the one event pinning exists to make visible — therefore read as an
+  invitation to retype a password at a server whose identity had just failed,
+  and "your server is off" read as "you are signed out". The words were already
+  in `describeApiError`; nothing on this path called them. On a changed
+  certificate the sign-in button is now withheld outright, because F15 calls
+  that a rejection rather than another prompt.
+- **The user-facing mismatch message made the claim `filefin_api` forbids.** It
+  ended "Nothing has been sent to it", where `errors_certificates.dart:53-62`
+  records that a pooled connection is rejected only after the response headers,
+  with 106 bytes already out. M7.5 paid that in `toString()` and left it where
+  a user reads it.
+- **An unparseable stored pin bricked every launch, for ever.**
+  `CertificateFingerprint.parse` throws a raw `ArgumentError` and
+  `apiForServer` sits OUTSIDE `_resume`'s `try`, which catches only
+  `FileFinApiException` — so `_resuming` never cleared, `ResumingPage` is a
+  bare spinner with no button, `_launched` latches, and no route remained to
+  the picker, add-server or sign-out. "A value that is not a fingerprint can
+  only be one we wrote wrong" was true of our writes and false of the store
+  they live in. The value is deleted rather than ignored, so what happens next
+  is F15's prompt rather than a protection that quietly lapsed.
+- **A removed server could come back.** `ServerListPage._remove` writes
+  `settings.json` and only then checks `mounted`, so popping the picker during
+  the four awaits in front of it committed the write while `onRemoved` never
+  ran — the app kept browsing a server the file no longer held, and
+  `SignInPage` upserts it straight back at the next sign-in.
+- **Removal forgot the session rather than ending it**, and `logout()` needs
+  the cookie the removal is about to delete, so it happens first or not at all.
+- **A pin accepted for an address that was never saved could never be
+  deleted**, and adding that address later loaded the orphan silently — F15's
+  deliberate accept skipped entirely.
+- `_switchTo`'s selection write was the one `SettingsStore.write` call site of
+  five with no handler, and it runs `unawaited(...)` with no
+  `runZonedGuarded` anywhere.
+
+### Thirteen surviving mutants, and three of them hid a whole feature
+
+Every one was applied, seen red against the new assertion, and restored.
+
+| Mutant | What it silently undid |
+|---|---|
+| `main.dart:46` `PlatformSecretStore()` -> `InMemorySecretStore()` | a shipped build that re-prompts for a password every cold start; F2 gone |
+| `main.dart:66` `pin: pin` -> `pin: null` | M7.5's exact defect restored |
+| `main.dart:67` `username:` -> `null` | F3's silent renewal with no account to renew as |
+| `certificate_prompt.dart:65` `accepted ?? false` -> `?? true` | a barrier tap or a back gesture PINS an unknown certificate |
+| `certificate_prompt.dart:46` `error.fingerprint` -> `.substring(0, 10)` | the one value a user compares, truncated |
+| `mpv_player.dart:159` `pauseUponEnteringBackgroundMode: false` -> `true` | F14's Android half, entirely |
+| `androidNotificationOngoing: true` -> `false` | a swipeable notification, which stops the service |
+| `server_probe.dart:93` dropping the mismatch arm | F1 reporting "nothing answered" about a swapped certificate |
+| `app.dart:342` `onSignIn: _sessionExpired` -> `_signOut` | a routine expiry wiping the stored password |
+| `app.dart:179` `_switchTo`'s write ordering | a switch that a mid-restore death forgets |
+| `app.dart:152` `selected:` -> `null` | the picker marking nothing |
+| `library_actions.dart:19,31` two guards deletable | actions with nowhere to go |
+| four in `launch_pages.dart` — the icon, its colour and both keys | the new failure screen indistinguishable from the old one |
+
+**`FakeLibraryApi` now records `close()` in `calls`**, which is what makes
+`_signOut`'s ordering assertable at all. **A fake that REFUSES every call after
+close is what the review asked for and is not what landed**, and the reason is
+measured rather than argued: 36 `login`, 8 `probeServer` and 17 `home` calls in
+the app suite land on a closed fake, none of them a defect, because every
+app-level harness hands out ONE fake for every `apiFactory` call where
+production builds a new client. Widening the guard would measure the harness.
+**The gap is real and unpaid**: a use-after-close on any method other than the
+`logout`/`close` ordering is still invisible here, and the fix is a factory
+answering with a fresh fake per client, in every app-level harness.
+
+### `public_member_no_consumer` was defeated by a comment, and the baseline is 0
+
+The check built its consumer index over whole files **including their prose**,
+so a `///` in one file naming a symbol declared in another counted as a
+consumer — a §5 check defeated by somebody documenting the thing. Rebuilding
+from code alone takes it 9 -> 13. Two of the four it uncovers are genuine
+violations of exactly the class it exists for (`engine.dart resolveIndex`,
+`player_controls.dart formatPosition`, each with one cross-file occurrence and
+that occurrence a comment); two are scanner phantoms, a nested local function
+and a `return decode(await …)` statement read as a declaration. Both phantom
+classes are now filtered — by brace depth, counted on every line before any
+filter returns, and by a statement-keyword guard — which lands the honest count
+at **11**.
+
+All eleven are paid:
+
+- **eight carry `@visibleForTesting`**, which is the truthful annotation and
+  the one this milestone already used correctly on `NoArtworkCache` for the
+  identical reason. Every one has a test consumer and no `lib/` consumer:
+  `securityContext`, `resolveIndex`, `buildApp`, `formatPosition`,
+  `networkTypeOf`, `posterStillLoading`, `searchFieldNoun`,
+  `searchFieldNumericUnit`. `buildApp`'s classification in M7.8 was wrong —
+  `main.dart` has no `part`, so it is its own library and a library-granularity
+  check reports it too; it belongs with the other seven and not in a class of
+  its own.
+- **three are deleted**, because they had no consumer at all and §1 says so:
+  `clearProgress` (the engine's mirror of `DELETE .../progress`, which no
+  screen offers) and `hlsIndex`/`hlsSegment`. The argument recorded for the
+  HLS pair — that they keep `docs/server-api.md`'s routes expressible — is
+  exactly the speculative construction §1 forbids, and the routes stay
+  documented where the contract lives. `_seg`'s doc cited `hlsSegment` as its
+  motivating example and now cites `MediaId('')`, which is reachable off the
+  wire today; `preflight_test.dart` writes the HLS path out, which is right,
+  because what it asserts is that dio does NOT follow the redirect.
+
+Proven in both directions three ways: a top-level function nobody calls, a
+class member nobody calls, and — the case the fix is for — a public member
+named only inside a comment in another file. Each takes the count 0 -> 1 and
+names the line; removing it takes it back.
+
+`tool/constitution-baseline.txt` is now **0 across all eight checks**.
+
+### What the gates still cannot see, said out loud
+
+- **A crashed suite counts as a KILLED mutant.**
+  `mutation_test-1.7.1/lib/src/core/test_runner.dart:76-78` returns `Detected`
+  for any non-zero exit and `check-mutants.sh` writes `expected-return="0"`, so
+  the libmpv segfault (backlog row H, ~1 run in 6) marks mutants killed for
+  reasons unrelated to the mutation. On a 125-mutant `apps/mobile` diff that is
+  roughly six. **Not mitigated, and deliberately**: the only lever is a retry,
+  and a retry here would launder a real survivor rather than a flake, because
+  the runner cannot tell the two exits apart in the first place. M7.7's retry
+  is correctly NOT wired into the mutation path. Every "all mutants killed"
+  claim about an `apps/mobile` diff is weaker than it reads by about that much.
+- **`public_member_no_consumer` still sees one declaration form in eight.**
+  Fields, static consts, top-level consts, classes, enums, extension types,
+  typedefs and multi-line signatures all slip through, and two structural holes
+  remain: the `@override` exemption is keyed on the NAME globally (74 names
+  exempt tree-wide) and a `part '*.g.dart'` directive exempts the WHOLE file (9
+  files). Neither hides anything today. Widening it is a real piece of work and
+  it is not this milestone's; the count above is honest about what it measures,
+  which is method and getter declarations.
+- **The locale defect never appeared in this file.** `grep` for `LC_ALL`,
+  `collation` or `locale` returned nothing, and it is the one thing that would
+  have turned CI red on its first push — a gate that sorted under one locale
+  and compared against a list sorted under another. The fix is in the tool
+  scripts and was verified across every gate that sorts; what was missing is
+  the record, which is this sentence.
+- **`M7.0/E-9` has no write-up here at all.** STATE.md:154 promises ten
+  measurements and describes four, and the "what is left owing" list says E-9
+  "was not done" while commit `991fcec` says it was. The claim that is true is
+  the narrow one: **CI has still never executed**, `git remote -v` is empty,
+  and running the workflow's steps in a container is still the cheapest thing
+  anyone could do next to the largest unexercised claim in the tree.
+- **`jq` was a hard dependency of `check-fixtures.sh:61` that `ci.yml` never
+  installed.** It worked because the `ubuntu-latest` image ships jq, which is a
+  dependency on an image's contents rather than on anything the workflow
+  states. It is installed now.
+- **The iOS build dirties tracked files.** `flutter build ios` rewrites
+  `Runner.xcodeproj/project.pbxproj` and
+  `Runner.xcworkspace/contents.xcworkspacedata` and drops an untracked
+  `Podfile.lock`, so anyone who builds iOS before `just codegen-check` gets a
+  diff failure with nothing to do with codegen. The lockfile is now ignored,
+  with the condition for committing it instead written beside it; the two
+  tracked files are left alone, because they are genuinely ours and a build
+  rewriting them is information rather than noise.
+
+---
+
 ## M7.9 — the full-spec audit
 
 **Every F-number, every NF, every constraint and every §7 line, with the file
@@ -778,13 +962,23 @@ seven missing assertions and only one of them was.
   documents at length for `PosterKey` and `SavedServer`: `hashCode`'s whole
   contract is that equal objects hash equal, which every permutation of the
   same fields satisfies. Excluded by exact text, with the reason and a
-  retirement condition, **and the count was checked to move** — 40 mutants to
-  32 — because this file already records that an exclusion matching nothing
-  looks identical to no exclusion at all.
+  retirement condition, **and the count was checked to move** — but the figure
+  written here, 40 to 32, is wrong and M7.R re-measured it. The real numbers on
+  `now_playing.dart` are **28 with the two exclusions and 34 without: a delta
+  of six, not eight.** Four of the six are the honest `Object.hash` swaps; the
+  other two are `&&`-negation mutants that were DETECTED and are swept up
+  because a `<regex>` exclusion covers a text RANGE and the negation's
+  replacement runs into the excluded line. That is the third instance of a
+  phenomenon `mutation_rules.xml` already documents twice, and it cannot be
+  narrowed away: an exclusion takes effect only when it covers the whole range
+  the rule replaces.
 - **Two were `Duration maxAge = const Duration(days: 30)` defaults on methods
-  that always throw.** Not excluded: the literal was **removed**. A cache that
-  refuses everything has no meaningful maximum age, and a literal that means
-  nothing is better deleted than argued about.
+  that always throw.** Not excluded, and **not deleted either — this paragraph
+  was wrong until M7.R.** The literal was *replaced* with `Duration.zero`, and
+  the survivor vanished because `30` and `-30` and `0` are all equivalent when
+  the method throws before reading the value: nothing killed the mutant, the
+  rule simply stopped having a literal it could vary. The distinction matters
+  because "deleted" reads as debt paid and "replaced" is debt that moved.
 
 **The order matters and is the reason the exclusion is defensible.** The first
 version of `now_playing_test.dart` varied one field of each value type, and the
@@ -4131,6 +4325,9 @@ Said out loud, per CLAUDE.md. Silence would read as "there was none".
   remote is the user's call, not an implementer's. E-9 — running the workflow's
   steps in an `ubuntu:24.04` container — was **not done**; it is the cheapest
   thing anyone could do next to the largest unexercised claim in the tree.
+  (Commit `991fcec` says E-9 *was* done and there is no `M7.0/E-9` write-up
+  anywhere above; M7.R could not reconcile the two and records the narrow claim
+  that is certainly true — the workflow has never run against a remote.)
 - **The libmpv crash reaches `just it` as well, and M7.7's retry does not
   cover it.** Four consecutive `just it` runs at this tree went fail, pass,
   fail, pass; both failures were

@@ -27,8 +27,10 @@ dependencies:
   # F14's whole platform half: Android's `MediaSession` plus the foreground
   # service that stops the OS muting a backgrounded player, and iOS's
   # `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`. Imported by exactly one
-  # file, `playback/audio_service_media_session.dart`, which is the adapter
-  # behind `MediaSessionHost`.
+  # file, `playback/audio_service_now_playing.dart`, which is the adapter behind
+  # `NowPlayingHost` — both were renamed in the very commit that added this
+  # dependency, so §4's comment pointed at a file that has never existed and
+  # `just deps` cannot see that.
   #
   # It is a package rather than our own channel code for a testability reason
   # that is measured rather than assumed: `AudioServicePlatform.instance` is a

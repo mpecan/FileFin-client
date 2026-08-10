@@ -38,6 +38,12 @@ mutation-test-report/
 **/ios/Flutter/Flutter.podspec
 **/ios/Flutter/ephemeral/
 **/ios/Pods/
+# CocoaPods' resolved lockfile. `flutter build ios` writes it, and this repo has
+# never committed it — so anyone who builds iOS before `just codegen-check`
+# gets a diff failure with nothing to do with codegen. Ignored rather than
+# committed because nothing in `just check` reads it and CI never runs a pod
+# install; the day an iOS build joins CI, commit it instead and delete this.
+**/ios/Podfile.lock
 **/ios/.symlinks/
 **/ios/Runner.xcworkspace/xcuserdata/
 **/ios/**/*.mode1v3

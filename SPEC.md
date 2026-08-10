@@ -646,7 +646,11 @@ Each gets a spike before the milestone that depends on it. Tracked in
     (`player_controls.dart`), and `PlayerController._open` already applies a
     default: the first sidecar the server lists. A language preference would
     change that default to a match against `SubtitleInfo.lang`, which is real
-    but is F7 gold-plating rather than F7.
+    but is F7 gold-plating rather than F7. **Its retirement condition is a
+    second sidecar language appearing in a real library** — one language is one
+    choice, and a preference between one thing is not a preference. The commit
+    that deferred both claimed "each" had a condition and this one did not;
+    M7.R is where the claim was made true rather than repeated.
 - **`cache/posters/`, the LRU disk cache.** Dropped at M3 and recorded then in
   `browse/poster_image_provider.dart` and `STATE.md`; recorded HERE at M7.9 so
   §7 and §11 agree. Flutter's in-memory `ImageCache` bounds the problem the
