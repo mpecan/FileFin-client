@@ -185,6 +185,28 @@ names the line; removing it takes it back.
 
 `tool/constitution-baseline.txt` is now **0 across all eight checks**.
 
+### Four mutants run against the LIVE suites, because nobody had
+
+`just it` is what proves the client against a real `filefin`, and no review had
+ever asked it to fail. Each of these was applied, `just it` run to completion,
+and the source restored. **102 tests, 63 + 39, and both suites sit exactly on
+their floors — zero headroom, which is the ratchet working as designed.**
+
+| Mutant | Predicted | Actual |
+|---|---|---|
+| `secret_store.dart:37` `secretKeyFor` -> a constant `ServerId` | STATE.md claimed 4 of `multi_server_test.dart`'s cases red, **unverified** | **CONFIRMED, exactly four**: F3 renewing from the other server's password; each password under its own key; one server's cookie refused by the other; signing out of one leaving the other signed in |
+| `main.dart:46` `PlatformSecretStore()` -> `InMemorySecretStore()` | nothing, because no live suite calls `buildApp` | `just it` **0** — nothing |
+| `main.dart:66` `pin: pin` -> `pin: null` | nothing: the `filefin` binary has no TLS listener at all, so there is no self-signed server anywhere in `just it` | `just it` **0** — nothing |
+| `server_probe.dart:93` dropping the mismatch arm | nothing, same reason | `just it` **0** — nothing |
+
+The last three are the finding rather than a null result. **F15 has no live
+coverage and cannot have any while the harness serves plain HTTP**: TLS is a
+reverse-proxy concern upstream (no `ListenAndServeTLS`, no certificate flag at
+v0.20.3), so every certificate claim in this repository rests on
+`TlsStub` — a real Dart TLS server with real chains — and on the unit suites
+over it. That is stated in `docs/risks.md` already; what M7.R adds is that the
+live suite was *measured* not to cover it rather than assumed to.
+
 ### What the gates still cannot see, said out loud
 
 - **A crashed suite counts as a KILLED mutant.**
@@ -229,6 +251,30 @@ names the line; removing it takes it back.
   with the condition for committing it instead written beside it; the two
   tracked files are left alone, because they are genuinely ours and a build
   rewriting them is information rather than noise.
+
+### Two findings M7.R did NOT fix
+
+- **`POST_NOTIFICATIONS` is declared, asserted, and never requested at
+  runtime.** `AndroidManifest.xml:17` declares it, `platform_config_test.dart`
+  asserts it, `targetSdk` is 35 — so on Android 13+ it is denied by default and
+  must be asked for. Nothing in `apps/mobile/lib` asks, and `audio_service`
+  does not either (its own manifest is empty and it contains no
+  `requestPermissions` call). The suspected effect is that F14's transport
+  notification is suppressed on a default Android 13+ install, with the
+  foreground service itself still running. **Not fixed**: the only honest fix
+  is a new plugin dependency (`permission_handler`) landing in the final
+  milestone with a rent comment, an exact pin, a mocked platform interface and
+  an Android manifest merge that nothing in `just check` can verify. It is
+  headless-observable — the missing call — and it should be the first thing the
+  next change does. `docs/verification-backlog.md` rows L, M and N are the
+  device half of the same question.
+- **The media session publishes a title for an item playback refused.**
+  `PlayerPage._bindSession` binds unconditionally, and `NowPlayingBinder`
+  publishes in its constructor, so an item F13 or F12 turns away still reaches
+  the lock screen. Fixing it properly means the binder consulting
+  `PlayerController.unplayable` and the F13 refusal — and the bind happens
+  before `start()` has decided either — so it is a small design question rather
+  than a guard, and it is recorded here instead of being got half right.
 
 ---
 
