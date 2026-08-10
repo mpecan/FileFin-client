@@ -100,13 +100,46 @@ void main() {
     await attempt(tester);
 
     expect(find.byKey(const Key('certificate-prompt')), findsOneWidget);
+    // The WHOLE value, read off the widget rather than searched for. A
+    // `textContaining(observed)` next to it cannot fail: `describeApiError`'s
+    // paragraph already carries the fingerprint, so truncating the selectable
+    // copy — the one thing on this screen a user compares against `openssl
+    // x509 -fingerprint -sha256` — left every assertion here green.
     expect(
-      find.byKey(const Key('certificate-fingerprint')),
-      findsOneWidget,
+      tester
+          .widget<SelectableText>(
+            find.byKey(const Key('certificate-fingerprint')),
+          )
+          .data,
+      observed,
       reason: 'the fingerprint is the one thing a user can compare',
     );
-    expect(find.textContaining(observed), findsWidgets);
     expect(find.textContaining('/CN=filefin.lan'), findsOneWidget);
+  });
+
+  testWidgets('a DISMISSED dialog is a refusal, not an acceptance', (
+    tester,
+  ) async {
+    // `showDialog` is `barrierDismissible: true`, so a barrier tap and the
+    // Android back gesture both close this with `null`. Reading that as `true`
+    // pins an unknown certificate and signs in over it with nobody having said
+    // yes — which is trust-on-first-use with the "somebody decided" part
+    // removed, and it is what `accepted ?? false` exists to stop.
+    api.loginResult = untrusted;
+    await attempt(tester);
+    expect(find.byKey(const Key('certificate-prompt')), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('certificate-prompt')), findsNothing);
+    expect(await secrets.read(server.id, SecretKind.certificatePin), isNull);
+    expect(
+      pins,
+      hasLength(1),
+      reason: 'no second client, because nothing was accepted',
+    );
+    expect(find.byKey(const Key('sign-in-problem')), findsOneWidget);
   });
 
   testWidgets('accepting writes the pin and signs in with it', (tester) async {
