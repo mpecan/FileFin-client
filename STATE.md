@@ -12,8 +12,14 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M5** — the HLS path and F12's messaging: `TranscodingDisabled`, a `HEAD` pre-flight that refuses before the engine opens, the panel that says why, and a live HLS suite against the real binary |
 | **Done** | **M6** — F5, F6 and F10: search with a debounce and eleven scopes, the three home rows, favourite/rating/the two un-watches, and a three-tab shell whose tabs are built only when they are selected. All three proven against the real binary |
 | **Done** | **M6.R** — remediated against three adversarial reviews: six product defects (one of them data loss), nine test holes that were surviving mutants, and six gate defects — including a mutation gate that reported seven survivors as a hang and a §7 clause enforced by nobody |
-| **In progress** | **M7** — multi-server, the platform secure store, F15's accept-and-pin loop, F14, and the full-spec audit. M7.0–M7.3 and M7.5 landed first; **M7.4, the live suites and M7.7 are written up below.** M7.6, M7.8 and M7.9 are not built, and **M7.9 owes this file the write-up of M7.0–M7.3 and M7.5**, which their commits carry and this file does not |
+| **Done** | **M7** — F11's picker over two real servers, `PlatformSecretStore`, a cold start that restores a session, F15's accept-and-pin loop reaching a user for the first time, F14's background audio and lock-screen transport, the inherited debt, and the **full-spec audit** below |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
+
+**Every milestone is done, and "done" is not the same as "verified".** What no
+host can check is in `docs/verification-backlog.md`, each row with the
+procedure a person would follow; F14's and F15's device halves (rows J, K, L, M
+and N) are the ones this milestone created. §3 of the audit below lists every
+requirement as built, dropped with a reason, or carrying such a row.
 
 **"Clean tree" is a claim this file has got wrong before, which is why it is
 spelled out rather than asserted.** At M1 it was wrong: three
@@ -42,10 +48,225 @@ that has never been committed.
 
 ---
 
+## M7.9 — the full-spec audit
+
+**Every F-number, every NF, every constraint and every §7 line, with the file
+that proves it.** Written because the milestone had to answer *"is the spec
+implemented"* with a list rather than a feeling — and because the audit that
+produced it found **four things the spec asks for that no code in this tree
+does**, one of which nothing anywhere recorded as deferred.
+
+Evidence is a path in this repository, read at the commit that carries this
+section. Where a row says NOT BUILT it also says where the decision is written
+down; a gap with no deferral record is how all four of the ones below survived
+seven milestones.
+
+### Functional
+
+| # | Status | Evidence |
+|---|---|---|
+| F1 probe is content-type + payload, not status | **BUILT** | `filefin_api/lib/src/server_probe.dart`; UI in `servers/add_server_page.dart` |
+| F1 plain-http flagged visibly | **BUILT** | `servers/add_server_page.dart`, `Key('cleartext-warning')`, and the wording covers the iOS ATS consequence |
+| F2 login | **BUILT** | `filefin_api/lib/src/session.dart` |
+| F2 session + password in the **platform** store | **BUILT at M7.2** | `servers/platform_secret_store.dart`, a decorator over `InMemorySecretStore`; `main.dart` constructs it. The Keychain's own behaviour is backlog row J |
+| F2 silent renewal reachable from a cold start | **BUILT at M7.3** | `app.dart`'s `_resume` → `LibraryApi.restore()`; live against the binary in `test_live/cold_start_live_test.dart` |
+| F3 401 → re-auth → replay once | **BUILT** | `filefin_api/lib/src/auth_interceptor.dart`; live in `integration_test/session_recovery_test.dart` |
+| F4 tree / grid / detail | **BUILT** | `browse/category_tree_page.dart`, `browse/media_grid.dart`, `browse/media_detail_page.dart` |
+| F5 search with the field selector | **BUILT** | `filefin_core/lib/src/search_field.dart` (eleven fields), `browse/search_page.dart`; all eleven live in `integration_test/search_test.dart` |
+| F6 continue / favourites / completed | **BUILT** | `filefin_core/lib/src/models/home_rows.dart`, `browse/home_page.dart` |
+| F7 seek, volume, subtitles, audio track, next file | **BUILT** | `playback/player_controller.dart`, `playback/player_controls.dart`; `media_kit_playback_host.dart` drops mpv's synthetic `auto`/`no` |
+| F8 resume vs start over | **BUILT** | `filefin_core/lib/src/playback/resume_choice.dart`, `browse/media_detail_page.dart` |
+| F9 interval / pause / seek / completion / close, reflected locally | **BUILT** | `playback/progress_reporter.dart`; the close is awaited through `player_page.dart` with a bounded timeout |
+| F10 favourite / rating / two un-watches | **BUILT** | `browse/watch_actions.dart`; the POST/DELETE distinction gated live in `integration_test/watch_state_test.dart` |
+| F11 mechanism | **BUILT at M2** | `filefin_api/lib/src/client.dart`'s `forServer` — jar, secret namespace and pinner per `ServerId` |
+| F11 switching UI | **BUILT at M7.4** | `servers/server_list_page.dart`; live over two real binaries with two accounts in `test_live/multi_server_live_test.dart` |
+| F12 the 415 named in the user's terms, before the engine opens | **BUILT** | `errors/error_presentation.dart`; pre-flight in `player_controller.dart`; live both ways in `test_live/transcoding_disabled_live_test.dart` |
+| F13 metered guard + per-server wifiOnly | **BUILT** | `filefin_core/lib/src/playback/decision.dart`, `playback/player_page.dart` |
+| **F14 background audio + lock-screen transport** | **BUILT at M7.6** | `playback/now_playing.dart` (port, value types, binder), `playback/audio_service_now_playing.dart` (adapter), the Android manifest's service and the iOS plist's `UIBackgroundModes`, both asserted in `platform_config_test.dart` and both present in the built artefacts. **The device half is backlog rows L, M and N** |
+| F14's PiP | **DROPPED, with the measurement** | R2 declined at M7.6/E-7; it was never in F14's wording and SPEC §10's M7 row is corrected. `docs/risks.md` R2, `tool/spikes/e7_ios_pip_reachability.sh` |
+| F15 fingerprint / accept / **pin** | **BUILT at M7.5** | `servers/certificate_prompt.dart`, `servers/server_api.dart`'s `apiForServer`, `SecretKind.certificatePin` written on accept. **Until M7.5 nothing joined M2's policy to a user** — see above. Device arm is backlog row K |
+| F15 a change blocks loudly | **BUILT and now reachable** | `tls/pin_decision.dart`, `error_presentation.dart`; the widget test asserts both fingerprints and **no** accept path. It could not fire before M7.5 because no pin was ever stored |
+
+### Non-functional
+
+| # | Status | Evidence |
+|---|---|---|
+| NF1 cold start < 2s | **DESIGNED, UNMEASURED** | Lazy tabs in `browse/library_shell.dart`; the number is backlog row 2. M7.6 deliberately kept the media-session channel off `main()`'s critical path |
+| NF2 5000-item grid at 60fps | **MET BY PROXY**, and the proxy is named | Virtualisation in `browse/media_grid.dart`, `browse/visible_rows.dart`; real frame timing is backlog row 1 |
+| NF3 seek < 500 ms | **UNMEASURED** | Backlog row 17 |
+| NF4 no credential in a log, `toString()` or unencrypted storage | **BUILT** | `secret_tostring` at baseline 0; `redactUserInfo`; no `LogInterceptor`; `settings_store_test.dart` asserts the bytes on disk. **M7.2 changed what this claim costs** — a password now persists, so it rests on the Keychain rather than on nothing being stored |
+| NF5 every request has a timeout | **BUILT** | `filefin_api/lib/src/transport.dart`, 15 s on both `Dio`s |
+| NF5 cancellation | **BUILT for reads; the SPEC LINE was wrong and is amended** | The port takes a `CancelToken` on every method (`library_api.dart`); the four F10 writes and the progress report deliberately pass none. `PlayerController.dispose` fires the final `stop` **and** cancels its token in the same method, so a reporter sharing it would cancel the one report NF6 exists to make. SPEC NF5 now says reads |
+| NF6 playback survives backgrounding | **BUILT, and M7.6 changed what it means** | It used to pause and report; it now reports and keeps playing (F14). Real OS suspension is backlog row 19; audibility is row L |
+
+### Constraints
+
+C1, C2, C3, C4 (`grep -rn 'api/admin' apps packages` → **zero**; the only two
+occurrences in the repository are `tool/spikes/e5_mkv_direct_play.sh` and
+`tool/testserver/seed.sh`, neither of which is the client), C5 and C6 all
+hold. **C5 was re-proven at M7.6** with
+`audio_service` and `flutter_cache_manager` in the tree: the merged manifest
+still says `minSdkVersion="26"` and the built plist `MinimumOSVersion 15.0`.
+
+### §7, line by line
+
+| §7 line | Status |
+|---|---|
+| `settings.json` | **BUILT** — `servers/settings_store.dart` |
+| `servers[].{id,name,baseUrl,lastUser,wifiOnly}` | **BUILT** — `servers/settings.dart` |
+| `servers[].allowUnverifiedPlayback` | **BUILT at M4 and absent from §7 until M7.9.** It is D10. §7 was stale relative to §13 for three milestones |
+| `selectedServerId` | **BUILT at M7.3**, added to §7 at M7.9 |
+| **`ui { theme }`** | **NEVER BUILT, and until M7.9 never recorded as dropped** — not in §11, not in §13, not here, not in the backlog. **Now deferred in SPEC §11 with its retirement condition.** `app.dart` hard-codes one seeded `ThemeData`; the honest cost is that the app is light in a dark room |
+| **`ui { subtitleLanguage }`** | **NEVER BUILT, same record, same disposition.** The identifier's only occurrence in the whole tree was `SPEC.md` itself. `PlayerController._open` already applies a default — the first sidecar the server lists — so a language preference would change that default rather than add one |
+| `playback { progressIntervalSecs, meteredWarnBytes }` | **BUILT** — `servers/settings.dart`, editable in `playback/playback_settings_sheet.dart` |
+| secure store `session`, `password` | **BUILT at M7.2** |
+| secure store `certpin` | **BUILT at M7.5** — it was a key with no reader and no writer for three milestones |
+| `cache/posters/` LRU disk cache | **NOT BUILT; the drop was recorded, the ARCHITECTURE was not.** `browse/poster_image_provider.dart` and this file carried the decision; SPEC §5.1's diagram and `docs/architecture.md`'s both claimed `filefin_api` holds a poster cache, which was **never true in any milestone**. Both corrected at M7.9, and the deferral is in SPEC §11 now |
+
+### The four that were silently never built, and where each ended up
+
+Ranked by how invisible the gap was.
+
+1. **F15's accept-and-pin loop.** Covered by no milestone deferral at all. **Built at M7.5**, and it found a second defect on the way (`probe` had no pinner, so a self-signed server was reported as unreachable).
+2. **`ui { theme, subtitleLanguage }`.** Zero code and zero record in any of the five documents that record deferrals. **Deferred at M7.9, in SPEC §11, with a reason and a retirement condition** — which is where the earlier ones should have been.
+3. **`filefin_api`'s "poster cache"**, asserted in two architecture diagrams and existing in neither package. **Both diagrams corrected at M7.9**; the disk cache itself is deferred in §11 with backlog row 7 as its condition.
+4. **NF5's cancellation half**, which as written said *every* in-flight operation and is contradicted by five call sites. **The code was right and the sentence was wrong**; SPEC NF5 is amended, with the reason the writes must not be cancellable.
+
+### D9's retirement condition, answered against real code
+
+`docs/architecture.md` said: adopt `flutter_riverpod` at M7 if either per-server
+scoping needs more than one `InheritedWidget`, or the player needs a listenable
+shared across three routes. M6 answered the second, no. **M7 answers the first,
+also no, and the plan predicted it.** A server switch is "close one
+`LibraryApi`, build another, rebuild the shell under a `ValueKey(serverId)`" —
+a `setState` in `_HomeRouteState`. F14 then added a *second* port to the same
+`AppDependencies` and a second per-screen binder, and needed no scope graph
+either. **D9 stands, and its retirement condition is now spent** rather than
+rolling forward to a milestone that does not exist.
+
+---
+
+## M7.0–M7.3 and M7.5 — the write-ups this file owed
+
+Recorded at M7.9, from the commits that carry them. The milestone's own log
+said M7.9 owed them; this is that debt paid.
+
+### M7.0 — ten measurements, and the four that changed a step
+
+- **E-1 destroyed the step order.** `SessionManager.restore()` and
+  `FileFinClient.logout()` were fully built, unit-tested **and**
+  integration-tested with no production caller anywhere under `apps/mobile/lib`.
+  M7.1 moved in front of M7.2 because of it, and it is the argument M7.8's new
+  `public_member_no_consumer` check rests on.
+- **E-4 held.** `FlutterSecureStorage.setMockInitialValues` exists in the
+  resolved version, is `@visibleForTesting`, and installs a platform that
+  retains the map it is handed — so M7.2's wrapper is covered headlessly and
+  the uncovered ratchet stayed at 0.
+- **E-5 did not hold, and the pin is 10.3.1 because of it.** The question it
+  asked is answered no on both floors (`minSdkVersion 23`,
+  `ios.deployment_target 13.0`). What it did not predict is that
+  `flutter_secure_storage` 11.0.0 **cannot be built at all** here: its Android
+  module declares `compileSdk = 37` against Flutter 3.44.9's own 36, and
+  `flutter build apk` fails with `Failed to find target with hash string
+  'android-37'`.
+- **E-3 was wrong about where accounts live**, and the correction made M7.4
+  cheaper rather than dearer: it expected the account in the SQLite cache and
+  reached for `sqlite3`; the cache's `users` table holds no password at all.
+  Accounts live in `$HOME/.filefin.json`, which `FixtureRun.create` already
+  rewrites, so a second account cost one JSON edit and no new dependency.
+
+### M7.1 — a sign-out that ends the server session, and the plan step that was a defect
+
+`logout()` and `restore()` reached the `LibraryApi` port and got a caller. It
+landed **before** the persistent store on purpose: a local-only sign-out is
+harmless while `InMemorySecretStore` dies with the process, and becomes a §9
+defect the moment M7.2 lands — tap sign out, and the password stays in the
+Keychain while the next launch signs you straight back in.
+
+**The plan said to point `_signOut` at `logout()`, and doing that would have
+broken F2.** `_signOut` was not a user action at all: it was the
+`SessionExpired` handler every browsing screen routed to, and nothing in the
+app had ever offered a sign-out. Calling `logout()` there deletes the stored
+password — which is exactly what F3 renews from — so every server restart (L1,
+routine) would have become a password prompt. The handler is `_sessionExpired`
+now and keeps the password; `_signOut` is new, is an app-bar action on both
+library tabs, and the two are documented against each other.
+
+The assertion that earns its keep is the **verb**: `logout()` must reach `POST
+/api/logout`, because the SPA catch-all answers a wrong method `200 text/html`
+rather than 405, so a `GET` would leave the session alive and say nothing.
+
+### M7.2 — `PlatformSecretStore`, and the test that was green for the wrong reason
+
+A persistence **decorator** around `InMemorySecretStore`, the shape
+`secret_store.dart` and `docs/architecture.md` have promised since M2: reads hit
+memory first and fall through on a miss, writes and deletes go to both.
+Memory-first is a correctness requirement rather than an optimisation — F3
+renews inside a 401 retry and a Keychain read can block on a locked device.
+
+**The per-server isolation test was green with the isolation deleted, and
+fixing the test is the finding.** The first version read back through the same
+store, so the memory layer answered every read and hard-coding a constant
+`ServerId` in `secretKeyFor`'s caller left it passing. Reading through a
+**second** store — which shares only the platform map, which is what a second
+launch shares — kills that mutant, along with the key-layout and cold-start
+cases.
+
+### M7.3 — a cold start that restores a session with no password typed
+
+`HomeRoute` gained a launch path: read `settings.json`, take the selected
+server, build its client, `restore()`. `LibraryApi.restore()` is
+`SessionManager.restore()` **plus F3's renewal**, and the pairing is what makes
+F2 true rather than merely stored: the saved cookie is proved with `GET
+/api/me`, and when the server has forgotten it the renewal signs in again from
+the stored password. The renewal lives on the port because the app has no
+password and must never acquire one (§9).
+
+`settings.json` gained `selectedServerId`, **required even though the value is
+nullable**: `as String?` would have read a pre-M7 file as "nothing selected"
+and carried on, which is the lenient decoder §13 forbids for our own formats.
+
+`just mutants` found a real hole here: `server.id == selectedServerId` survived,
+because with one saved server the fallback returns the same object a match
+would have. The case the field exists for — two saved servers, the second
+selected — kills it.
+
+### M7.5 — F15's accept-and-pin loop, and a second defect found while wiring it
+
+**The most invisible gap the audit found.** Every pure piece of F15 landed at M2
+and was table-tested; nothing joined them to a user. `main.dart` never passed
+`pin:`, so every client in every shipped build ran `CertificatePinner(pin:
+null)`, and `SecretKind.certificatePin` had zero production reads and zero
+writes. A self-signed server — F15's stated common case — showed an
+unactionable error for ever, and `RejectChanged` could not fire in a shipped
+binary because no pin was ever stored. **No milestone deferral covered it**:
+SPEC §10 puts F15 at M2, M2's exit criterion was met correctly at the
+`filefin_api` level, M3 built the app, and nobody wired it.
+
+The second defect is worse than the first. `probe()` was never handed a pinner,
+so `mapDioException` could not build a certificate error at all: F15's
+`CertificateNotTrusted` collapsed into `ConnectionFailed` and surfaced as
+*"Nothing answered at that address"*. **The add-a-server screen — the first
+place anyone meets a self-hosted certificate — told users their running server
+was unreachable.** `probe` takes the pinner now and throws both certificate
+variants rather than returning a verdict.
+
+What is built: `promptToTrust` (the fingerprint on its own line, selectable,
+beside the subject and the expiry, with an explicit accept — a dismissed dialog
+is not acceptance), `apiForServer` (the one place that reads a pin before a
+client is built), `AppDependencies.secrets` returning three milestones after M3
+deleted it for having no reader, and **exactly one** further attempt after an
+accept, bounded by two statements written out rather than by a condition.
+
+There is deliberately **no accept path for a changed certificate**: `decidePin`
+never updates a pin and neither may a screen.
+
+---
+
 ## M7.4, the live suites, E-8 and M7.7 — what was built
 
 The steps this run covered. M7.0–M7.3 and M7.5 landed before it and are
-recorded in their own commits; M7.9 owes them a section here.
+recorded in their own commits, and M7.9 paid that debt in the section above.
 
 ### M7.4 — F11's switching UI
 
@@ -231,6 +452,343 @@ second server can only ever reach their first.
 
 ---
 
+## M7.8 — the inherited debt, disposed
+
+Four items in, two out. The two that are out are M6's revert-semantics pair,
+and they did not vanish: they moved into **SPEC §11**, because a released
+project stops reading a milestone log and `STATE.md` is where they would have
+died quietly.
+
+### The SPA catch-all was a successful write, on every F10 route
+
+`_sendJson` and `_sendDelete` looked at the status and nothing else. The server
+registers its SPA catch-all outside the route table (`server.go:352`), so an
+unmatched `/api/*` path answers **`200 text/html`** rather than a 404 or a 405
+— and every favourite, rating, watched and un-watch then reported success to a
+screen that had already drawn the change. The original reasoning is in the
+diff: *"the `204` routes here answer no body at all, so there is nothing to
+read and no media type to check"*, which is true of the route behaving and
+false of the case the check exists for.
+
+**F11 is what moved it from residual to worth paying.** A user who can save
+several servers can save a base URL with a stray path on it, and after that
+nothing they tap is stored anywhere.
+
+`_refuseHtml` was already a static applied to 2xx on `_send`; it is now applied
+on both write helpers as well. The DELETE needed its own call rather than
+inheriting one: it exists precisely because the **verb** is what distinguishes
+the two un-watch operations, so a fix to the POST helper alone would have left
+the un-watch that drops the resume pointer reading the catch-all as success.
+
+Seen red first, and the other direction seen too: `StubServer` already answers
+an unregistered path exactly the way the real server does, so registering
+nothing *is* the case under test — and a separate case asserts that a real
+`204` with **no `Content-Type` at all** still succeeds, because a check that
+demanded JSON would refuse every legitimate write.
+
+### §5's other arm, built at last — and its baseline is not zero
+
+`public_member_no_consumer` joins the seven. `dead_types` covers sealed
+variants and nothing else, so everything M6 and M7 built was outside every
+mechanical check §5 had.
+
+**The rule is stricter than §5 reads, and deliberately.** A consumer means
+another file **under `lib/`**; the test suite does not count. With tests
+counting, the check reports **zero** on this tree — including at the commit
+where `SessionManager.restore()` had a unit test, an integration test and no
+caller at all. A rule that cannot see the defect it was designed for is not
+worth writing, so what it measures is "shipping code uses this", which is §1
+and §5 read together.
+
+Three exemptions, each a false-positive class rather than a nuisance: a name
+carrying `@override` anywhere (an abstract port method is declared in one file
+and implemented in another, and its call sites go through the port's type); a
+file carrying a `part '*.g.dart'` or `'*.freezed.dart'` directive (a freezed
+factory's name appears only inside generated code, which every gate excludes);
+and `@visibleForTesting` plus the framework's own entry points, which Flutter
+calls and we do not.
+
+Proven in both directions: a deliberate `int somethingNobodyCalls() => 1;` on
+`AppDependencies` takes it 9 → 10 and names the line; removing it takes it
+back.
+
+**The baseline is 9, it was written with `FILEFIN_ACCEPT_NEW_DEBT=1`, and
+saying so is the price of that override.** Every one of the nine is real, and
+they are three different kinds:
+
+| Finding | Kind |
+|---|---|
+| `filefin_core/lib/src/urls.dart` `hlsIndex`, `hlsSegment` | **Genuinely unconsumed, and already argued for in their own doc comment**: `PlaybackRequest.url` is always the file route and libmpv follows the `307` itself, so nothing addresses these two. They exist to keep `docs/server-api.md`'s HLS routes expressible where URLs are built, and `hlsSegment` is `_seg`'s motivating example |
+| `filefin_core/lib/src/resume/engine.dart` `clearProgress` | **Genuinely unconsumed.** The engine's mirror of `DELETE .../progress`, which no screen offers. The strongest candidate for deletion, and deleting a documented rule of the server contract in the last milestone is not a change to make in a hurry |
+| `certificate_pinner.dart` `securityContext`, `network_status.dart` `networkTypeOf`, `poster_tile.dart` `posterStillLoading`, `search_field_labels.dart` `searchFieldNoun` and `searchFieldNumericUnit` | **Public so a test can reach them**, used by their own file. `@visibleForTesting` would be the truthful annotation and would drop the count to four |
+| `main.dart` `buildApp` | **A documented seam**, called by `main()` in the same file and by `main_test.dart`. The check works at file granularity rather than library granularity, which is the one place it is stricter than §5's own words |
+
+`app_no_raw_http` gained `package:audio_service` in the same commit, confined
+to `audio_service_now_playing.dart`, on the same reasoning `media_kit` is
+confined to two files: it opens no socket, but it runs a foreground service
+whose callbacks reach Dart from **native code**, which is a second entry into
+this app that no widget should be able to open. Proven able to fail by adding
+the import to `scope.dart`.
+
+### A `FixtureRun` copy no longer contradicts itself
+
+`_decorrelateWatched` rewrote every `meta.json` and left the cache's
+`user_state` projection alone, so a fresh copy handed out a library where
+`/api/home`, search and every category listing reported the **opposite** of
+`/api/media/{id}` until something wrote. M6 chose to assert that divergence
+rather than repair it, and named the cost: a suite that reads a listing before
+writing. **M7.3 and M7.4's live suites are that suite.**
+
+`_repairMirror` is one `UPDATE` in the same `sqlite3` the harness already
+shells to, writing the same four facts `_decorrelateWatched` does — watched iff
+the item is under `Films/`, nothing favourited, nothing rated, no progress — and
+it verifies its own effect for the reason `_repointCache` does.
+
+`watch_state_test.dart`'s tripwire was **inverted in the same commit, with the
+reason written where the assertion is**: it asserted the divergence and now
+asserts that a fresh copy agrees, on both items, with a check that the film is
+the watched one so the agreement is not two falses agreeing by accident.
+Deleting the `_repairMirror` call turns it red — `Expected: <true> Actual:
+<false>` — which was run.
+
+### Backlog row I, answered from upstream, and the branches stay
+
+`state.Rating` is the per-user 1-10 score (`internal/state/state.go:25-28`), a
+different field from the importers' `Ratings map[string]string` of imdb, plex
+and nfo metadata — which is the confusion that made the row hard to close. Its
+two non-API writers are the MyDramaList and MyAnimeList watch-history imports.
+**MDL clamps explicitly**: `roundScore` (`internal/mdl/mdl.go:214-227`) returns
+0 for anything unparseable or `<= 0`, then `n < 1 -> 1` and `n > 10 -> 10`. MAL
+passes its own API's `Score`, whose range is 0-10 by definition.
+
+So the hypothesis the row was written on — *some importer writes -1* — is dead.
+**The branches stay anyway, and the reason is the server's own design.**
+`meta.json` is filesystem truth in a filesystem-first server; editing it by hand
+is a supported workflow, and it is exactly how M6 produced `rating: 99`. The
+normalisation is also what makes the package's invariant stateable and
+property-tested: every `WatchState` it constructs is one every mutator accepts.
+Retired with a result rather than with a deletion.
+
+### E-10, answered twice
+
+Upstream first: `internal/server/playback.go` keys the transcode session as
+`r.PathValue("id") + "/" + r.PathValue("n")` — media id and file index, **no
+user and no cookie** — and `internal/transcode/hls.go` holds
+`sessions map[string]*session` (:54) whose `ensure` returns the existing
+session for a key it already has (:281). One `run *ffmpegRun` per session,
+"replaced on a seek relaunch" (:66), replaced by `maybeReposition` (:240).
+
+Then live, and **without the long seeded item row D said it needed**. Each
+session calls `os.MkdirTemp("", "filefin-hls-")`, so counting those directories
+counts sessions:
+
+```
+before                       : 0 session dir(s)
+A: viewer 1, file 0          : 1  (delta +1)
+B: viewer 2, SAME file       : 1  (delta +0)   <- the result
+C: viewer 2, different file  : 2  (delta +1)   <- negative control
+```
+
+Two independent cookie jars, which is the sharper case than two accounts: if
+the key had any per-viewer component at all, two logins would still be two
+sessions. `tool/spikes/e10_two_clients_one_file.sh` refuses to report a result
+at all unless A and C both move.
+
+**Consequence, recorded because nothing in this client can see it or prevent
+it:** two people watching the same transcoding file share one encoder and one
+seek head. Segments already written stay on disk (:157, :252), so the blast
+radius is the not-yet-encoded tail — the viewer who did not seek stalls until
+the encoder comes back past them, with no error and no status code anywhere.
+`SPEC.md` §3.4 and `docs/server-api.md` said "one repositionable ffmpeg run per
+session" without ever defining *session*; both now say which.
+
+---
+
+## M7.6 — F14, and what E-6 and E-7 measured first
+
+### E-7 — R2 declined, from what is `private`
+
+PiP was never in F14's wording (`SPEC.md` F14 asks for background audio and
+lock-screen controls); it appeared only in SPEC §10's M7 row, and that row is
+corrected. The spike is a **static read** rather than a run, because the answer
+is decided by access modifiers and no run can make a sealed symbol reachable.
+
+`media_kit_video` 2.0.1's decoded frame is exactly the right thing — a
+`kCVPixelFormatType_32BGRA` `CVPixelBuffer`, with `copyPixelBuffer()` public —
+and no instance of the texture holding it is reachable: `VideoOutput.texture`,
+`VideoOutputManager.videoOutputs` and `MediaKitVideoPlugin.videoOutputManager`
+are all `private`, and the package's only public entry point is
+`register(with:)`, which returns nothing. So PiP needs a **fork**, plus a
+`CMSampleBuffer` timing layer this repository would then own, and a contest with
+Flutter's own `copyPixelBuffer()` over a three-deep buffer pool.
+
+`tool/spikes/e7_ios_pip_reachability.sh` asserts all seven facts **in their own
+direction** and exits 1 when any changes, so an upstream bump re-opens the
+question rather than inheriting the verdict. Proven able to fail by making
+`VideoOutput.texture` public in a copy of the package.
+
+### E-6 — the first finding was ours, not the OS's
+
+`media_kit_video`'s `Video` widget takes `pauseUponEnteringBackgroundMode` and
+it **defaults to `true`**: on `AppLifecycleState.paused` it calls
+`player.pause()` itself (`video_texture.dart:281-299`). With the default left
+alone, every arm of the spike reads "backgrounding stops playback" and the cause
+is a widget argument. That is the negative control for the whole experiment —
+`pos` frozen at 18941 ms for the full 60 s while the wall clock ran to 80 s —
+and `apps/mobile` had passed neither that argument nor
+`resumeUponEnteringForegroundMode` since M4.
+
+| Arm | `pos` over 60 s backgrounded | OS audio state |
+|---|---|---|
+| Android, widget default | **frozen** | `state:stopped` |
+| Android, `pauseUponEnteringBackgroundMode: false` | advanced 1:1 with the wall clock | `state:started mutedState:opControlAudio` |
+| Android, plus `audio_service` | advanced 1:1 | `state:started mutedState:none` |
+| iOS simulator, no `UIBackgroundModes` | **process suspended** — the last tick is the one after `LIFECYCLE paused` | — |
+| iOS simulator, `UIBackgroundModes: audio` | advanced 1:1 for the full minute | — |
+
+Read in one run, both directions: foregrounded, the bare Android arm reports
+`mutedState:none`; backgrounded, `mutedState:opControlAudio`. **Decoding
+continues with no package at all, and the AppOps `CONTROL_AUDIO` restriction is
+what silences it** — which is what a foreground service and a `MediaSession`
+lift. With `audio_service` running, `dumpsys media_session` carried our
+metadata, the notification was `FOREGROUND_SERVICE|ONGOING_EVENT` with
+`category=transport`, and `adb shell input keyevent KEYCODE_MEDIA_PAUSE`
+produced a `pause` **in Dart** and froze the position.
+
+**What the simulator cannot say, and it is a property of the shipped binary
+rather than a hedge.** `media_kit_libs_ios_video` 1.1.4 builds libmpv twice:
+the device slice carries `-Daudiounit=enabled` and, by `nm -u`, imports
+`_AVAudioSessionCategoryPlayback` and `setCategory:error:` itself; the simulator
+slice carries `-Daudiounit=disabled -Dcoreaudio=disabled -Dopensles=disabled`
+and has **no audio output compiled in at all**, so playback there runs off the
+video clock. The device arm was attempted and refused — `devicectl` installed
+the spike onto a real iPhone and the launch failed with
+`FBSOpenApplicationErrorDomain error 7 … the device was not, or could not be,
+unlocked`. That half is backlog row L, and an `audio_session`-configured arm
+behaved identically to the plist-only one, which is why no session package is
+in the tree.
+
+### What F14 is
+
+A **port**, in the same shape as `PlaybackHost` and for the same reason:
+`NowPlayingHost` takes our three value types in and hands back our three
+commands, and no `audio_service` type crosses it. `NowPlayingBinder` observes
+one `PlayerController` and decides nothing — publishing metadata on open and on
+every file advance, de-duplicating transport updates so a position tick several
+times a second is not a platform channel call several times a second, and
+routing `Resume`/`Pause`/`Seek` back. The two stateless commands are **guarded
+on the player's own state** rather than routed to `togglePlay`, because the OS
+sends what its button says: a headset `play` on an already-playing item would
+otherwise pause it.
+
+`AudioServiceNowPlaying` is the only file in the package that may import
+`audio_service`, exactly as `media_kit_playback_host.dart` is the only one that
+may import `media_kit`. Its own seam — `AudioServicePlatform.instance`, a
+settable platform interface of the same kind `PathProviderPlatform` gives — is
+**why the package was chosen over channel code we would write ourselves**: what
+F14 publishes and what a remote button does are both assertable headlessly, and
+hand-written Kotlin and Swift behind the same port would be a boundary nothing
+in `just check` could reach.
+
+**`NoArtworkCache` is a §1 decision wearing a stub's clothes.**
+`AudioService.init` builds a `DefaultCacheManager()` unless handed one, and that
+opens a **sqflite database** and an `HttpClient` for artwork. F14 publishes no
+`artUri` and could not: the poster route is behind `s.auth` and every artwork
+API takes a URI the OS fetches for itself, unauthenticated, so the choice is
+between showing nothing and handing the session cookie to a request we do not
+control. All eleven of its methods throw, and all eleven are asserted to. Its
+return types are `Never` rather than the declared ones, which is what keeps
+`package:file` and `FileInfo` out of this package's imports entirely.
+
+### The three edits outside the new files, and the one that inverts a test
+
+- `mpv_player.dart` passes `pauseUponEnteringBackgroundMode: false`. Without it
+  nothing else in F14 matters.
+- **`PlayerController.handleLifecycle` reports and no longer pauses**, and the
+  assertion in `player_session_test.dart` is inverted with it. The report is
+  still the only thing that runs before an OS kill, so it is still what the
+  user comes back to; the pause beside it was NF6 read as "playback stops and
+  resumes where it was", and F14 says the opposite. Three tests changed
+  deliberately, each with the reason written where the assertion is.
+- `PlayerPage` binds the session **out of band**: starting it is a platform
+  round trip and playback must not wait on one. The `_gone` arm is the case a
+  user creates by backing out during that round trip, and it is a test.
+
+### A rename the constitution forced, and it was the right one anyway
+
+`secret_tostring` reported four new violations at once — `MediaSessionCommand`,
+`MediaSessionHost`, `MediaSessionBinder`, `AudioServiceMediaSession` — because
+its heuristic is a class name containing `Session`. That is a false positive
+about secrets and a **true** positive about naming: in this codebase "session"
+already means the server's cookie (`SessionManager`, `SessionExpired`,
+`filefin_session`), and F14's is the OS's media session. The family is
+`NowPlaying*` and `TransportCommand` now. The gate was not touched.
+
+### The other two gates that had to be paid, and one that had to be earned
+
+- `file-size` rose to 5 when the binder took `player_page.dart` to 419 lines;
+  paid by splitting the five panels and banners into `player_panels.dart` as a
+  `part`. Back at **4**.
+- `comments` rose to 2 twice — once on `main.dart`, once on the freshly split
+  `player_page.dart` — and was paid both times by moving a rationale into the
+  `///` doc of the declaration it describes, which is what §2 asks for.
+- **Coverage found two lines nothing could reach**: `const ResumeCommand();`
+  and `const PauseCommand();`. Every production use is `const`, so the
+  constructors are canonicalised at compile time and never execute, and
+  `MAX_UNCOVERED` is 0. The test builds them **through a constructor tear-off**,
+  which is a real call rather than a constant — and is also the assertion that
+  matters, since these are the values the adapter hands across the port.
+
+### What was proven able to fail
+
+| Claim | Evidence |
+|---|---|
+| every new test file | all three failed to load before a line of F14 existed |
+| the transport follows the engine | asserted `playing: true` against a fake that had not emitted it — red, then the emit was added |
+| the manifest's `foregroundServiceType` | changed to `dataSync`: `F14: the foreground service is declared, typed, and reachable` red |
+| the plist's background modes | `fetch` added beside `audio`: `F14: the audio background mode, and nothing beside it` red |
+| both platform builds | `flutter build apk --debug` and `flutter build ios --no-codesign` green; merged manifest `minSdkVersion="26"` and `foregroundServiceType="mediaPlayback"`, built plist `MinimumOSVersion 15.0` and `UIBackgroundModes [audio]` — so C5 holds with `audio_service` and `flutter_cache_manager` in |
+| the app still starts | the debug APK installed on an emulator and launched under `AudioServiceActivity`: `topResumedActivity=…/com.ryanheise.audioservice.AudioServiceActivity`, no `AndroidRuntime` error, and a screenshot showing *"No server yet"* drawn. **This is the one thing a build cannot prove** — the manifest merger does not check that a class exists, so a wrong activity name merges cleanly and crashes on launch |
+
+**Seven mutants survived the first `just mutants` run, and the disposition
+splits three ways** — which is worth recording because "7 surviving" reads as
+seven missing assertions and only one of them was.
+
+- **One was a real hole**, and it is the one that would have shown: `dispose`'s
+  `controller.removeListener(_onChange)` could be deleted with the suite still
+  green. Two player routes in a row share one process-wide session, so a torn
+  down screen's binder publishing over a live one's is exactly what that line
+  prevents. It is a test now.
+- **Four were `Object.hash` argument swaps** on the two value types, and they
+  are the third and fourth instance of a case `mutation_rules.xml` already
+  documents at length for `PosterKey` and `SavedServer`: `hashCode`'s whole
+  contract is that equal objects hash equal, which every permutation of the
+  same fields satisfies. Excluded by exact text, with the reason and a
+  retirement condition, **and the count was checked to move** — 40 mutants to
+  32 — because this file already records that an exclusion matching nothing
+  looks identical to no exclusion at all.
+- **Two were `Duration maxAge = const Duration(days: 30)` defaults on methods
+  that always throw.** Not excluded: the literal was **removed**. A cache that
+  refuses everything has no meaningful maximum age, and a literal that means
+  nothing is better deleted than argued about.
+
+**The order matters and is the reason the exclusion is defensible.** The first
+version of `now_playing_test.dart` varied one field of each value type, and the
+run reported the other comparisons as survivors as well; the tests now vary
+every field one at a time in both directions, which is what leaves only the
+four that are genuinely unkillable. The exclusion is the residue after the
+assertions were fixed, not a substitute for fixing them.
+
+**A behaviour of `flutter_test` worth knowing, found by a test that should have
+passed.** `NowPlayingBinder.dispose` awaited `_commands.cancel()` before
+`session.clear()`, and under `flutter_test`'s `FakeAsync` that cancel does not
+settle across `pumpAndSettle()` — three extra pumps did not help — so the
+visible half of the teardown never ran while the same code passed in a plain
+`test()`. The cancel is unawaited now and `clear()` is the awaited half, which
+is also the right order: `clear()` is the part a user can see.
+
+---
+
 ## M6.R — the review, and the six product defects it found
 
 Three adversarial reviewers read M6. Everything below was **confirmed with a red
@@ -364,15 +922,21 @@ sealed classes. So the six new `LibraryApi` methods, `MediaRow`, `HomePage`,
 anything it can see: a public member with no consumer outside its own library is
 §5's other sentence, and nothing checks it.
 
-**Proposed, not built** — a `public_member_no_consumer` check with the same
-logical-line accumulation `dead_types` already has: collect `^\s*(Future<…>|
-void|…)\s+name(` declarations in `lib/` that are not `@override` and not
-private, and report any whose identifier appears in no other file under `lib/`
-or `test/`. Two known false-positive classes to answer first, which is why it is
-a proposal rather than a commit: an abstract port method is *declared* in one
-file and *implemented* in another with `@override`, and a freezed factory's name
-appears only inside generated code. Both are tractable; neither is a five-line
-grep, and a §5 check that cries wolf is one people route around.
+**Proposed here at M6.R and built at M7.8** — a `public_member_no_consumer`
+check with the same logical-line accumulation `dead_types` already has: collect
+method and getter declarations in `lib/` that are not `@override` and not
+private, and report any whose identifier appears in no other file. Two known
+false-positive classes to answer first, which is why it was a proposal rather
+than a commit: an abstract port method is *declared* in one file and
+*implemented* in another with `@override`, and a freezed factory's name appears
+only inside generated code. Both are tractable; neither is a five-line grep,
+and a §5 check that cries wolf is one people route around.
+
+**What M7.8 changed about this design, and it is the load-bearing part:** "no
+other file" counts consumers **under `lib/` only**. Written as proposed here —
+any other file, tests included — the check reports **zero** on this tree, and
+would have reported zero at the commit where `SessionManager.restore()` had a
+unit test, an integration test and no caller at all. See M7.8 above.
 
 ---
 
@@ -3510,6 +4074,55 @@ both-directions proof on real code.
 
 Said out loud, per CLAUDE.md. Silence would read as "there was none".
 
+### M7.6, M7.8 and M7.9 — what is left owing
+
+Said out loud, per CLAUDE.md. Silence would read as "there was none".
+
+- **`FILEFIN_ACCEPT_NEW_DEBT=1` was used once**, to introduce
+  `public_member_no_consumer` at its measured baseline of **9**. Every one of
+  the nine is listed above with the class it belongs to. Two of them
+  (`hlsIndex`, `hlsSegment`) carry their own justification in their doc
+  comment; one (`clearProgress`) is the strongest candidate for deletion in the
+  tree; five would be honestly annotated `@visibleForTesting`, which would take
+  the count to four; one (`buildApp`) is the check being stricter than §5's own
+  words, at file granularity rather than library granularity. The ratchet stops
+  a tenth.
+- **F14's user-facing half is unverified, and it is the biggest single thing
+  this milestone cannot claim.** Everything up to `NowPlayingHost` is gated,
+  and the Android half was measured working — against a **scratch app**, not
+  against `apps/mobile`. What no host can answer is whether the shipped iOS
+  libmpv keeps the sound on (row L), whether Android's foreground service
+  survives Doze (row M), and whether the controls appear with the right
+  metadata and reach the player (row N). The real app was installed on an
+  emulator, **launched** under `AudioServiceActivity` and drew its empty state,
+  which closes the one thing a build cannot prove — that the activity class
+  resolves — and nothing more.
+- **The device arm of E-6 was attempted and refused.** `devicectl` installed
+  the spike onto a real iPhone; the launch failed with
+  `FBSOpenApplicationErrorDomain error 7 … the device was not, or could not be,
+  unlocked`. The measurement needs a person to unlock a phone, and that is row
+  L's first sentence.
+- **R2 is declined rather than retired, and R3 only partly retired.** Neither is
+  a tick. `docs/risks.md` carries the measurement behind each, and both spikes
+  are re-runnable.
+- **`ui { theme, subtitleLanguage }` and `cache/posters/` are dropped, not
+  built.** Each is now in SPEC §11 with a reason and a retirement condition,
+  which is what the audit found missing. The honest cost of the first is that
+  the app is light in a dark room.
+- **The E-10 consequence is recorded and not mitigated.** Two viewers of one
+  transcoding file share an encoder; the client cannot see it and has no
+  parameter to change it. What is still unmeasured is how long the viewer who
+  did not seek actually stalls, which needs a long seeded item and two devices.
+- **CI still has never executed.** `git remote -v` is empty and inventing a
+  remote is the user's call, not an implementer's. E-9 — running the workflow's
+  steps in an `ubuntu:24.04` container — was **not done**; it is the cheapest
+  thing anyone could do next to the largest unexercised claim in the tree.
+- **The picker still has no confirmation on removal**, carried from M7.4.
+- `Podfile.lock` and the CocoaPods integration `flutter build ios` writes into
+  `Runner.xcodeproj` are **not committed**, as in every milestone before this
+  one. `flutter build ios` regenerates both; committing them would be a change
+  of convention, and the last milestone is the wrong place for one.
+
 ### M7.4 and M7.7 — what was left owing
 
 - **The picker has no confirmation on removal.** A tap on the bin forgets a
@@ -3527,10 +4140,10 @@ Said out loud, per CLAUDE.md. Silence would read as "there was none".
   stops turning a green tree red, and — the point — stops teaching everyone to
   re-run on red. It is narrow enough that a crash in any other file, or a
   second crash in the same one, still fails. Backlog row H carries it.
-- **`E-10` (two clients on one file), `M7.6`, `M7.8` and `M7.9` were not
-  started**, and `SPEC.md` is therefore unamended: the picker exists in code
-  and §10's M7 row still reads as a plan. M7.9 owns that, and it also owes this
-  file the write-up of M7.0–M7.3 and M7.5.
+- **`E-10`, `M7.6`, `M7.8` and `M7.9` were not started at the time this
+  section was written.** All four landed afterwards and are above; `SPEC.md` is
+  amended, §10's M7 row records the exit criterion, and the write-ups this file
+  owed for M7.0–M7.3 and M7.5 are paid.
 
 ### Ten of fourteen gates measure zero Dart today
 

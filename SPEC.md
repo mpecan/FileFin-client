@@ -4,7 +4,7 @@ A mobile client for [FileFin](https://github.com/xuedi/FileFin), a
 filesystem-first self-hosted media server (Go backend, Svelte web UI, EUPL
 v1.2).
 
-**Status:** M0-M6 complete. The workspace, every quality gate, the
+**Status:** M0-M7 complete. The workspace, every quality gate, the
 git hooks and CI exist; `docs/server-api.md` records the contract and
 `test/fixtures/` holds captured real payloads. `packages/filefin_core` holds
 the wire models, the extension-type IDs, URL construction, the resume engine and
@@ -12,8 +12,12 @@ the wire models, the extension-type IDs, URL construction, the resume engine and
 typed endpoints, the cookie jar, F3's transparent 401 retry and F15's
 certificate pinning, with `just it` running it against a real `filefin` binary.
 `apps/mobile` holds the Flutter app: the shell, F1's add-server flow, F2's
-sign-in, and F4's category tree, virtualised poster grid and detail view.
-`STATE.md` is the milestone-by-milestone record, and
+sign-in and its cold-start restore, F4's category tree, virtualised poster grid
+and detail view, F5's search, F6's home rows, F7–F9's player, F10's writes,
+F11's server picker, F14's lock-screen transport and F15's accept-and-pin
+dialog. `STATE.md` is the milestone-by-milestone record, its M7 section carries
+the **full-spec audit** — every F-number and every §7 line, built or dropped
+with a reason — and
 `docs/verification-backlog.md` records every claim no test in this repository
 can check, each with the experiment that would settle it.
 
@@ -183,8 +187,19 @@ handler (verified: no `Query().Get` in `playback.go`). So the server offers
 exactly zero playback levers. This is what defeats §5.4's network switch.
 
 HLS is a VOD playlist listing every segment with `#EXT-X-ENDLIST` up front,
-backed by one repositionable ffmpeg run per session — seeking works, at the
-cost of a server-side transcode.
+backed by one repositionable ffmpeg run **keyed on the file, not on the
+viewer** — seeking works, at the cost of a server-side transcode.
+
+**"Per session" was this line's original wording and it was never defined;
+M7.6/E-10 defined it.** `internal/server/playback.go` keys the transcode
+session as `{media id}/{file index}` with no user and no cookie in it, and
+`internal/transcode/hls.go` holds one `run *ffmpegRun` per key, "replaced on a
+seek relaunch" (:66). So two people watching the same file share one encoder
+and one seek head: whoever seeks past the encode head relaunches it, and the
+other one stalls until it comes back. There is no parameter on the route and
+nothing this client can do about it — it is recorded so the symptom is
+recognisable. `docs/verification-backlog.md` row D and
+`tool/spikes/e10_two_clients_one_file.sh`.
 
 Subtitles: `GET .../file/{n}/sub/{k}` returns the k-th **sidecar** converted
 SRT→WebVTT per request. Embedded tracks are externalised at import time, not
@@ -295,7 +310,16 @@ filesystem truth, not cache. It survives a server cache rebuild.
 - **F13.** Cellular guard: before playing over a metered connection, if the
   file exceeds a configurable size threshold, warn with the actual size and
   require confirmation. Per-server "wifi only" setting. (§5.4)
-- **F14.** Background audio and lock-screen transport controls. (R2/R3)
+- **F14.** Background audio and lock-screen transport controls. (R3; **R2's
+  PiP is declined**, §8 and §11.)
+
+  **Two halves with very different verifiability, and the split is the design.**
+  Everything up to `NowPlayingHost` is ours and is gated: what is published on
+  open and on a file advance, what a remote button does to the player, and that
+  the Android manifest and the iOS plist carry what E-6 measured they need.
+  Whether the OS then drew a control, and whether a sound came out of a
+  backgrounded phone, has no headless representation at all —
+  `docs/verification-backlog.md` rows L, M and N, each with the procedure.
 - **F15.** Trust-on-first-use TLS. When a server's certificate is not trusted
   by the OS (self-signed or private CA — the common case for self-hosted),
   show its SHA-256 fingerprint, let the user accept it, and **pin** it. A
@@ -312,8 +336,21 @@ filesystem truth, not cache. It survives a server cache rebuild.
 - **NF3.** Seek responds within 500ms on direct play.
 - **NF4.** No credential reaches a log, a `toString()`, or unencrypted
   storage (CLAUDE.md §9).
-- **NF5.** Every request has a timeout; every in-flight operation is
+- **NF5.** Every request has a timeout, and every in-flight **read** is
   cancellable. A hung server never hangs the UI.
+
+  **A write in flight is deliberately allowed to finish, and the M7.9 audit is
+  what corrected this line.** It said "every in-flight operation", which five
+  call sites contradict — the four F10 writes in `browse/watch_actions.dart`
+  and `playback/progress_reporter.dart`'s report. Every one of them is right
+  and the sentence was wrong. Cancelling a `POST` that has already gone leaves
+  the server's state unknown to a client whose whole optimistic-update design
+  (F9, F10) is keyed on the write's answer; and `PlayerController.dispose`
+  fires the final `stop` report **and** cancels its `CancelToken` in the same
+  method, so a reporter sharing that token would cancel the one report NF6
+  exists to make. The port still takes a `CancelToken` on every method
+  (`library_api.dart:20`) — the capability is uniform, the *use* is not, and it
+  is the reads that use it.
 - **NF6.** Playback survives app backgrounding and returns to the same
   position.
 
@@ -345,7 +382,7 @@ filesystem truth, not cache. It survives a server cache rebuild.
 │                                             │  secure storage, connectivity
 ├─────────────────────────────────────────────┤
 │ filefin_api      (dio + cookie jar)         │  auth, 401-retry (F3),
-│                                             │  typed endpoints, poster cache
+│                                             │  typed endpoints, TLS pinning
 ├─────────────────────────────────────────────┤
 │ filefin_core     (pure Dart, no I/O)        │  models, extension-type IDs,
 │                                             │  URL building, resume rules,
@@ -439,19 +476,35 @@ written until it has them.
 
 ## 7. Data model (client-side)
 
-Nothing durable but settings, credentials, and a poster cache. Specifically
-**no local mirror of the library**: L2 means responses can be large, but the
-server is the truth and a stale mirror is worse than a refetch.
+Nothing durable but settings and credentials. Specifically **no local mirror of
+the library**: L2 means responses can be large, but the server is the truth and
+a stale mirror is worse than a refetch.
 
 ```
-settings.json      servers[] { id, name, baseUrl, lastUser, wifiOnly }
-                   ui { theme, subtitleLanguage }
+settings.json      servers[] { id, name, baseUrl, lastUser, wifiOnly,
+                               allowUnverifiedPlayback }
+                   selectedServerId
                    playback { progressIntervalSecs, meteredWarnBytes }
 secure store       filefin/{serverId}/session   → cookie value
                    filefin/{serverId}/password  → for silent re-auth (F2)
                    filefin/{serverId}/certpin   → accepted SHA-256 (F15)
-cache/posters/     content-addressed, LRU-bounded
 ```
+
+**Three lines that used to be here are gone, and the M7.9 audit is why each of
+them went** — a spec that lists what does not exist is worse than one that is
+short, because a reader cannot tell the two apart.
+
+- **`allowUnverifiedPlayback` was BUILT and never written down.** It is D10 and
+  it arrived at M4; §7 had said five fields since M0.
+- **`selectedServerId` arrived at M7.3** with F2's cold start and F11's picker.
+- **`ui { theme, subtitleLanguage }` was never built and, until M7.9, was
+  nowhere recorded as dropped** — not in §11, not in §13, not in `STATE.md`,
+  not in the backlog. It is now **deferred, in §11, with a reason**.
+- **`cache/posters/` was never built either**, and that one *was* recorded, in
+  `browse/poster_image_provider.dart` and `STATE.md`. It is in §11 now so the
+  record is where a reader looks first. What was NOT true anywhere is §5.1's
+  diagram and `docs/architecture.md`'s, which both said `filefin_api` holds a
+  poster cache. It never did; both are corrected.
 
 ---
 
@@ -488,12 +541,31 @@ Each gets a spike before the milestone that depends on it. Tracked in
   cookie. The row now names `HttpClient.connectionFactory`, which is the only
   hook that sees the leaf before a request byte is written. `docs/risks.md`
   carries the full measurement, before and after, in bytes.
-- **R2 — iOS Picture-in-Picture.** iOS PiP is built around `AVPlayerLayer` /
-  `AVSampleBufferDisplayLayer`; libmpv renders its own surface. PiP may be
-  unavailable or need custom platform work. Affects F14. *Spike before M7.*
-- **R3 — Lock-screen / MediaSession controls.** `media_kit` is a playback
-  engine, not a media-session integration. Establish what F14 actually costs
-  on each platform. *Spike before M7.*
+- **R2 — iOS Picture-in-Picture. ❌ DECLINED 2026-08-10, not retired.** Spiked
+  at M7.6/E-7 as a static read, because the answer is decided by what is
+  `private`. `media_kit_video` 2.0.1's decoded frame **is** a 32BGRA
+  `CVPixelBuffer` and `copyPixelBuffer()` is public — but `VideoOutput.texture`,
+  `VideoOutputManager.videoOutputs` and `MediaKitVideoPlugin.videoOutputManager`
+  are all private, and the package's only public entry point is
+  `register(with:)`. No instance of the texture is reachable, so PiP needs a
+  **fork**, plus a `CMSampleBuffer` timing layer and a contest with Flutter over
+  a three-deep buffer pool. PiP is not in F14's wording and §10's M7 row is
+  corrected to match. Harness: `tool/spikes/e7_ios_pip_reachability.sh`, which
+  asserts all seven facts in their own direction and was seen to fail.
+- **R3 — Lock-screen / MediaSession controls. ⚠️ PARTLY RETIRED 2026-08-10.**
+  Spiked at M7.6/E-6 against a scratch app on a real Android emulator and the
+  iOS simulator, five arms. What it cost: `audio_service` on Android and one
+  `Info.plist` key on iOS. What it found first was **a client default rather
+  than an OS behaviour** — `Video.pauseUponEnteringBackgroundMode` defaults to
+  `true` and pauses the player itself, which every arm reads as "backgrounding
+  stops playback" until it is turned off. With it off, Android decodes 1:1 with
+  the wall clock for a full minute backgrounded and the OS **mutes** it
+  (`mutedState:opControlAudio`) unless a foreground service and a `MediaSession`
+  are running; iOS suspends the process without `UIBackgroundModes: audio` and
+  does not with it, and libmpv sets `AVAudioSessionCategoryPlayback` itself.
+  **Not retired**, because the shipped iOS libmpv's *audibility* and Android's
+  behaviour under Doze are device-only — `docs/verification-backlog.md` rows L
+  and M. Harness: `tool/spikes/e6_background_playback.sh`.
 - **R4 — F-Droid and prebuilt binaries.** C6 removes the App Store, which
   defuses the mpv GPL/LGPL question that would otherwise have been a hard
   blocker. It does not defuse F-Droid: their inclusion policy requires
@@ -551,13 +623,58 @@ Each gets a spike before the milestone that depends on it. Tracked in
 | **M4** | Playback, direct path (F7, F8, F9) + cellular guard (F13) | **Met, and the criterion's "where the server allows" turned out to be load-bearing.** An MKV plays via direct bytes exactly when the cache row has been probed: `fileNeedsTranscode` (`internal/server/playback.go:78`) consults the probed container and codecs only under `f.Container != "" && f.VideoCodec != ""` and otherwise falls back to `transcode.NeedsTranscode(f.Ext)`, whose direct-play set is `{.mp4, .webm, .m4v}`. `tool/testserver/seed.sh` rebuilds the cache and never probes, so every seeded row has empty format columns and every verdict taken from the seeded library is that fallback. `tool/spikes/e5_mkv_direct_play.sh` runs both arms over one VP9/Opus `.mkv`: unprobed → `transcode:true`, **307 to HLS**; after `POST /api/admin/probe/scan` fills the row with `matroska,webm` / `vp9` / `opus` → `transcode:false`, **200 with `Accept-Ranges: bytes`** and `Content-Type: video/x-matroska`. §3.4 is therefore correct as written. **An earlier draft of this row said the criterion was unsatisfiable and that the extension decides — that was arm 1 read as the rule, and it is corrected here rather than quietly dropped.** The gated half is the seeded H.264 MP4, which plays end to end under `just it` with resume, progress reporting, subtitle and audio selection and the cellular guard; the MKV half is the spike, because seeding a permanently probed item churns the category fixtures for no new client behaviour (STATE.md's M4 section says so) |
 | **M5** | HLS path + F12 messaging | **Met, and playback itself needed no client change at all** — `PlaybackRequest.url` was already `api.fileUrl(...)`, libmpv follows the `307` and decodes the HLS the server produces, so M5 is one error variant, one bounded pre-flight, one `if`, one panel and the tests. Measured end to end under `just it`: the seeded HEVC show plays through the `307` with mpv reporting the playlist's own `3.023 s`, an audio track, a resume offset honoured on a VOD playlist (`Media(start:)` works — nothing had ever tested it), a **backwards** seek, and completion within 500 ms of the duration with the counters reset immediately before. Against a `transcodeEnabled: false` server a real `PlayerController` names transcoding as the cause and **never opens the engine**. The 415 a client can receive is the **file** route's `transcoding disabled`; the hls route's `not transcodable` is unreachable from here (F12) |
 | **M6** | Search, home rows, favourite/rating/watched (F5, F6, F10) | `just check` 0 AND `just it` 0. The POST/DELETE watched distinction proven **behaviourally against the real binary in both directions**: after `POST {"watched":false}` the item is back in `continue` with its pointer intact and the detail offers *Continue*; after `DELETE` it is in no row and offers *Play*. Search exercised live for every field the client can send, including both numeric scopes' fail-closed behaviour. Home rows and search results virtualised on M3's NF2 proxies over a 5000-item list. **MET.** `just check` and `just it` both exit 0 (86 integration tests, floors 56 / 30). The distinction is proven on the detail screen and, from M6.8, against the real binary in `watch_state_test.dart` — six ordered steps, `POST {"watched":false}` returning the item to `continue` at 0:45 and `DELETE` leaving it in no row at `0/0`, each compared against `applyWatchState`'s prediction. `search_test.dart` exercises all eleven fields live plus both numeric scopes' fail-closed behaviour. Home rows and search results are virtualised on M3's NF2 proxies — a bounded live-widget count and a `SliverChildBuilderDelegate` over 500 and 2000 items — which is the same evidence F4's grid has and, like it, not a frame-timing measurement (backlog row 1) |
-| **M7** | Multi-server + secure storage (F11); background audio, lock screen, PiP (F14) after R2/R3 | |
+| **M7** | Multi-server + secure storage (F11); background audio and lock-screen controls (F14) after R2/R3; the full-spec audit | **MET.** `just check` 0 and `just it` 0 on a machine with the binary. F2's persistence half is a `flutter_secure_storage` decorator over the in-memory cache, namespaced per `ServerId` and proven not to leak between two of them; a cold start restores a session and, when the server has forgotten it, F3 renews from the stored password with no prompt — proven against the real binary, and against **two** real binaries with two accounts. F11's picker adds, switches and removes, and removal deletes all three secrets before it touches `settings.json`. **F15's accept-and-pin loop reached the app for the first time** — until M7.5 `main.dart` never passed `pin:` and `SecretKind.certificatePin` had no production reader or writer, which no document had recorded. F14 is background audio and a lock-screen transport behind a `NowPlayingHost` port, with `audio_service` on the far side of it; **PiP is dropped from this row** because R2 declined it and F14 never asked for it. What no host can close is in `docs/verification-backlog.md` rows J, K, L, M and N, each with its procedure |
 | **M8+** | Optional: direct-play capability probe + upstream PR; offline downloads | |
 
 ---
 
 ## 11. Deferred
 
+- **A UI theme setting, and a preferred subtitle language.** §7 listed
+  `ui { theme, subtitleLanguage }` from M0 and no milestone ever built either;
+  the M7.9 audit found neither recorded as dropped anywhere, which is how a gap
+  survives seven milestones. Both are dropped **as decisions** rather than
+  discovered again:
+  - *theme* — no F-requirement asks for one. The app seeds a single `ThemeData`
+    and `app.dart` hard-codes it. Building the setting is a settings row, a
+    `ThemeMode` in `settings.json` and a `MaterialApp.themeMode`, which is
+    small; what it is not is anything M7 needs (§1). **Its retirement condition
+    is a user asking for it**, and the honest statement of the cost of not
+    having it is that the app is light in a dark room.
+  - *subtitleLanguage* — the identifier's only occurrence in the whole tree was
+    this spec. Subtitle selection is manual and session-scoped
+    (`player_controls.dart`), and `PlayerController._open` already applies a
+    default: the first sidecar the server lists. A language preference would
+    change that default to a match against `SubtitleInfo.lang`, which is real
+    but is F7 gold-plating rather than F7.
+- **`cache/posters/`, the LRU disk cache.** Dropped at M3 and recorded then in
+  `browse/poster_image_provider.dart` and `STATE.md`; recorded HERE at M7.9 so
+  §7 and §11 agree. Flutter's in-memory `ImageCache` bounds the problem the
+  disk cache existed for; whether it really does over a 5000-item library with
+  real bytes is `docs/verification-backlog.md` row 7, which is the condition
+  that would un-defer it.
+- **iOS Picture-in-Picture (R2).** Declined at M7.6 with the measurement that
+  declined it — `media_kit_video` seals every route to the decoded frame, so
+  PiP needs a fork. It was never in F14's wording; it appeared only in §10's M7
+  row, which is corrected. `docs/risks.md` R2 carries the seven facts and
+  `tool/spikes/e7_ios_pip_reachability.sh` re-checks them.
+- **F10's revert reinstates the detail captured at TAP time, so it can undo a
+  playback fold.** Carried from M6 into this list at M7.8 rather than left in
+  `STATE.md`, because a released project stops reading a milestone log. When a
+  watch write fails, `WatchActions` puts back field-for-field what was on
+  screen when the user tapped — which is asserted by test and is what makes the
+  revert predictable — so a progress report that landed in between is undone
+  with it. Closing it means giving `WatchActions` a reader for the
+  currently-published detail and changing the revert to "the inverse state
+  applied to whatever is on screen now", which is a design change with its own
+  trade-offs on a feature that is otherwise correct.
+- **The reload a back gesture triggers can overtake the write that caused it.**
+  Same treatment, same reason. `wroteOrWriting` (`browse/watch_actions.dart`)
+  is strictly better than what it replaced and its own doc names the residual:
+  the detail route can pop while a write is still in flight, and the home rows
+  then re-read state the server has not stored yet. Closing it means holding
+  the back gesture until the write answers, which is a worse trade for the
+  person holding the phone.
 - Offline downloads and a download queue.
 - Embedded **subtitle** tracks libmpv can see but the API does not list.
   **Embedded AUDIO is no longer deferred — it is used, because nothing else can
@@ -610,6 +727,8 @@ be reversed *here first*, then in the sections it touches.
 | D8 | Direct APK + TestFlight/sideload; no app store | Removes store review from the release path, and defuses the mpv GPL blocker | C6, R4 |
 | D10 | **TLS playback is a per-server choice that DEFAULTS TO REFUSE** | libmpv verifies no certificate by default — measured both directions at M4.0 (`docs/risks.md` R6) — so F15's pin does not reach the playback socket. `plainHttp` plays, `osTrustedTls` plays with `tls-verify=yes`, `pinnedTls` is refused unless `SavedServer.allowUnverifiedPlayback` is on, and when it is on a **persistent banner** names exactly what is unprotected: the session cookie may reach a peer whose certificate was never checked | F15, §5.3, `decide()`, M4 |
 | D9 | App state is a hand-written `ChangeNotifier` plus one generic `AsyncController<T>`, `AsyncView<T>` and `InheritedWidget`. No state-management package | M3's real screens are three, each one fetch, one cancel-on-dispose, one error render. A framework's rent at that size is unpaid surface (§1, §5) — and, less obviously, it would SHRINK what `just mutants` reaches, because framework-internal branching is never in our diff. Retirement condition at M7 in `docs/architecture.md` | §6, M3 |
+
+| D11 | **CLAUDE.md §13 — "no backward compatibility before release" — retires at the first TAGGED RELEASE, and M7 is the last milestone that may change a stored format freely** | The condition was "the first release", which is a date nobody can look up mid-milestone. M7.3 and M7.4 both changed `settings.json` (`selectedServerId`, and `servers[]` gaining a sixth field at M4), and retiring the rule *inside* M7 would have put a migration burden on M7's own steps for installs that do not exist. Whoever cuts the tag owns the switch: from that commit on, a change to `settings.json`, to the secure-store key layout, or to any cache schema needs a migration and a lenient decoder, and `SettingsStore`'s deliberate discard-on-mismatch (`servers/settings.dart`) becomes a defect rather than a design | CLAUDE.md §13, §7, `SettingsStore`, `SecretStore` |
 
 ### Still open
 

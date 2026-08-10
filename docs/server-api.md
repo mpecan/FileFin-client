@@ -644,7 +644,12 @@ Handler `handleHLSPlaylist`, `server/playback.go:160`; the gate is
 
 `Content-Type: application/vnd.apple.mpegurl`. The playlist is a **VOD**
 playlist listing every segment with `#EXT-X-ENDLIST` up front, so seeking works
-— at the cost of a server-side transcode repositioning one ffmpeg run.
+— at the cost of a server-side transcode repositioning one ffmpeg run. **That
+run is keyed on `{media id}/{file index}`** and on nothing else (measured from
+upstream at M7.6/E-10 — `internal/server/playback.go`,
+`internal/transcode/hls.go:54,66,240,281`), so a second viewer of the same file
+joins the first viewer's encoder rather than getting one of their own.
+`docs/verification-backlog.md` row D.
 
 **The symmetric half of the constraint.** `playback.go:153-155` returns
 **`415 not transcodable`** when transcoding is off **or the file does not need

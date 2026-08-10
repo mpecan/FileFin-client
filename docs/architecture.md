@@ -15,7 +15,7 @@ covering half the tree.
 │                                             │  secure storage, connectivity
 ├─────────────────────────────────────────────┤
 │ filefin_api      (dio + cookie jar)         │  auth, 401-retry (F3),
-│                                             │  typed endpoints, poster cache
+│                                             │  typed endpoints, TLS pinning
 ├─────────────────────────────────────────────┤
 │ filefin_core     (pure Dart, no I/O)        │  models, extension-type IDs,
 │                                             │  URL building, resume rules,
@@ -122,7 +122,8 @@ gates can never disagree about which files count:
 | `constitution` / `dead_types` | `dart_sources` | a variant constructed only by a test still has a consumer; §5 asks for *a* consumer, and a test is one. |
 | `constitution` / `undocumented_endpoint` | `dart_lib_sources` | a path literal in a test fixture helper is not a call we make. |
 | `constitution` / `secret_tostring` | `dart_lib_sources` | §9 is about what ships and what logs. |
-| `constitution` / `app_no_raw_http` | `apps/*/lib` **only**; matches dio/http imports, `HttpClient(`, `HttpOverrides`, `IOClient`, **and `NetworkImage` / `Image.network` / `FadeInImage.*etwork`**, excluding comment lines | added at M3. `filefin_api` cannot satisfy it — dio and `HttpClient` are its entire job — so `dart_lib_sources` would report the layer that is behaving correctly. Tests are out of scope too: `test_live/` sets `HttpOverrides.global = null` to get real sockets back from `flutter_test`'s binding, which is the right thing to do there. |
+| `constitution` / `public_member_no_consumer` | declarations from `dart_lib_sources`; **consumers counted in `dart_lib_sources` too, so the test suite does not count** | added at M7.8, and the scope is the whole point. With tests counting it reports **zero** on this tree — including at the commit where `SessionManager.restore()` had a unit test, an integration test and no caller, which is the defect it was designed for (M7.0/E-1). What it measures is therefore "shipping code uses this", §1 and §5 read together. Exempt: any name carrying `@override` anywhere (a port method is declared in one file and implemented in another), any file with a `part '*.g.dart'` / `'*.freezed.dart'` directive (a freezed factory's name lives only in generated code), `@visibleForTesting`, and Flutter's own entry points. **Baseline 9, not 0**, and STATE.md's M7.8 section classifies every one. |
+| `constitution` / `app_no_raw_http` | `apps/*/lib` **only**; matches dio/http imports, `HttpClient(`, `HttpOverrides`, `IOClient`, **`NetworkImage` / `Image.network` / `FadeInImage.*etwork`**, and — outside their one adapter each — `package:media_kit` and `package:audio_service`, excluding comment lines | added at M3. `filefin_api` cannot satisfy it — dio and `HttpClient` are its entire job — so `dart_lib_sources` would report the layer that is behaving correctly. Tests are out of scope too: `test_live/` sets `HttpOverrides.global = null` to get real sockets back from `flutter_test`'s binding, which is the right thing to do there. `audio_service` joined the confinement at M7.6: it opens no socket, but its foreground service's callbacks reach Dart from native code, which is a second entry into the app no widget should be able to open. |
 | `deps` | every `pubspec.yaml`, sources = that package's `lib bin test integration_test test_live tool example` | a dev-dependency used only by tests is used. `integration_test` joined at M2: without it an undeclared import in an integration suite was reported by nothing, and Dart resolves one anyway through a sibling workspace member — which is exactly how an undeclared dependency survives to break a clean checkout. Proven at M2.7: the same undeclared import gave exit 0 before and 1 after. `test_live` joined at M3.9 for the identical reason in a new location, and was proven the same way. |
 | `dupes` | `packages/` + `apps/`, `*.dart`, generated excluded | generated code is duplicative by construction and nobody can refactor it. |
 | `coverage` | `report-on` each package's `lib/`, `--check-ignore`, cross-checked against `dart_lib_sources` | test code covering itself is not evidence. The cross-check is what puts an unimported file in the denominator: `dart test --coverage` reports only libraries the tests loaded, so without it an untested file is absent from the ratio rather than 0%. `--check-ignore` is what keeps generated freezed boilerplate out of it — see below. |
@@ -445,6 +446,18 @@ the home rows are stale" — travels as the detail route's `bool` result and a
 listenable, no second state system, four lines. The tab that has not been
 selected does not exist yet, so there is nothing for a bus to notify anyway.
 
+**M7 answers the FIRST clause, and the condition is now spent.** Per-server
+scoping is what F11 needed, and it needed no scope graph: a switch is "close
+one `LibraryApi`, build another, rebuild `LibraryShell` under a
+`ValueKey(serverId)`" — a `setState` in `_HomeRouteState` over the one
+`InheritedWidget` that has been there since M3. The `ValueKey` was the only
+part that was a guess, and deleting it turns exactly one test red, so it is
+measured. F14 then added a **second port** to the same `AppDependencies` and a
+second per-screen observer, and needed nothing new either. So both clauses of
+the retirement condition are answered no against real code rather than in the
+abstract, and **D9 does not roll forward to a milestone that does not exist**:
+it is decided.
+
 The one thing M6 did add is a fourth `AsyncController` shape —
 `AsyncController<SearchOutcome>` where the outcome carries its own query — and
 it needed no change to the controller at all. `load()` already cancels and
@@ -495,6 +508,48 @@ Two facts measured at M3.0 before any of this was written: the shape really is
 `SF:lib/…`, and this path really does honour `// coverage:ignore-file` — so
 `run-coverage.sh`'s refusal of that comment in hand-written lib source protects
 the app exactly as it protects the packages.
+
+## The now-playing seam (`NowPlayingHost`, M7.6)
+
+F14's platform surfaces — Android's `MediaSession` plus the foreground service
+that stops the OS muting a backgrounded player, iOS's `MPNowPlayingInfoCenter`
+and `MPRemoteCommandCenter` — have **no headless representation at all**. So
+they get the same treatment libmpv got, and for a reason that was measured
+rather than assumed: `audio_service` ships
+`AudioServicePlatform.instance`, a settable platform interface of exactly the
+kind `PathProviderPlatform` gives, so both directions across the boundary are
+assertable in an ordinary `flutter test`.
+
+```
+PlayerController    unchanged: it does not know a media session exists
+      ^ |
+      | v
+NowPlayingBinder    observes one controller, decides nothing. Publishes on open
+      |             and on every file advance; de-duplicates transport updates
+      v
+NowPlayingHost      OUR vocabulary: NowPlayingItem, NowPlayingTransport,
+      |             TransportCommand. No audio_service type crosses.
+      v
+AudioServiceNowPlaying  translation only, over a FileFinAudioHandler
+```
+
+**Why the binder is not the controller.** A media session is a *second*
+consumer of the state the screen already draws, and putting a platform concern
+inside the state machine F9's progress reports are keyed on is where every one
+of M4.R's data-corruption defects lived. The binder observes and publishes; the
+controller is untouched apart from `handleLifecycle` no longer pausing.
+
+**Why the family is called `NowPlaying` and not `MediaSession`.** In this
+codebase "session" already means the server's cookie — `SessionManager`,
+`SessionExpired`, `filefin_session`, `SecretKind.session` — and
+`tool/check-constitution.sh`'s `secret_tostring` heuristic keys on exactly that
+word. Four `MediaSession*` classes tripped it at once. The heuristic was right
+about the ambiguity even though it was wrong about the secret, and renaming was
+cheaper and clearer than teaching the gate a new exception.
+
+**The two things this seam cannot prove**, stated here rather than discovered:
+that the OS drew a control, and that a sound came out. Both are
+`docs/verification-backlog.md` rows L, M and N, each with the device procedure.
 
 ## The playback seam (`PlaybackHost`, M4)
 
