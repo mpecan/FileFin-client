@@ -59,9 +59,15 @@ class SettingsStore {
   /// **This one throws, and the asymmetry with [read] is the point.** A file we
   /// cannot read is answerable — start over with nothing (§13). A file we
   /// cannot write has no answer at all: the server the user just added is gone
-  /// at the next launch, and there is nothing on screen to look at. The two
-  /// screens that call this catch [FileSystemException] and say so through
-  /// [describeSettingsWriteFailure].
+  /// at the next launch, and there is nothing on screen to look at.
+  ///
+  /// **All five call sites catch [FileSystemException] and say so through
+  /// [describeSettingsWriteFailure].** This used to read "the two screens that
+  /// call this", and by M7.4 it was three screens and two methods on
+  /// `HomeRoute` — one of which, `_switchTo`, is invoked `unawaited(...)` with
+  /// no `runZonedGuarded` anywhere, so its throw went nowhere at all and the
+  /// user was told nothing. A comment that counts its callers is a comment
+  /// that decays; this one names the rule instead.
   void write(AppSettings settings) {
     directory.createSync(recursive: true);
     file.writeAsStringSync(jsonEncode(settings.toJson()));

@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
+import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/scope.dart';
+import 'package:filefin_mobile/src/servers/server_api.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -54,7 +56,8 @@ class ServerListPage extends StatefulWidget {
 class _ServerListPageState extends State<ServerListPage> {
   String? _problem;
 
-  /// Forgets [server] completely: its three secrets, then its settings entry.
+  /// Forgets [server] completely: the session on the server, then its three
+  /// secrets, then its settings entry.
   ///
   /// **The secrets go first, and the order is the §9 decision.** If the
   /// settings write then fails, the entry survives with no credentials — the
@@ -62,7 +65,17 @@ class _ServerListPageState extends State<ServerListPage> {
   /// password in the Keychain for a server no screen can reach, keyed by an id
   /// nothing holds any more, with nothing left that could ever delete it.
   /// Losing a credential is the safe direction.
+  ///
+  /// **`widget.onRemoved` is called whether or not THIS screen survived the
+  /// awaits above, and that is the fix rather than an oversight.** There are
+  /// four real `await`s in front of the write; pop the picker during them and
+  /// the write still committed while the shell never heard about it, so the
+  /// app went on browsing a server `settings.json` no longer holds — and
+  /// `SignInPage` `upsert`s it straight back at the next sign-in, which is a
+  /// removed server reappearing. The guard belongs on `setState`, which is
+  /// about this widget, not on the callback, which is about the shell's.
   Future<void> _remove(AppDependencies deps, SavedServer server) async {
+    final unanswered = await _endSession(deps, server);
     for (final kind in SecretKind.values) {
       await deps.secrets.delete(server.id, kind);
     }
@@ -74,9 +87,36 @@ class _ServerListPageState extends State<ServerListPage> {
       }
       return;
     }
-    if (!mounted) return;
-    setState(() => _problem = null);
     widget.onRemoved(server);
+    if (mounted) setState(() => _problem = unanswered);
+  }
+
+  /// Ends the session on the server while the cookie that proves it still
+  /// exists, and answers with what to say when it could not be reached.
+  ///
+  /// **Removal used to leave the session alive with nothing left to end it.**
+  /// `logout()` needs the session secret this method is about to delete, so it
+  /// has to happen first or not at all — and "not at all" means a server that
+  /// keeps a live session for an account the phone has forgotten, which is
+  /// precisely what F2's sign-out exists to prevent.
+  ///
+  /// A server that does not answer is not a reason to refuse the removal:
+  /// `SessionManager.logout`'s `finally` has already cleared the jar and both
+  /// secrets by the time it throws, and someone whose NAS is unplugged must
+  /// still be able to forget it.
+  Future<String?> _endSession(AppDependencies deps, SavedServer server) async {
+    final api = await apiForServer(deps, server);
+    try {
+      await api.logout();
+      return null;
+    } on FileFinApiException catch (error) {
+      // Returned rather than shown here, because [_remove] ends by setting
+      // `_problem` and would otherwise clear it a moment later.
+      return '${describeApiError(error).title}. This server was removed '
+          'anyway; its session there may outlive it.';
+    } finally {
+      api.close();
+    }
   }
 
   @override

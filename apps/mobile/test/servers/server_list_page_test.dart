@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:filefin_api/filefin_api.dart';
@@ -48,16 +49,30 @@ void main() {
     void Function(SavedServer server)? onSelect,
     void Function(SavedServer server)? onRemoved,
     VoidCallback? onAdd,
+    List<FakeLibraryApi>? built,
+    Object? logoutResult,
+    Completer<void>? deleteGate,
   }) async {
     await tester.pumpWidget(
       FileFinScope(
         dependencies: AppDependencies(
-          secrets: secrets,
+          secrets: deleteGate == null
+              ? secrets
+              : _GatedSecrets(secrets, deleteGate),
           network: FakeNetworkStatus(),
           playbackHostFactory: fakeHostFactory(),
           nowPlayingFactory: fakeNowPlayingFactory(),
           settings: SettingsStore(dir),
-          apiFactory: (_, {pin}) => FakeLibraryApi(),
+          // Every client this screen builds, in order — removal now ends the
+          // session on the server before it forgets how to prove it, and a
+          // factory answering one shared fake could not tell WHICH server it
+          // was asked for.
+          apiFactory: (server, {pin}) {
+            final api = FakeLibraryApi(server: server.id)
+              ..logoutResult = logoutResult;
+            built?.add(api);
+            return api;
+          },
         ),
         child: MaterialApp(
           home: ServerListPage(
@@ -205,6 +220,125 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('removing a server ends its session BEFORE forgetting how', (
+    tester,
+  ) async {
+    // Removal deleted three secrets and left the session alive on the server,
+    // with nothing left that could ever end it: `logout()` needs the session
+    // cookie the removal is about to delete, so it happens first or not at
+    // all. The order is the assertion — `close` is in `calls` for exactly this.
+    save(AppSettings.empty.upsert(attic).upsert(work));
+    final built = <FakeLibraryApi>[];
+    await show(tester, built: built);
+
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Work'),
+        matching: find.byTooltip('Remove'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(built, hasLength(1));
+    expect(built.single.server, work.id, reason: 'and the RIGHT server');
+    expect(built.single.calls, ['logout', 'close']);
+  });
+
+  testWidgets('a server that does not answer is still removed, and says so', (
+    tester,
+  ) async {
+    // Someone whose NAS is unplugged must still be able to forget it.
+    // `SessionManager.logout`'s `finally` has already cleared the jar and both
+    // secrets by the time it throws, so treating the throw as "still signed
+    // in" would leave the app claiming a session neither side holds.
+    save(AppSettings.empty.upsert(attic).upsert(work));
+    final built = <FakeLibraryApi>[];
+    await show(
+      tester,
+      built: built,
+      logoutResult: ConnectionFailed(
+        Uri.parse('https://work.example/api/logout'),
+        cause: 'connection refused',
+      ),
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Work'),
+        matching: find.byTooltip('Remove'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(SettingsStore(dir).read().servers, [attic]);
+    expect(find.byKey(const Key('server-list-problem')), findsOneWidget);
+    expect(find.textContaining('Cannot reach the server'), findsOneWidget);
+  });
+
+  testWidgets('the shell is told even when the picker is popped mid-removal', (
+    tester,
+  ) async {
+    // Four real `await`s sit in front of the settings write. Pop the picker
+    // during them and the write still committed while `onRemoved` never ran:
+    // `settings.json` said `servers: []` and the app went on browsing that
+    // server on a live client — and `SignInPage` `upsert`s it straight back at
+    // the next sign-in, so the removed server reappears. The `!mounted` guard
+    // was on the wrong side of the write.
+    save(AppSettings.empty.upsert(attic).upsert(work));
+    final gate = Completer<void>();
+    final removed = <SavedServer>[];
+    await show(tester, onRemoved: removed.add, deleteGate: gate);
+
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Work'),
+        matching: find.byTooltip('Remove'),
+      ),
+    );
+    await tester.pump();
+    // The picker goes away while the secret deletes are still in flight.
+    await tester.pumpWidget(const SizedBox());
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(SettingsStore(dir).read().servers, [attic]);
+    expect(
+      removed,
+      [work],
+      reason: 'the write committed, so the shell must hear about it',
+    );
+  });
+
+  testWidgets('a settings write that fails has already dropped the pin', (
+    tester,
+  ) async {
+    // §9's ordering, from the side that can tell the two orders apart.
+    // `logout()` clears the session and the password itself, so only the
+    // certificate pin distinguishes "secrets first" from "settings first" —
+    // and with the settings write failing, the other order returns early and
+    // leaves the pin behind for a server no screen can reach.
+    save(AppSettings.empty.upsert(attic).upsert(work));
+    await secrets.write(work.id, SecretKind.certificatePin, 'aa:bb');
+    await show(tester);
+    dir.deleteSync(recursive: true);
+    File(dir.path).writeAsStringSync('x');
+    addTearDown(() {
+      File(dir.path).deleteSync();
+      dir.createSync(recursive: true);
+    });
+
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Work'),
+        matching: find.byTooltip('Remove'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(await secrets.read(work.id, SecretKind.certificatePin), isNull);
+    expect(find.byKey(const Key('server-list-problem')), findsOneWidget);
+  });
+
   testWidgets('adding a server is reachable from here', (tester) async {
     // The only way in once a user is signed in: the library shell offers the
     // picker, and the picker is where "another one" lives.
@@ -226,4 +360,32 @@ void main() {
     expect(find.text('No servers saved'), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
   });
+}
+
+/// A store whose DELETES can be held open, so a test can pop the picker while
+/// removal is still in flight.
+///
+/// A gate rather than a delay, for the reason `FakeLibraryApi.writeGate`
+/// records: what has to be proved is that the picker went away while the
+/// awaits were still running, and a `Duration` under `FakeAsync` would need
+/// the test to guess how far to pump.
+final class _GatedSecrets extends SecretStore {
+  _GatedSecrets(this._inner, this._gate);
+
+  final SecretStore _inner;
+  final Completer<void> _gate;
+
+  @override
+  Future<String?> read(ServerId server, SecretKind kind) =>
+      _inner.read(server, kind);
+
+  @override
+  Future<void> write(ServerId server, SecretKind kind, String value) =>
+      _inner.write(server, kind, value);
+
+  @override
+  Future<void> delete(ServerId server, SecretKind kind) async {
+    await _gate.future;
+    await _inner.delete(server, kind);
+  }
 }

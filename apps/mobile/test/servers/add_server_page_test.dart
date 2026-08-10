@@ -283,7 +283,7 @@ void main() {
 
     await check(tester);
 
-    expect(api.calls, ['probeServer']);
+    expect(api.calls, ['probeServer', 'close']);
     expect(added!.baseUrl.scheme, 'https');
   });
 

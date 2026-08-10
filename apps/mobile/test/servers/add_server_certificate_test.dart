@@ -170,4 +170,65 @@ void main() {
     expect(find.byKey(const Key('add-server-problem')), findsOneWidget);
     expect(added, isNull);
   });
+
+  testWidgets('a pin accepted for an address that is NOT saved is dropped', (
+    tester,
+  ) async {
+    // The pin has to be written BEFORE the second probe — `apiForServer` reads
+    // it out of the store to build the client that probe runs on — so a
+    // refusal left a `certpin` keyed to an origin in no settings file, and
+    // `ServerListPage._remove` is the only deleter there is and it iterates
+    // SAVED servers.
+    //
+    // Worse than hygiene: the id IS the origin, so adding that same address
+    // later silently loads the orphan and connects pinned without asking.
+    // F15's deliberate accept would never happen again for that server.
+    api.probeResult = untrusted;
+    await pump(tester);
+    await type(tester, 'https://nas.local');
+    await check(tester);
+    await tester.pumpAndSettle();
+
+    api.probeResult = const NotAFileFinServer('it is a router');
+    await tester.tap(find.widgetWithText(FilledButton, 'Trust this server'));
+    await tester.pumpAndSettle();
+
+    expect(settings.read().servers, isEmpty);
+    expect(
+      await secrets.read(
+        const ServerId('https://nas.local'),
+        SecretKind.certificatePin,
+      ),
+      isNull,
+    );
+    // The control: the pin WAS written and carried into the second client, so
+    // the deletion above is a deletion rather than a write that never happened.
+    expect(pins.last?.value, observed);
+  });
+
+  testWidgets('a pin accepted for an address that IS saved is kept', (
+    tester,
+  ) async {
+    // The other direction, and without it the assertion above is satisfied by
+    // deleting the pin unconditionally — which would make every launch of an
+    // accepted server prompt again.
+    api.probeResult = untrusted;
+    await pump(tester);
+    await type(tester, 'https://nas.local');
+    await check(tester);
+    await tester.pumpAndSettle();
+
+    api.probeResult = const FileFinServer('0.20.3');
+    await tester.tap(find.widgetWithText(FilledButton, 'Trust this server'));
+    await tester.pumpAndSettle();
+
+    expect(settings.read().servers.single.id.value, 'https://nas.local');
+    expect(
+      await secrets.read(
+        const ServerId('https://nas.local'),
+        SecretKind.certificatePin,
+      ),
+      observed,
+    );
+  });
 }

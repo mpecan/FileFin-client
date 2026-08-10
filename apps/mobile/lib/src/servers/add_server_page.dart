@@ -86,7 +86,11 @@ class _AddServerPageState extends State<AddServerPage> {
       return;
     }
     if (!mounted) return;
-    await FileFinScope.of(context).secrets.write(
+    // Captured before the second probe, because a successful one navigates
+    // away and `context` stops being usable — and the cleanup below has to
+    // happen on both outcomes.
+    final deps = FileFinScope.of(context);
+    await deps.secrets.write(
       candidate.id,
       SecretKind.certificatePin,
       untrusted.fingerprint,
@@ -97,6 +101,30 @@ class _AddServerPageState extends State<AddServerPage> {
     if (again != null && mounted) {
       setState(() => _problem = _describe(again));
     }
+    await _forgetOrphanedPin(deps, candidate);
+  }
+
+  /// Drops the pin again when the address it was accepted for was not saved.
+  ///
+  /// **The pin is written BEFORE the second probe decides whether this is a
+  /// FileFin server at all**, and it has to be: `apiForServer` reads it out of
+  /// the store to build the client that probe runs on. So a refusal — "not a
+  /// FileFin server", "needs setup", a typo in the port — left a
+  /// `SecretKind.certificatePin` keyed to an origin that appears in no
+  /// settings file, and `ServerListPage._remove` is the only deleter there is
+  /// and it iterates saved servers.
+  ///
+  /// It is worse than untidiness. The id IS the origin, so adding that same
+  /// address later silently loads the orphan and the server connects pinned
+  /// without ever asking — which is F15's deliberate accept skipped entirely,
+  /// for a certificate the user was shown once and did not go on to use.
+  Future<void> _forgetOrphanedPin(
+    AppDependencies deps,
+    SavedServer candidate,
+  ) async {
+    final saved = deps.settings.read().servers.any((e) => e.id == candidate.id);
+    if (saved) return;
+    await deps.secrets.delete(candidate.id, SecretKind.certificatePin);
   }
 
   String _describe(FileFinApiException error) {
