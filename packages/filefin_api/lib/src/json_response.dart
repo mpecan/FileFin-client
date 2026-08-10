@@ -12,6 +12,32 @@ import 'package:filefin_api/src/errors.dart';
 /// expect JSON from is a transport failure, not a payload.
 const _jsonMediaType = 'application/json';
 
+/// Refuses an HTML body on a **2xx** from a route that does not serve HTML.
+///
+/// Lives here rather than on `FileFinClient` because it has three callers in
+/// two libraries, and the third is the one that made it worth moving:
+/// `SessionManager.logout` writes and reads nothing, so nothing else on its
+/// path would ever have noticed the SPA catch-all answering.
+///
+/// **Why `text/html` specifically and not "must be JSON".** The routes this
+/// guards answer `204` with no `Content-Type` at all, the poster route answers
+/// whatever the file is, and the subtitle route answers `text/vtt` — a client
+/// insisting on one media type would refuse responses that work. What it
+/// refuses is the one answer that means "no route matched": the catch-all
+/// (`server.go:352`) serving `index.html`.
+///
+/// **2xx only, and that boundary is measured.** Go's `http.Redirect` writes an
+/// HTML body, so the `307` to HLS carries `Content-Type: text/html` — applying
+/// this to a redirect would refuse the SUCCESS case while the catch-all's
+/// `200 text/html`, which is the real failure, sailed through (M5.0/E-K).
+void refuseHtml(Headers headers, Uri requested) {
+  final contentType = headers[Headers.contentTypeHeader]?.firstOrNull;
+  if (contentType != null &&
+      contentType.split(';').first.trim().toLowerCase() == 'text/html') {
+    throw NotAFileFinServerResponse(requested, contentType);
+  }
+}
+
 /// Reads a **2xx** response as a JSON object.
 ///
 /// Throws `NotAFileFinServerResponse` when the media type is not JSON, and

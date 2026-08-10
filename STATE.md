@@ -472,7 +472,21 @@ false of the case the check exists for.
 
 **F11 is what moved it from residual to worth paying.** A user who can save
 several servers can save a base URL with a stray path on it, and after that
-nothing they tap is stored anywhere.
+nothing they tap is stored anywhere. The likelier case is narrower and does not
+need a mistake at all: a route that MOVES upstream. `/api/login` keeps working,
+so the client still signs in, and only the moved route falls through to the
+catch-all.
+
+**There are three write paths, not two, and the third is `SessionManager.logout`.**
+It reads nothing back, so nothing on its path could ever have noticed — the
+`204` helpers at least had a response object in hand. A `POST /api/logout` that
+reached the catch-all reported a server session ended that is still alive, and
+the local half happens regardless, so the user sees a successful sign-out. The
+check moved out of `FileFinClient` into `json_response.dart` as a public
+`refuseHtml` so all three callers reach the same one, and the same `2xx`-only
+boundary M5.0/E-K measured still applies: Go's `http.Redirect` writes an HTML
+body, so the `307` to HLS carries `text/html` and applying this to a redirect
+would refuse the success case.
 
 `_refuseHtml` was already a static applied to 2xx on `_send`; it is now applied
 on both write helpers as well. The DELETE needed its own call rather than
@@ -4117,6 +4131,21 @@ Said out loud, per CLAUDE.md. Silence would read as "there was none".
   remote is the user's call, not an implementer's. E-9 — running the workflow's
   steps in an `ubuntu:24.04` container — was **not done**; it is the cheapest
   thing anyone could do next to the largest unexercised claim in the tree.
+- **The libmpv crash reaches `just it` as well, and M7.7's retry does not
+  cover it.** Four consecutive `just it` runs at this tree went fail, pass,
+  fail, pass; both failures were
+  `TestDeviceException(Shell subprocess crashed with unexpected exit code -10.)`
+  taking down `apps/mobile/test_live/hls_live_test.dart` — the same SIGBUS
+  signature backlog row H records, in a different file.
+  `run_tests_retrying_known_crash` is wired into `run-tests.sh` and
+  `run-coverage.sh` only, and its allow-list names `real_mpv_player_test.dart`
+  only. **Not fixed here, deliberately:** a retry allow-list is the one thing
+  in this repository that can turn a real failure into a green run, and
+  widening it in the last hour of the last milestone is exactly the "do not
+  weaken a gate to make it pass" case wearing a helpful hat. Row H carries it,
+  and it says to measure the rate on `just it` before touching the list —
+  two in four is far above the unit suite's ~4% and may be a different
+  population.
 - **The picker still has no confirmation on removal**, carried from M7.4.
 - `Podfile.lock` and the CocoaPods integration `flutter build ios` writes into
   `Runner.xcodeproj` are **not committed**, as in every milestone before this

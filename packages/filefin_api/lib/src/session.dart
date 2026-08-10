@@ -187,10 +187,14 @@ class SessionManager {
   /// identity rather than the user's, and clearing it would re-prompt for
   /// trust-on-first-use on every sign-out — which trains a user to click
   /// through the one dialog F15 exists for.
+  /// It refuses an HTML body for the reason the F10 writes do (M7.8): this
+  /// route reads nothing, so without the check a `POST` that reached the SPA
+  /// catch-all instead of the handler would report a server session ended that
+  /// is still alive. The local half below happens either way.
   Future<void> logout() async {
     final url = urls.logout;
     try {
-      await authDio.postUri<dynamic>(url);
+      refuseHtml((await authDio.postUri<dynamic>(url)).headers, url);
     } on DioException catch (e) {
       throw mapDioException(e, requested: url, pinner: pinner);
     } finally {

@@ -163,13 +163,7 @@ class FileFinClient {
   /// `http.ServeFile`, so its content type is whatever the file is — WebP, PNG,
   /// or absent — and the subtitle route answers `text/vtt`. A client insisting
   /// on one media type would refuse responses that work.
-  static void _refuseHtml(Headers headers, Uri url) {
-    final contentType = headers[Headers.contentTypeHeader]?.firstOrNull;
-    if (contentType != null &&
-        contentType.split(';').first.trim().toLowerCase() == 'text/html') {
-      throw NotAFileFinServerResponse(url, contentType);
-    }
-  }
+  static void _refuseHtml(Headers headers, Uri url) => refuseHtml(headers, url);
 
   /// Turns dio's exception into ours, keeping a cause we already wrapped.
   ///

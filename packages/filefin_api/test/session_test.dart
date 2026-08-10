@@ -331,6 +331,29 @@ void main() {
       expect(await secrets.read(server, SecretKind.password), isNull);
     });
 
+    test('the SPA catch-all is not a sign-out (M7.8)', () async {
+      // `logout` reads nothing back, so until M7.8 nothing on its path could
+      // notice a route that did not match. The stub answers an unregistered
+      // path exactly the way the real server does — `200 text/html` from the
+      // catch-all outside the route table (`server.go:352`) — so registering
+      // nothing IS the case under test, and the previous version of this file
+      // says in a comment what it could not assert.
+      //
+      // The local half must still happen: someone who taps sign out ends up
+      // signed out here whatever the server said, which is what the `finally`
+      // is for and what the case below asserts for a dead server.
+      serveLogin((_) => goodLogin());
+      await sessions.login(creds);
+
+      await expectLater(
+        sessions.logout(),
+        throwsA(isA<NotAFileFinServerResponse>()),
+      );
+
+      expect(await secrets.read(server, SecretKind.session), isNull);
+      expect(await secrets.read(server, SecretKind.password), isNull);
+    });
+
     test('signing out of a server that is down still signs you out', () async {
       serveLogin((_) => goodLogin());
       await sessions.login(creds);
