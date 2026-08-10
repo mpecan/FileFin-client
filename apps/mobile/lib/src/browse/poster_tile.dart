@@ -1,3 +1,4 @@
+import 'package:dpad/dpad.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/poster_image_provider.dart';
@@ -42,8 +43,8 @@ class _PosterTileState extends State<PosterTile> {
   }
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: () => widget.onOpen(widget.item),
+  Widget build(BuildContext context) => DpadFocusable(
+    onSelect: () => widget.onOpen(widget.item),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

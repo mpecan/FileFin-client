@@ -48,6 +48,12 @@ dependencies:
   # used — SPEC F13 samples once, before playing — but `checkConnectivity()` is,
   # and it is the only cross-platform way to ask.
   connectivity_plus: 7.3.1
+  # TV D-pad navigation, built on Flutter's FocusTraversalPolicy/Shortcuts/
+  # Actions. `Dpad.wrap()` enables directional nav globally; `DpadRegion` +
+  # `DpadScaleEffect` on grid tiles, list items and buttons makes the app
+  # navigable with a remote on Android TV / Google TV. Imported by main.dart
+  # for the wrap and by every screen that puts a focus effect on its widgets.
+  dpad: 3.0.0
   # The only layer allowed to open a socket: typed endpoints, the cookie jar,
   # F3's 401 retry, F15's pinning — and `CancelToken`, re-exported from its
   # barrel so this package never imports dio (`app_no_raw_http`). A path
