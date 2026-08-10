@@ -68,6 +68,7 @@ void main() {
       secrets: secrets,
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
+      nowPlayingFactory: fakeNowPlayingFactory(),
       settings: SettingsStore(dir),
       // Keyed by server, which is the whole point: a factory answering one
       // fake whatever it is handed cannot tell a switch from a no-op.

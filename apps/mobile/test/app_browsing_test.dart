@@ -45,6 +45,7 @@ void main() {
       secrets: InMemorySecretStore(),
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
+      nowPlayingFactory: fakeNowPlayingFactory(),
       settings: SettingsStore(dir),
       apiFactory: (_, {pin}) => api,
     ),

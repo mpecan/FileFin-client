@@ -49,6 +49,24 @@
 	     the process. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>FileFin connects to your media server, which is usually on your local network.</string>
+	<!-- F14, and the ONE key the iOS half needs. Measured both ways at
+	     M7.6/E-6 on the simulator: without it the process is suspended the
+	     moment it is backgrounded and the last position tick is the one that
+	     follows `LIFECYCLE paused`; with it, playback runs 1:1 with the wall
+	     clock for a full minute in the background.
+
+	     Nothing sets an AVAudioSession category, and that is not an omission:
+	     `nm -u` on media_kit_libs_ios_video's DEVICE slice shows libmpv itself
+	     importing _AVAudioSessionCategoryPlayback, _AVAudioSessionModeMovie
+	     Playback and setCategory:error:, which is mpv's own ao_audiounit. An
+	     `audio_session` arm behaved identically to this one.
+
+	     `fetch` and `processing` are deliberately absent: this app does nothing
+	     in the background except keep decoding what the user started. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -24,6 +24,24 @@ resolution: workspace
 # two platform-interface packages that make `main()` coverable arrived with
 # M3.5 and are declared below.
 dependencies:
+  # F14's whole platform half: Android's `MediaSession` plus the foreground
+  # service that stops the OS muting a backgrounded player, and iOS's
+  # `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`. Imported by exactly one
+  # file, `playback/audio_service_media_session.dart`, which is the adapter
+  # behind `MediaSessionHost`.
+  #
+  # It is a package rather than our own channel code for a testability reason
+  # that is measured rather than assumed: `AudioServicePlatform.instance` is a
+  # settable platform interface — the same seam `PathProviderPlatform` gives —
+  # so what F14 publishes and what a remote button does are both assertable
+  # headlessly. Hand-written Kotlin and Swift behind the same port would be a
+  # boundary nothing in `just check` could reach.
+  #
+  # E-6 measured this exact package driving this exact engine: with it running,
+  # a backgrounded player reports `mutedState:none` where the bare arm reports
+  # `mutedState:opControlAudio`, and `KEYCODE_MEDIA_PAUSE` reaches Dart
+  # (`docs/risks.md` R3).
+  audio_service: 0.18.19
   # F13's only signal about the connection. Its `onConnectivityChanged` is not
   # used — SPEC F13 samples once, before playing — but `checkConnectivity()` is,
   # and it is the only cross-platform way to ask.
@@ -42,6 +60,15 @@ dependencies:
   # The framework this package's whole lib/ is written in.
   flutter:
     sdk: flutter
+  # `BaseCacheManager` only, and only so that we can decline it.
+  # `AudioService.init` otherwise constructs a `DefaultCacheManager()`
+  # unconditionally, which opens a **sqflite database** for artwork the moment
+  # a session starts. F14 publishes no `artUri` — the poster route is behind
+  # `s.auth` and every artwork API takes a URI the OS fetches for itself — so
+  # that database would be written by nothing and read by nothing (§1).
+  # `NoArtworkCache` is the stub handed to `init` instead, and every one of its
+  # methods throws.
+  flutter_cache_manager: 3.4.2
   # F2's persistence half: the Keychain on iOS and an AES-GCM Keystore-wrapped
   # store on Android, which is the only place §9 permits a password to live.
   # `PlatformSecretStore` imports it; nothing else may.
@@ -85,6 +112,13 @@ dependencies:
   path_provider: 2.1.5
 
 dev_dependencies:
+  # `AudioServicePlatform.instance` is the seam that covers F14's adapter
+  # headlessly — the same shape as `PathProviderPlatform.instance` below, and
+  # the reason `audio_service` was chosen over channel code we would write
+  # ourselves. The fake in `test/support/fake_audio_service_platform.dart`
+  # implements it, so both what CROSSED the boundary and what the OS sends back
+  # are assertable without a device.
+  audio_service_platform_interface: 0.1.3
   # `ConnectivityPlatform.instance` is the seam that covers
   # `ConnectivityNetworkStatus` headlessly, exactly as
   # `PathProviderPlatform.instance` covers `main()`'s directory lookup.

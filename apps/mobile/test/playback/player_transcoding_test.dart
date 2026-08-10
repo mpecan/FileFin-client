@@ -290,6 +290,7 @@ void main() {
           home: PlayerPage(
             api: api,
             hostFactory: () => host,
+            nowPlayingFactory: fakeNowPlayingFactory(),
             network: FakeNetworkStatus(),
             detail: detail,
             server: SavedServer(

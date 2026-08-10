@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
+import 'package:filefin_mobile/src/playback/now_playing.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:filefin_mobile/src/playback/player_controls.dart';
 import 'package:filefin_mobile/src/playback/player_page.dart';
@@ -9,6 +10,7 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/fake_now_playing.dart';
 import '../support/fake_playback_host.dart';
 import '../support/fakes.dart';
 
@@ -54,12 +56,14 @@ void main() {
     MediaDetail? detail,
     SavedServer? server,
     VoidCallback? onSignIn,
+    Future<NowPlayingHost> Function()? nowPlayingFactory,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: PlayerPage(
           api: api,
           hostFactory: () => host,
+          nowPlayingFactory: nowPlayingFactory ?? fakeNowPlayingFactory(),
           network: network,
           detail: detail ?? _detail(),
           server: server ?? _server(),
@@ -291,6 +295,7 @@ void main() {
                     builder: (_) => PlayerPage(
                       api: api,
                       hostFactory: () => host,
+                      nowPlayingFactory: fakeNowPlayingFactory(),
                       network: network,
                       detail: _detail(),
                       server: _server(),
@@ -345,11 +350,69 @@ void main() {
       ..emitPosition(const Duration(seconds: 25));
     await tester.pumpAndSettle();
 
+    final pausesBefore = host.calls.where((c) => c == 'pause').length;
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pumpAndSettle();
 
-    expect(host.calls, contains('pause'));
     expect(api.reports.last.event, ProgressEvent.pause);
+    // F14: the report is what the listener exists for, and the engine keeps
+    // playing behind it.
+    expect(host.calls.where((c) => c == 'pause'), hasLength(pausesBefore));
+  });
+
+  group('F14 — the lock-screen transport follows the screen', () {
+    testWidgets('opening the player publishes what is playing', (tester) async {
+      final session = FakeNowPlaying();
+      addTearDown(session.dispose);
+
+      await pumpPlayer(
+        tester,
+        nowPlayingFactory: fakeNowPlayingFactory(session),
+      );
+      await tester.pumpAndSettle();
+
+      expect(session.published.single.title, 'Direct Play Movie');
+    });
+
+    testWidgets('leaving the player takes the session down', (tester) async {
+      final session = FakeNowPlaying();
+      addTearDown(session.dispose);
+
+      await pumpPlayer(
+        tester,
+        nowPlayingFactory: fakeNowPlayingFactory(session),
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      // Two pumps: `dispose` fires the teardown unawaited so the frame is not
+      // held, and the awaits inside it settle on the next microtask drain.
+      await tester.pumpAndSettle();
+      await tester.pump();
+
+      expect(session.cleared, 1);
+    });
+
+    testWidgets('a session that arrives after the screen has gone is torn '
+        'down rather than bound', (tester) async {
+      // Starting the platform session is a round trip, and a user who backs
+      // out during it would otherwise be left with a transport notification
+      // driving a disposed controller. `_gone` is the guard; deleting it
+      // leaves `cleared` at 0 and a live binder on a dead player.
+      final session = FakeNowPlaying();
+      addTearDown(session.dispose);
+      final gate = Completer<NowPlayingHost>();
+
+      await pumpPlayer(tester, nowPlayingFactory: () => gate.future);
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pumpAndSettle();
+
+      gate.complete(session);
+      await tester.pumpAndSettle();
+
+      expect(session.published, isEmpty);
+      expect(session.cleared, 1);
+    });
   });
 
   testWidgets('a rejected report says progress is no longer being saved', (
@@ -384,6 +447,7 @@ void main() {
                 builder: (_) => PlayerPage(
                   api: api,
                   hostFactory: () => host,
+                  nowPlayingFactory: fakeNowPlayingFactory(),
                   network: network,
                   detail: _detail(size: 900 * 1000 * 1000),
                   server: _server(),

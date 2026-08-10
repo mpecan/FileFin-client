@@ -37,6 +37,7 @@ Future<PlaybackOutcome?> pushPlayer(
       builder: (_) => PlayerPage(
         api: api,
         hostFactory: deps.playbackHostFactory,
+        nowPlayingFactory: deps.nowPlayingFactory,
         network: deps.network,
         detail: detail,
         server: server,

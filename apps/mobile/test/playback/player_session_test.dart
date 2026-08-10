@@ -238,10 +238,17 @@ void main() {
     });
   });
 
-  group('NF6 — the lifecycle report is what survives an OS kill', () {
-    test('backgrounding pauses and reports', () async {
+  group('NF6 and F14 — the lifecycle report, and the pause that is gone', () {
+    test('backgrounding reports and does NOT pause (F14)', () async {
+      // **This assertion is inverted from what it said until M7.6, and the
+      // inversion is the feature.** The report still has to happen: it is the
+      // only thing that runs before an OS kill, so it is what the user comes
+      // back to. The pause used to happen alongside it, and F14 is the
+      // requirement that it must not — a lock-screen transport over a player
+      // that stops the moment the screen locks is a control for nothing.
       final controller = controllerFor();
       await controller.start();
+      final pausesBefore = host.calls.where((c) => c == 'pause').length;
       host
         ..emitDuration(const Duration(seconds: 100))
         ..emitPosition(const Duration(seconds: 20))
@@ -250,13 +257,13 @@ void main() {
 
       await controller.handleLifecycle(AppLifecycleState.paused);
 
-      expect(host.calls, contains('pause'));
+      expect(host.calls.where((c) => c == 'pause'), hasLength(pausesBefore));
       expect(api.reports.last.event, ProgressEvent.pause);
       expect(api.reports.last.position, 25.0);
     });
 
     test(
-      'resuming does nothing — it must not start playing in a pocket',
+      'resuming does nothing — the engine never stopped',
       () async {
         final controller = controllerFor();
         await controller.start();

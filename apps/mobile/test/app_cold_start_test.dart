@@ -37,6 +37,7 @@ void main() {
       secrets: secrets,
       network: FakeNetworkStatus(),
       playbackHostFactory: fakeHostFactory(),
+      nowPlayingFactory: fakeNowPlayingFactory(),
       settings: SettingsStore(dir),
       apiFactory: (_, {pin}) {
         pins.add(pin);

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/playback/audio_service_now_playing.dart';
 import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
@@ -51,6 +52,7 @@ Widget buildApp(Directory support) {
       // A NEW engine per player screen. libmpv holds a position and a loaded
       // file, so two screens sharing one context would fight over both.
       playbackHostFactory: () => MediaKitPlaybackHost(RealMpvPlayer()),
+      nowPlayingFactory: openNowPlaying,
       // `pin` is F15's accepted fingerprint, resolved by `apiForServer` before
       // this is called: TLS's callbacks are synchronous and cannot await a
       // store read, so a client is built for one pin and a NEW one is built

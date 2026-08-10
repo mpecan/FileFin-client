@@ -1,6 +1,7 @@
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
+import 'package:filefin_mobile/src/playback/now_playing.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
@@ -29,6 +30,7 @@ class AppDependencies {
     required this.apiFactory,
     required this.network,
     required this.playbackHostFactory,
+    required this.nowPlayingFactory,
   });
 
   /// Where `settings.json` lives. Holds no secrets.
@@ -66,6 +68,21 @@ class AppDependencies {
   /// screens sharing one would fight over both. One host per screen, disposed
   /// with it.
   final PlaybackHost Function() playbackHostFactory;
+
+  /// Opens F14's media session — the lock-screen transport and, on Android,
+  /// the foreground service that stops the OS muting a backgrounded player.
+  ///
+  /// **A factory returning a FUTURE, and per PROCESS rather than per screen**,
+  /// which is the opposite of [playbackHostFactory] and for the opposite
+  /// reason: there is one lock screen, `AudioService.init` asserts on a second
+  /// call, and starting the session is a platform round trip.
+  /// `openNowPlaying` memoises, so a second player screen gets the first
+  /// one's session.
+  ///
+  /// It is deliberately not called from `main()`. Nothing touches the
+  /// media-session channel until a player screen opens, which is what keeps
+  /// NF1's cold start down to the one plugin call it has always had.
+  final Future<NowPlayingHost> Function() nowPlayingFactory;
 }
 
 /// Hands [AppDependencies] down the tree.

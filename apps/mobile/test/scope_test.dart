@@ -13,6 +13,7 @@ void main() {
     secrets: InMemorySecretStore(),
     network: FakeNetworkStatus(),
     playbackHostFactory: fakeHostFactory(),
+    nowPlayingFactory: fakeNowPlayingFactory(),
     settings: SettingsStore(Directory.systemTemp),
     apiFactory: (_, {pin}) => FakeLibraryApi(),
   );
@@ -70,6 +71,7 @@ void main() {
         secrets: InMemorySecretStore(),
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
+        nowPlayingFactory: fakeNowPlayingFactory(),
         settings: deps.settings,
         apiFactory: deps.apiFactory,
       ),

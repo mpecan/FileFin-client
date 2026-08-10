@@ -139,9 +139,25 @@ final class RealMpvPlayer extends MpvPlayer {
   Future<void> setProperty(String name, String value) =>
       (_player.platform! as NativePlayer).setProperty(name, value);
 
+  /// The texture libmpv draws into.
+  ///
+  /// **`pauseUponEnteringBackgroundMode` is `false` and that is F14's whole
+  /// Android half.** The argument DEFAULTS TO TRUE
+  /// (`video_texture.dart:132`), and on `AppLifecycleState.paused` the widget
+  /// calls `player.pause()` itself (`:281-299`) — so until M7.6 every
+  /// backgrounding stopped playback inside `media_kit_video`, before the OS
+  /// had any say. Measured both ways at M7.6/E-6: with the default, position
+  /// froze at 18941 ms for the whole 60 s background window; with it off,
+  /// position advanced 1:1 with the wall clock (`docs/risks.md` R3).
+  ///
+  /// `resumeUponEnteringForegroundMode` is left at its own default of `false`
+  /// and is now correct rather than merely unset: nothing pauses on
+  /// backgrounding any more, so there is nothing to resume.
   @override
-  Widget buildSurface() =>
-      Video(controller: _controller ??= VideoController(_player));
+  Widget buildSurface() => Video(
+    controller: _controller ??= VideoController(_player),
+    pauseUponEnteringBackgroundMode: false,
+  );
 
   @override
   Future<void> dispose() => _player.dispose();

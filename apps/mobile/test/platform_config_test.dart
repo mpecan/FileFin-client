@@ -58,6 +58,49 @@ void main() {
       expect(text, contains('<certificates src="system" />'));
     });
 
+    test('F14: the foreground service is declared, typed, and reachable', () {
+      // Three separate claims, and each has its own way of failing silently.
+      // Without the permissions the service cannot start at all; without
+      // `foregroundServiceType="mediaPlayback"` API 34 refuses to promote it;
+      // and without the MEDIA_BUTTON receiver a headset button reaches
+      // nothing. E-6 measured what the service buys — `mutedState:none`
+      // instead of `mutedState:opControlAudio` for a backgrounded player.
+      final text = manifest.readAsStringSync();
+      expect(text, contains('android.permission.FOREGROUND_SERVICE'));
+      expect(
+        text,
+        contains('android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'),
+      );
+      expect(text, contains('android.permission.POST_NOTIFICATIONS'));
+      expect(text, contains('android:foregroundServiceType="mediaPlayback"'));
+      expect(
+        text,
+        contains('android:name="com.ryanheise.audioservice.AudioService"'),
+      );
+      expect(text, contains('android.media.browse.MediaBrowserService'));
+      expect(
+        text,
+        contains(
+          'android:name="com.ryanheise.audioservice.MediaButtonReceiver"',
+        ),
+      );
+      expect(text, contains('android.intent.action.MEDIA_BUTTON'));
+    });
+
+    test('F14: the launch activity is the one that hosts the handler', () {
+      // The subtlest of F14's Android wiring and the one with no visible
+      // symptom: a plain `FlutterActivity` launches fine, plays fine, and
+      // every lock-screen button reaches an engine the service cannot see.
+      final text = manifest.readAsStringSync();
+      expect(
+        text,
+        contains(
+          'android:name="com.ryanheise.audioservice.AudioServiceActivity"',
+        ),
+      );
+      expect(text, isNot(contains('android:name=".MainActivity"')));
+    });
+
     test('minSdk is 26 as a literal, not flutter.minSdkVersion (C5)', () {
       // `flutter.minSdkVersion` is 24 on this SDK. A floor that moves when
       // Flutter moves is not a constraint, and C5 is decision D7.
@@ -103,6 +146,29 @@ void main() {
       ).firstMatch(text);
       expect(match, isNotNull);
       expect(match!.group(1)!.trim().length, greaterThan(20));
+    });
+
+    test('F14: the audio background mode, and nothing beside it', () {
+      // The one key F14's iOS half needs, and the whole of it: E-6 measured
+      // the process suspended without it and not suspended with it, and the
+      // AVAudioSession category comes from libmpv's own ao_audiounit.
+      //
+      // The negative half is a real constraint rather than tidiness. `fetch`
+      // and `processing` would let this app run code in the background for
+      // reasons the user did not ask for, and an `audio` entry that has crept
+      // into a longer list is how that arrives.
+      final text = plist.readAsStringSync();
+      final match = RegExp(
+        r'<key>UIBackgroundModes</key>\s*<array>(.*?)</array>',
+        dotAll: true,
+      ).firstMatch(text);
+      expect(match, isNotNull);
+      expect(
+        RegExp(
+          '<string>([^<]*)</string>',
+        ).allMatches(match!.group(1)!).map((m) => m.group(1)).toList(),
+        ['audio'],
+      );
     });
 
     test('the deployment target is 15.0 everywhere (C5)', () {

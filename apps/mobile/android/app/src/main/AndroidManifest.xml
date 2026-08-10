@@ -2,14 +2,34 @@
     <!-- Every screen in this app is a request to a server the user typed. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- F14. Not decoration: E-6 measured a backgrounded player still decoding
+         and the OS muting it through AppOps CONTROL_AUDIO
+         (`state:started mutedState:opControlAudio`). A foreground service in
+         the mediaPlayback category is what lifts that, and from API 34 the
+         typed permission below is required as well as the general one.
+         WAKE_LOCK keeps the CPU awake while the screen is off; POST_
+         NOTIFICATIONS is API 33+'s gate on the transport notification itself,
+         and without it the service runs with nothing on screen to control it.
+         docs/risks.md R3 carries the measurement and its negative control. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="FileFin"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
+        <!-- F14: `AudioServiceActivity` rather than our own `MainActivity`.
+             audio_service's Android side is a MediaBrowserService, and the
+             activity is what hands it the FlutterEngine the handler runs in;
+             a plain FlutterActivity leaves every transport button reaching a
+             dead engine. MainActivity.kt is gone with it — it carried no code
+             of ours. -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.ryanheise.audioservice.AudioServiceActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -35,6 +55,27 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- F14's foreground service and the receiver that carries a hardware
+             media key to it. `exported="true"` on both is required by the
+             platform, not a choice: the MediaBrowserService is bound by
+             SystemUI and Android Auto, and MEDIA_BUTTON is broadcast by the
+             system. Neither takes an argument from the caller. -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

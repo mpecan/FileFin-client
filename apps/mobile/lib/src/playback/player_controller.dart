@@ -283,19 +283,30 @@ class PlayerController extends ChangeNotifier {
     await host.selectSubtitleTrack(source);
   }
 
-  /// NF6: the OS is taking the app away.
+  /// NF6 and F14: the OS is taking the app away.
   ///
-  /// Pausing and reporting on `paused`/`inactive` is the only thing that
-  /// survives an OS kill — nothing else runs afterwards — so the pointer
-  /// written here is what the user comes back to. `resumed` deliberately does
-  /// nothing: the engine kept its position, and auto-resuming would start
-  /// playing in a pocket.
+  /// **It reports and does NOT pause, and the change of mind is M7.6's.**
+  /// Reporting here is still the only thing that survives an OS kill — nothing
+  /// else runs afterwards — so the pointer written here is what the user comes
+  /// back to. The pause that used to accompany it was NF6 read as "playback
+  /// stops and resumes where it was", and F14 says the opposite: audio
+  /// continues, because that is what a lock-screen transport is *for*.
+  ///
+  /// E-6 measured both halves of what makes that possible — libmpv keeps
+  /// decoding on both platforms, `UIBackgroundModes: audio` stops iOS
+  /// suspending the process, and Android's AppOps `CONTROL_AUDIO` mute is
+  /// lifted by the foreground service `NowPlayingHost` runs
+  /// (`docs/risks.md` R3). `mpv_player.dart`'s
+  /// `pauseUponEnteringBackgroundMode: false` is the other half of this edit;
+  /// either one alone leaves playback stopping on backgrounding.
+  ///
+  /// `resumed` deliberately does nothing: the engine never stopped, and a
+  /// report on the way back in would only repeat the one on the way out.
   Future<void> handleLifecycle(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {
-      await host.pause();
       await _reportNow(ProgressEvent.pause);
     }
   }

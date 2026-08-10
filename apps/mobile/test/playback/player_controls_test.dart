@@ -404,7 +404,7 @@ void main() {
     // The guard names `paused`, `inactive` and `hidden` and deliberately stops
     // there. `detached` is the app being torn down: both platforms send
     // `paused` first, so the pointer this milestone cares about is already
-    // written, and pausing an engine that is going away buys nothing.
+    // written, and reporting again for an app that is going away buys nothing.
     //
     // Asserting it is what makes the LIST the contract. Widening the third
     // disjunct to "anything that is not hidden" — which is one operator — reads
@@ -425,14 +425,16 @@ void main() {
     await controller.handleLifecycle(AppLifecycleState.resumed);
 
     expect(api.reports, hasLength(reportsBefore));
-    expect(host.calls.where((c) => c == 'pause'), hasLength(pausesBefore));
 
     await controller.handleLifecycle(AppLifecycleState.paused);
 
     expect(api.reports, hasLength(reportsBefore + 1));
     expect(api.reports.last.position, 55.0);
     expect(api.reports.last.event, ProgressEvent.pause);
-    expect(host.calls.where((c) => c == 'pause'), hasLength(pausesBefore + 1));
+    // F14: none of the four touched the engine. Backgrounding reports and
+    // leaves playback alone; `mpv_player.dart`'s
+    // `pauseUponEnteringBackgroundMode: false` is the other half of it.
+    expect(host.calls.where((c) => c == 'pause'), hasLength(pausesBefore));
   });
 
   group('describeApiFailure — the player says one line, not a panel', () {

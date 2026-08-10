@@ -55,6 +55,7 @@ void main() {
         secrets: secrets,
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
+        nowPlayingFactory: fakeNowPlayingFactory(),
         settings: settings,
         apiFactory: (_, {pin}) {
           pins.add(pin);

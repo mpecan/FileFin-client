@@ -69,6 +69,7 @@ void main() {
         secrets: secrets,
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
+        nowPlayingFactory: fakeNowPlayingFactory(),
         // Every pin the app resolved, in order. The SECOND one is the whole
         // point: a client rebuilt without it would connect exactly as
         // unpinned as the first.

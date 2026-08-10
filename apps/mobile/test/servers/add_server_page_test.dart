@@ -36,6 +36,7 @@ void main() {
         secrets: secrets,
         network: FakeNetworkStatus(),
         playbackHostFactory: fakeHostFactory(),
+        nowPlayingFactory: fakeNowPlayingFactory(),
         settings: settings,
         apiFactory: (_, {pin}) {
           pins.add(pin);
@@ -117,6 +118,7 @@ void main() {
           secrets: InMemorySecretStore(),
           network: FakeNetworkStatus(),
           playbackHostFactory: fakeHostFactory(),
+          nowPlayingFactory: fakeNowPlayingFactory(),
           settings: wedged,
           apiFactory: (_, {pin}) => api,
         ),

@@ -540,6 +540,39 @@
          a hand-written `hashCode`. -->
     <regex pattern="int get hashCode => Object\.hash\(id, label\);"/>
 
+    <!-- F14's two value types, `NowPlayingItem` and `NowPlayingTransport`, and
+         the SAME case as `PosterKey` and `SavedServer` above rather than an
+         analogy to them. The builtin argument-swap rule produces two adjacent
+         swaps for each — `Object.hash(subtitle, title, duration)`,
+         `Object.hash(title, duration, subtitle)`, and the matching pair for
+         `(playing, position, duration)` — and all four survived the whole
+         627-test app suite.
+
+         Unkillable rather than untested, for the reason spelled out above:
+         `hashCode`'s whole contract is that `a == b` implies equal hashes, and
+         every permutation of the same three fields satisfies it. Two items
+         whose fields match hash the same under any order; two whose fields
+         differ hash differently under any order. What changes is collision
+         distribution, and distribution is not a specified behaviour.
+
+         **The `==` beside each IS killed, and the order matters.** M7.6's
+         first version of `now_playing_test.dart` varied one field of each type,
+         and `just mutants` reported the other comparisons as survivors too;
+         the tests now vary every field one at a time in both directions, which
+         is what leaves ONLY these four. This exclusion is the residue after
+         the assertions were fixed, not a substitute for fixing them.
+
+         Excluded by exact text, so an edit that changes the shape stops
+         matching and the mutants come back. The count was checked to move
+         rather than assumed — an exclusion that matches nothing looks
+         identical to no exclusion at all, which this file already records.
+
+         RETIREMENT CONDITION: the day either type stops needing a hand-written
+         `hashCode`. Both are three-field value types and a record would
+         generate one. -->
+    <regex pattern="int get hashCode => Object\.hash\(title, subtitle, duration\);"/>
+    <regex pattern="int get hashCode => Object\.hash\(playing, position, duration\);"/>
+
     <!-- `MpvPlayer.setProperty`'s PARAMETER NAMES, in an abstract declaration.
          Not a call — a signature: `Future<void> setProperty(String name,
          String value);`. The argument-swap rule rewrites it to
