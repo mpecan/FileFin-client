@@ -252,6 +252,29 @@ live suite was *measured* not to cover it rather than assumed to.
   tracked files are left alone, because they are genuinely ours and a build
   rewriting them is information rather than noise.
 
+### A THIRD signature for the libmpv flake, in `just it`
+
+The final `just it` of M7.R failed and the re-run passed. The failure was not
+either signature backlog row H records — not `Shell subprocess crashed with
+segmentation fault` and not `unexpected exit code -10`. It was
+
+    00:02 +9 -1: … test_live/playback_live_test.dart [E]
+      Bad state: Cannot add event while adding stream.
+
+raised **while the file was still LOADING**, which took every test in it down
+as "did not complete" — eight of them — and left the run at `+33 -1`. It is a
+stream-controller race inside media_kit's own `NativeReferenceHolder` rather
+than anything this repository writes.
+
+It matters because of what does and does not cover it. `crash_is_known_flake`
+keys on the literal string `Shell subprocess crashed`, so **this signature is
+not covered by M7.7's retry** — and `run-integration.sh` has no retry at all in
+any case. Anyone who sees a `just it` fail should read the failure before
+believing it: one whole file "did not complete" with no assertion named is this,
+and the answer is to run it again. Recorded rather than mitigated, for the
+reason the mutation entry above gives — widening a retry to match any crash is
+how a real failure gets laundered.
+
 ### Two findings M7.R did NOT fix
 
 - **`POST_NOTIFICATIONS` is declared, asserted, and never requested at
