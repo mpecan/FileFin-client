@@ -150,6 +150,12 @@ Future<NowPlayingHost> _openSession() async => AudioServiceNowPlaying(
 /// change ever does set an `artUri` it fails loudly here instead of silently
 /// drawing no picture.
 ///
+/// `putFile` and `putFileStream` take `Duration.zero` where the interface
+/// defaults to thirty days, and that is an answer to a mutant rather than a
+/// preference: nothing here reads the value, so `30` to `-30` is an equivalent
+/// mutant no assertion can kill. A literal that means nothing is better
+/// removed than excluded.
+///
 /// Public only so that `audio_service_now_playing_test.dart` can prove all
 /// eleven of those throws; nothing outside this library constructs one.
 @visibleForTesting
@@ -208,10 +214,6 @@ final class NoArtworkCache implements BaseCacheManager {
     covariant Object fileBytes, {
     String? key,
     String? eTag,
-    // `Duration()` rather than the interface's own 30-day default, and it is
-    // the answer to a mutant rather than a preference: nothing here reads it,
-    // so `30` -> `-30` is an equivalent mutant no assertion can kill. A
-    // literal that means nothing is better removed than excluded.
     Duration maxAge = Duration.zero,
     String fileExtension = 'file',
   }) async => _declined;
@@ -222,10 +224,6 @@ final class NoArtworkCache implements BaseCacheManager {
     Stream<List<int>> source, {
     String? key,
     String? eTag,
-    // `Duration()` rather than the interface's own 30-day default, and it is
-    // the answer to a mutant rather than a preference: nothing here reads it,
-    // so `30` -> `-30` is an equivalent mutant no assertion can kill. A
-    // literal that means nothing is better removed than excluded.
     Duration maxAge = Duration.zero,
     String fileExtension = 'file',
   }) async => _declined;

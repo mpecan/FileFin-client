@@ -4146,6 +4146,14 @@ Said out loud, per CLAUDE.md. Silence would read as "there was none".
   and it says to measure the rate on `just it` before touching the list —
   two in four is far above the unit suite's ~4% and may be a different
   population.
+- **Both gate warnings rose on the logout commit and were paid in the next
+  one**, which is the ratchet working rather than an exception to it:
+  `file-size` went to 5 when `session_test.dart` reached 423 lines and
+  `comments` to 2 when the adapter reached 19%. Paid by splitting
+  `session_logout_test.dart` out — the same split, for the same reason, as
+  `settings_selection_test.dart` at M7.4 — and by moving a duplicated
+  four-line rationale into the `///` doc of the class it describes, which is
+  what §2 asks for. Back at **4** and **1**.
 - **The picker still has no confirmation on removal**, carried from M7.4.
 - `Podfile.lock` and the CocoaPods integration `flutter build ios` writes into
   `Runner.xcodeproj` are **not committed**, as in every milestone before this
