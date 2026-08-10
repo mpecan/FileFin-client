@@ -164,6 +164,85 @@ void main() {
     expect(find.text('Work'), findsOneWidget);
   });
 
+  testWidgets('the selection is written BEFORE the restore', (tester) async {
+    // The ordering `_switchTo`'s doc claims, asserted while the restore is
+    // still in flight — the only moment the two orders differ. A user asked
+    // for Work; a process that dies mid-restore must still open Work tomorrow.
+    saveBoth(selected: attic);
+    final gate = Completer<void>();
+    apiFor(work).restoreGate = gate;
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    await openPicker(tester);
+    await tester.tap(find.text('Work'));
+    await tester.pump();
+
+    expect(SettingsStore(dir).read().selectedServerId, work.id);
+    gate.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the picker opens marking the server that is CURRENT', (
+    tester,
+  ) async {
+    // `selected:` reaching the picker as `null` was a green one-token mutant:
+    // `server_list_page_test.dart` pins the screen given a selection, and
+    // nothing asserted the shell hands it one.
+    saveBoth(selected: work);
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+
+    await openPicker(tester);
+
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Work'),
+        matching: find.byIcon(Icons.check),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Attic NAS'),
+        matching: find.byIcon(Icons.check),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a selection that cannot be written says so, and switches', (
+    tester,
+  ) async {
+    // `_switchTo` was the one `SettingsStore.write` call site of five with no
+    // handler, and runs `unawaited(...)` with no `runZonedGuarded` — so the
+    // picker closed and nothing changed and nothing was said.
+    saveBoth(selected: attic);
+    await tester.pumpWidget(shell());
+    await tester.pumpAndSettle();
+    await openPicker(tester);
+    // The support directory becomes a FILE — a revoked permission or a full
+    // disk, and it behaves the same in CI.
+    dir.deleteSync(recursive: true);
+    File(dir.path).writeAsStringSync('x');
+    addTearDown(() {
+      File(dir.path).deleteSync();
+      dir.createSync(recursive: true);
+    });
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('could not save its settings file'),
+      findsWidgets,
+    );
+    // The switch itself is what the user asked for and goes ahead; only the
+    // NEXT launch is what the message is about.
+    expect(find.text('Work'), findsOneWidget);
+    expect(api(work).calls, contains('restore'));
+  });
+
   testWidgets('switching to a server whose session is gone offers THAT one', (
     tester,
   ) async {
