@@ -183,7 +183,20 @@ abstract base class PlaybackHost {
   Future<void> selectSubtitleTrack(SubtitleSource? source);
 
   /// The widget that renders the video.
-  Widget buildSurface();
+  ///
+  /// [onBack] is called by the back button in the controls overlay; when null
+  /// no back button is shown. [onShowSubtitles] opens the subtitle picker.
+  /// Implementations that wrap the video surface in native controls (such as
+  /// `MaterialVideoControlsTheme`) use these to inject the app's own buttons;
+  /// implementations that cannot show controls (such as a fake in a test)
+  /// ignore them.
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  });
 
   /// Releases the engine. One host per player screen, disposed with it.
   Future<void> dispose();

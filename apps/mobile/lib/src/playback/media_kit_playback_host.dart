@@ -125,7 +125,19 @@ final class MediaKitPlaybackHost extends PlaybackHost {
       );
 
   @override
-  Widget buildSurface() => _player.buildSurface();
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  }) => _player.buildSurface(
+    onBack: onBack,
+    onShowSubtitles: onShowSubtitles,
+    onNext: onNext,
+    onPrevious: onPrevious,
+    title: title,
+  );
 
   @override
   Future<void> dispose() => _player.dispose();

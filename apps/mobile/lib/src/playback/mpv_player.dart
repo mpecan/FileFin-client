@@ -1,4 +1,5 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -64,7 +65,13 @@ abstract base class MpvPlayer {
   Future<void> setProperty(String name, String value);
 
   /// The video surface. Not reachable under `flutter test` — see the class doc.
-  Widget buildSurface();
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  });
 
   /// Releases the mpv context.
   Future<void> dispose();
@@ -154,11 +161,129 @@ final class RealMpvPlayer extends MpvPlayer {
   /// and is now correct rather than merely unset: nothing pauses on
   /// backgrounding any more, so there is nothing to resume.
   @override
-  Widget buildSurface() => Video(
-    controller: _controller ??= VideoController(_player),
-    pauseUponEnteringBackgroundMode: false,
-  );
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  }) {
+    final video = Video(
+      controller: _controller ??= VideoController(_player),
+      pauseUponEnteringBackgroundMode: false,
+    );
+    List<Widget> bottomBar() => [
+      if (onPrevious != null)
+        MaterialCustomButton(
+          icon: const Icon(Icons.skip_previous),
+          onPressed: onPrevious,
+        ),
+      const MaterialPlayOrPauseButton(),
+      if (onNext != null)
+        MaterialCustomButton(
+          icon: const Icon(Icons.skip_next),
+          onPressed: onNext,
+        ),
+      const MaterialPositionIndicator(),
+      const Spacer(),
+    ];
+    return MaterialVideoControlsTheme(
+      normal: MaterialVideoControlsThemeData(
+        topButtonBar: [
+          if (onBack != null)
+            MaterialCustomButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: onBack,
+            ),
+          if (title != null && title.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+          const Spacer(),
+          if (onShowSubtitles != null)
+            MaterialCustomButton(
+              icon: const Icon(Icons.subtitles),
+              onPressed: onShowSubtitles,
+            ),
+        ],
+        bottomButtonBar: bottomBar(),
+      ),
+      fullscreen: MaterialVideoControlsThemeData(
+        topButtonBar: [
+          if (onBack != null)
+            MaterialCustomButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: onBack,
+            ),
+          if (title != null && title.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+          const Spacer(),
+        ],
+        bottomButtonBar: bottomBar(),
+      ),
+      child: _AutoFullscreen(child: video),
+    );
+  }
 
   @override
   Future<void> dispose() => _player.dispose();
+}
+
+/// Enters fullscreen as soon as it has a context below
+/// [MaterialVideoControlsTheme].
+///
+/// The controls theme's fullscreen is a separate route pushed on top of the
+/// current one — so the only way to leave it is the back button. When the
+/// fullscreen route is popped, the player page itself is popped too, so "back"
+/// always means "close the player." No fullscreen button is shown because
+/// fullscreen is the only state.
+class _AutoFullscreen extends StatefulWidget {
+  const _AutoFullscreen({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_AutoFullscreen> createState() => _AutoFullscreenState();
+}
+
+class _AutoFullscreenState extends State<_AutoFullscreen> {
+  var _entered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_entered) {
+      _entered = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        enterFullscreen(context).then((_) {
+          if (mounted) Navigator.maybePop(context);
+        });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

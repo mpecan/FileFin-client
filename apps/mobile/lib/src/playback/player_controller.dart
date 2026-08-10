@@ -6,6 +6,7 @@ import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/playback/progress_reporter.dart';
+import 'package:filefin_mobile/src/playback/subtitle_repair.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/widgets.dart';
 
@@ -156,6 +157,9 @@ class PlayerController extends ChangeNotifier {
   /// Whether there is another file after this one (F7's Next).
   bool get hasNext => _current.value + 1 < detail.files.length;
 
+  /// Whether there is a file before this one.
+  bool get hasPrevious => _current.value > 0;
+
   /// The file currently playing.
   FileInfo get file => detail.files[_current.value];
 
@@ -214,6 +218,16 @@ class PlayerController extends ChangeNotifier {
     if (!hasNext) return;
     await _reportNow(ProgressEvent.stop);
     _switchTo(FileIndex(_current.value + 1));
+    _startAt = Duration.zero;
+    _notify();
+    await _decideAndOpen();
+  }
+
+  /// Goes back to the previous file, at zero.
+  Future<void> previous() async {
+    if (!hasPrevious) return;
+    await _reportNow(ProgressEvent.stop);
+    _switchTo(FileIndex(_current.value - 1));
     _startAt = Duration.zero;
     _notify();
     await _decideAndOpen();
@@ -440,11 +454,13 @@ class PlayerController extends ChangeNotifier {
           SubtitleSource(
             index: info.index,
             label: info.label.isEmpty ? info.lang : info.label,
-            data: await api.subtitleText(
-              detail.id,
-              _current,
-              info.index,
-              cancelToken: _work,
+            data: repairSubtitle(
+              await api.subtitleText(
+                detail.id,
+                _current,
+                info.index,
+                cancelToken: _work,
+              ),
             ),
           ),
         );

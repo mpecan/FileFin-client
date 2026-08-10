@@ -122,7 +122,13 @@ final class FakePlaybackHost extends PlaybackHost {
   }
 
   @override
-  Widget buildSurface() {
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  }) {
     calls.add('buildSurface');
     return surface;
   }

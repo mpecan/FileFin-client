@@ -120,7 +120,13 @@ final class FakeMpvPlayer extends MpvPlayer {
   }
 
   @override
-  Widget buildSurface() {
+  Widget buildSurface({
+    VoidCallback? onBack,
+    VoidCallback? onShowSubtitles,
+    VoidCallback? onNext,
+    VoidCallback? onPrevious,
+    String? title,
+  }) {
     calls.add('buildSurface');
     return const SizedBox(key: ValueKey('fake-mpv-surface'));
   }
