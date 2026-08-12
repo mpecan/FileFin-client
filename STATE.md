@@ -201,6 +201,32 @@ mutants`, run alone, and a survivor fixed in a follow-up. Nothing else in `just
 check` is outstanding — coverage is 100% at ratchet 0, and every other gate
 exits 0.
 
+### Two television defects the harness did not catch, found on the device
+
+Both were reported from a Google TV Streamer after the redesign landed, and
+both are the same shape: a state in which the remote reaches **nothing**.
+
+- **The video surface took focus.** `1b48603` wrapped it in `ExcludeFocus`
+  inside the overlay `RealMpvPlayer.buildSurface` used to build; deleting that
+  class to make `PlayerControls` the one set of controls took the
+  `ExcludeFocus` with it. A focusable texture filling the screen under the
+  overlay holds focus and never gives it back. `PlayerPage` wraps the surface
+  now.
+- **A faded overlay could not be woken.** The controls hide after five seconds
+  and `ExcludeFocus` then takes every one of them out of traversal — on a phone
+  you touch the glass, on a television there is nothing to touch, so the film
+  played on with no way to pause it. A `FocusNode` takes focus as the controls
+  go and turns any key into a wake; the waking press deliberately does nothing
+  else, and focus moves to a real button afterwards so the next press acts.
+
+**Why the reachability walk missed both.** It starts from whatever holds focus
+in a pumped screen, and the fake host's surface is a `SizedBox` — not
+focusable, so the first defect could not arise; and it never advances the
+clock, so the second never happened. Both suites now use a **focusable** fake
+surface, and the fade cases pump past `PlayerControls.fadeAfter`. The lesson is
+the general one: a harness that only ever sees the benign fixture proves the
+benign fixture.
+
 ### Debt this milestone chose not to pay
 
 - **The playback-speed control is not built** (above). It is a feature with an

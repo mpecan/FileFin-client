@@ -5,6 +5,7 @@ import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:filefin_mobile/src/theme/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Everything a person can do to playback (F7), drawn over the video.
 ///
@@ -64,6 +65,17 @@ class _PlayerControlsState extends State<PlayerControls> {
   var _locked = false;
   Timer? _fade;
 
+  /// Holds focus while the controls are hidden, so a remote has something to
+  /// press keys at.
+  ///
+  /// **A television has nothing to tap.** A phone wakes the overlay by
+  /// touching the glass; a TV has only the D-pad, and the faded overlay puts
+  /// every control behind `ExcludeFocus` — so without this the film plays on
+  /// with no way to pause it. `skipTraversal` keeps the node out of the arrow
+  /// order once the controls are up, so it is never a stop on the way between
+  /// two real buttons.
+  final _wake = FocusNode(debugLabel: 'player-wake');
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +85,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   void dispose() {
     _fade?.cancel();
+    _wake.dispose();
     super.dispose();
   }
 
@@ -88,8 +101,33 @@ class _PlayerControlsState extends State<PlayerControls> {
   void _restartFade() {
     _fade?.cancel();
     _fade = Timer(PlayerControls.fadeAfter, () {
-      if (mounted) setState(() => _visible = false);
+      if (!mounted) return;
+      setState(() => _visible = false);
+      // Requested as the controls go, not before: until they do, focus belongs
+      // to whichever button the user was on.
+      _wake.requestFocus();
     });
+  }
+
+  /// Wakes the overlay on any key, and lets that key do nothing else.
+  ///
+  /// A user pressing down to see the controls has not asked to seek, and a
+  /// press that both woke the overlay and acted would move the film before
+  /// they could see where they were. Once visible this returns `ignored` and
+  /// every key goes where it always did.
+  KeyEventResult _wakeOnKey(FocusNode node, KeyEvent event) {
+    if (_visible) return KeyEventResult.ignored;
+    if (event is KeyDownEvent) {
+      _show();
+      // After the frame, because the controls are behind `ExcludeFocus` until
+      // this rebuild lands and `nextFocus` would find nothing to move to. It
+      // is what leaves focus on a real button rather than on this node, so the
+      // next press acts instead of waking again.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _wake.nextFocus();
+      });
+    }
+    return KeyEventResult.handled;
   }
 
   void _toggleLock() {
@@ -100,34 +138,39 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   Widget build(BuildContext context) {
     final metrics = widget.metrics;
-    return GestureDetector(
-      onTap: _show,
-      behavior: HitTestBehavior.translucent,
-      child: AnimatedOpacity(
-        opacity: _visible ? 1 : 0,
-        duration: const Duration(milliseconds: 250),
-        // Hidden controls must not be tappable: a tap on an invisible pause
-        // button is a tap the user did not know they were making.
-        child: IgnorePointer(
-          ignoring: !_visible,
-          child: ExcludeFocus(
-            excluding: !_visible,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(gradient: _scrim),
-              child: SafeArea(
-                child: _locked
-                    ? Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: EdgeInsets.all(metrics.margin),
-                          child: _LockButton(
-                            locked: true,
-                            onPressed: _toggleLock,
-                            onFocused: _show,
+    return Focus(
+      focusNode: _wake,
+      skipTraversal: true,
+      onKeyEvent: _wakeOnKey,
+      child: GestureDetector(
+        onTap: _show,
+        behavior: HitTestBehavior.translucent,
+        child: AnimatedOpacity(
+          opacity: _visible ? 1 : 0,
+          duration: const Duration(milliseconds: 250),
+          // Hidden controls must not be tappable: a tap on an invisible pause
+          // button is a tap the user did not know they were making.
+          child: IgnorePointer(
+            ignoring: !_visible,
+            child: ExcludeFocus(
+              excluding: !_visible,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(gradient: _scrim),
+                child: SafeArea(
+                  child: _locked
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: EdgeInsets.all(metrics.margin),
+                            child: _LockButton(
+                              locked: true,
+                              onPressed: _toggleLock,
+                              onFocused: _show,
+                            ),
                           ),
-                        ),
-                      )
-                    : _unlocked(metrics),
+                        )
+                      : _unlocked(metrics),
+                ),
               ),
             ),
           ),

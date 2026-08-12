@@ -398,4 +398,64 @@ void main() {
     await tester.pumpAndSettle();
     expect(host.calls, contains('pause'));
   });
+
+  /// **A television has nothing to tap.** The overlay fades after five seconds
+  /// and `ExcludeFocus` then takes every control out of traversal, so on a
+  /// phone you touch the glass and on a TV you are left with a playing film
+  /// and no way to pause it. Any key has to wake it.
+  testWidgets('on a television any key brings the faded controls back', (
+    tester,
+  ) async {
+    await show(tester, metrics: PlayerControlsMetrics.tv);
+    expect(find.byTooltip('Play'), findsOneWidget);
+
+    await tester.pump(PlayerControls.fadeAfter + const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0.0,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      1.0,
+    );
+  });
+
+  /// The waking press must not ALSO act. A remote user pressing down to see
+  /// the controls has not asked to seek, and a press that did both would move
+  /// the film before they could see where they were.
+  testWidgets('the waking press does nothing but wake', (tester) async {
+    await show(tester, metrics: PlayerControlsMetrics.tv);
+    await tester.pump(PlayerControls.fadeAfter + const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    // A snapshot, because starting playback has already issued a `play`: what
+    // is being pinned is that the waking press adds nothing.
+    final before = [...host.calls];
+    await tester.sendKeyEvent(dpadSelect);
+    await tester.pumpAndSettle();
+
+    expect(host.calls, before);
+  });
+
+  /// And once awake, the keys work normally again — a wake handler that kept
+  /// swallowing presses would be the same dead end with an extra frame.
+  testWidgets('after waking, the D-pad drives the controls again', (
+    tester,
+  ) async {
+    await show(tester, metrics: PlayerControlsMetrics.tv);
+    await tester.pump(PlayerControls.fadeAfter + const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    await dpadActivate(tester, 'Play');
+    await tester.pumpAndSettle();
+
+    expect(host.calls, contains('play'));
+  });
 }
