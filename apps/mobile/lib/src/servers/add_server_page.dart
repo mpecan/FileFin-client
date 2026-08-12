@@ -198,8 +198,11 @@ class _AddServerPageState extends State<AddServerPage> {
       children: [
         TextField(
           controller: _url,
+          autofocus: true,
           autocorrect: false,
           keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => FocusScope.of(context).nextFocus(),
           decoration: const InputDecoration(
             labelText: 'Server address',
             hintText: 'http://192.168.1.10:8099',

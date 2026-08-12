@@ -95,6 +95,7 @@ class _PlayerPageState extends State<PlayerPage> {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _lifecycle = AppLifecycleListener(
       onStateChange: (state) => unawaited(_controller.handleLifecycle(state)),
     );

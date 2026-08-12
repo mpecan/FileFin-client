@@ -161,61 +161,76 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     body: AsyncView<MediaDetail>(
       controller: _controller,
       onSignIn: widget.onSignIn,
-      builder: (context, detail) => ListView(
-        padding: const EdgeInsets.all(16),
+      builder: (context, detail) => Column(
         children: [
-          if (detail.hasPoster)
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 320),
-                child: Image(
-                  image: PosterImageProvider(
-                    api: widget.api,
-                    media: detail.id,
-                    size: PosterSize.detail,
-                    cancelToken: _posterToken,
-                  ),
-                  errorBuilder: (context, _, _) => const SizedBox.shrink(),
-                ),
+          // Action controls pinned above the scroll area — always visible
+          // without scrolling, which matters on TV where scrolling is slower.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: WatchStateControls(detail: detail, actions: _watch),
+          ),
+          if (widget.onPlay != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: PlayButtons(
+                detail: detail,
+                onPlay: (file, startAt) =>
+                    unawaited(_afterPlaying(detail, file, startAt)),
               ),
             ),
-          _Heading(detail: detail),
-          if (detail.description.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(detail.description),
-          ],
-          // Both, when both exist. `description` is the short line and `plot`
-          // the long one (`media.go:56`), and they are genuinely different
-          // fields rather than two names for one — showing only the first
-          // would drop whichever the importer happened to fill.
-          if (detail.plot.isNotEmpty && detail.plot != detail.description) ...[
-            const SizedBox(height: 12),
-            Text(detail.plot),
-          ],
-          _Chips(label: 'Genres', values: detail.genres),
-          _Chips(label: 'Tags', values: detail.tags),
-          _Chips(label: 'Cast', values: detail.actors),
-          _Pairs(label: 'Details', pairs: detail.metadata),
-          _Pairs(label: 'Ratings', pairs: detail.ratings),
-          _Pairs(label: 'Technical', pairs: detail.technical),
-          WatchStateControls(detail: detail, actions: _watch),
-          if (widget.onPlay != null)
-            PlayButtons(
-              detail: detail,
-              onPlay: (file, startAt) =>
-                  unawaited(_afterPlaying(detail, file, startAt)),
-            ),
-          FileList(
-            files: detail.files,
-            onPlay: widget.onPlay == null
-                ? null
-                : (file) => unawaited(
-                    _afterPlaying(
-                      detail,
-                      file,
-                      Duration(seconds: startSecondsFor(detail, file)),
+          // Metadata scrolls below.
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              children: [
+                if (detail.hasPoster)
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: Image(
+                        image: PosterImageProvider(
+                          api: widget.api,
+                          media: detail.id,
+                          size: PosterSize.detail,
+                          cancelToken: _posterToken,
+                        ),
+                        errorBuilder: (context, _, _) =>
+                            const SizedBox.shrink(),
+                      ),
                     ),
                   ),
+                _Heading(detail: detail),
+                if (detail.description.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(detail.description),
+                ],
+                if (detail.plot.isNotEmpty &&
+                    detail.plot != detail.description) ...[
+                  const SizedBox(height: 12),
+                  Text(detail.plot),
+                ],
+                _Chips(label: 'Genres', values: detail.genres),
+                _Chips(label: 'Tags', values: detail.tags),
+                _Chips(label: 'Cast', values: detail.actors),
+                _Pairs(label: 'Details', pairs: detail.metadata),
+                _Pairs(label: 'Ratings', pairs: detail.ratings),
+                _Pairs(label: 'Technical', pairs: detail.technical),
+                FileList(
+                  files: detail.files,
+                  onPlay: widget.onPlay == null
+                      ? null
+                      : (file) => unawaited(
+                          _afterPlaying(
+                            detail,
+                            file,
+                            Duration(
+                              seconds: startSecondsFor(detail, file),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

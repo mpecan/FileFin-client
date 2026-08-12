@@ -30,9 +30,6 @@ class FileFinApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E5D8A)),
       useMaterial3: true,
     ),
-    // Android TV: enables D-pad navigation globally. `Dpad.wrap()` is a
-    // TransitionBuilder that installs Shortcuts, a FocusTraversalPolicy and
-    // a debug overlay — one line, no per-screen wiring needed.
     builder: Dpad.wrap(),
     home: const HomeRoute(),
   );
