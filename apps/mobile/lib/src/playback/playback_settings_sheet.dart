@@ -40,6 +40,7 @@ class PlaybackSettingsSheet extends StatefulWidget {
     required this.server,
     required this.prefs,
     required this.onChanged,
+    this.onSignOut,
     super.key,
   });
 
@@ -48,6 +49,18 @@ class PlaybackSettingsSheet extends StatefulWidget {
 
   /// The settings that are not per server.
   final PlaybackPrefs prefs;
+
+  /// Ends the session and forgets this account (F2, §9), or null when the
+  /// screen that opened this sheet offers it somewhere else.
+  ///
+  /// **Non-null only on a television.** The phone puts sign-out behind the
+  /// header's sliders menu, and offering it twice would be two paths to a
+  /// destructive action. A television's rail has four destinations and a
+  /// server row and no room for a fifth, so this sheet is where it lives —
+  /// without it a TV account could never be signed out at all, which is what
+  /// the coverage ratchet caught: `TvShell.onSignOut` was a callback nothing
+  /// invoked.
+  final VoidCallback? onSignOut;
 
   /// Called with the whole new state on every change.
   final void Function(SavedServer server, PlaybackPrefs prefs) onChanged;
@@ -133,6 +146,16 @@ class _PlaybackSettingsSheetState extends State<PlaybackSettingsSheet> {
             onChanged: (secs) =>
                 _apply(prefs: _prefs.copyWith(progressIntervalSecs: secs)),
           ),
+          if (widget.onSignOut case final signOut?) ...[
+            const Divider(),
+            ListTile(
+              key: const Key('signOut'),
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              subtitle: Text('Forget ${_server.name} on this device.'),
+              onTap: signOut,
+            ),
+          ],
         ],
       ),
     ),
@@ -185,12 +208,19 @@ Future<void> showPlaybackSettings(
   required SavedServer server,
   required PlaybackPrefs prefs,
   required void Function(SavedServer server, PlaybackPrefs prefs) onChanged,
+  VoidCallback? onSignOut,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
-  builder: (_) => PlaybackSettingsSheet(
+  builder: (sheet) => PlaybackSettingsSheet(
     server: server,
     prefs: prefs,
     onChanged: onChanged,
+    onSignOut: onSignOut == null
+        ? null
+        : () {
+            Navigator.pop(sheet);
+            onSignOut();
+          },
   ),
 );

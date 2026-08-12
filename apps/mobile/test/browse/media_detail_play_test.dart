@@ -69,7 +69,7 @@ void main() {
       expect(find.textContaining('Continue'), findsNothing);
     });
 
-    testWidgets('a partly watched item offers Continue AND Start over', (
+    testWidgets('a partly watched item offers Resume AND Start over', (
       tester,
     ) async {
       final played = await pumpDetail(
@@ -77,11 +77,14 @@ void main() {
         detailWith(files: 2, continueIndex: 1, continueSeconds: 125),
       );
 
-      expect(find.text('Continue 2:05'), findsOneWidget);
-      await tester.tap(find.text('Continue 2:05'));
+      // The button NAMES the file it would resume, which is stronger than the
+      // clock alone: a screen that resumed file 0 at 2:05 renders an identical
+      // timestamp and a different word.
+      expect(find.text('Resume File 1 · 2:05'), findsOneWidget);
+      await tester.tap(find.text('Resume File 1 · 2:05'));
       expect(played, ['1@125']);
 
-      await tester.tap(find.text('Start over'));
+      await tester.tap(find.byTooltip('Start over'));
       expect(played, ['1@125', '0@0']);
     });
 
@@ -185,7 +188,9 @@ void main() {
         ),
       );
 
-      expect(find.text('Continue 2:05'), findsOneWidget);
+      // No file name on the button: this item has ONE file, so naming it
+      // would print the title twice — see `resumeLabel`.
+      expect(find.text('Resume 2:05'), findsOneWidget);
       expect(
         api.calls.where((c) => c.startsWith('mediaDetail')),
         hasLength(1),
@@ -230,5 +235,32 @@ void main() {
         hasLength(1),
       );
     });
+  });
+
+  /// **The pointer can name a file the list no longer holds.** `continueIndex`
+  /// is per item on the server and the file list is rebuilt by the importer,
+  /// so an episode deleted between two sessions leaves a pointer past the end.
+  /// `offerResume` still offers it — upstream's rule is about the numbers, not
+  /// about the array — and the button must name SOMETHING rather than throw a
+  /// `StateError` out of `build`.
+  test('a resume pointing at a missing file falls back to the first', () {
+    const detail = MediaDetail(
+      id: MediaId('e4285edb34d5'),
+      title: 'Gone',
+      files: [
+        FileInfo(name: 'S1E1'),
+        FileInfo(index: FileIndex(1), name: 'S1E2'),
+      ],
+      continueIndex: 9,
+      continueSeconds: 125,
+    );
+
+    expect(
+      resumeLabel(
+        detail,
+        const ResumeAvailable(file: FileIndex(9), seconds: 125),
+      ),
+      'Resume S1E1 · 2:05',
+    );
   });
 }

@@ -182,21 +182,17 @@ abstract base class PlaybackHost {
   /// Shows [source], or turns subtitles off when it is null.
   Future<void> selectSubtitleTrack(SubtitleSource? source);
 
-  /// The widget that renders the video.
+  /// The widget that renders the video, and nothing else.
   ///
-  /// [onBack] is called by the back button in the controls overlay; when null
-  /// no back button is shown. [onShowSubtitles] opens the subtitle picker.
-  /// Implementations that wrap the video surface in native controls (such as
-  /// `MaterialVideoControlsTheme`) use these to inject the app's own buttons;
-  /// implementations that cannot show controls (such as a fake in a test)
-  /// ignore them.
-  Widget buildSurface({
-    VoidCallback? onBack,
-    VoidCallback? onShowSubtitles,
-    VoidCallback? onNext,
-    VoidCallback? onPrevious,
-    String? title,
-  });
+  /// **It carries no controls, and it used to carry all of them.** Until the
+  /// redesign there were two control implementations in this package: a
+  /// D-pad-navigable overlay built inside `RealMpvPlayer.buildSurface`, which
+  /// is what shipped, and `PlayerControls`, which is what every widget test
+  /// drove through a fake host's surface. Neither was covered by the other's
+  /// assertions. `PlayerControls` is now the one overlay, `PlayerPage` stacks
+  /// it over whatever this returns, and a fake host returns a coloured box —
+  /// so the tested controls and the shipped controls are the same widget.
+  Widget buildSurface();
 
   /// Releases the engine. One host per player screen, disposed with it.
   Future<void> dispose();

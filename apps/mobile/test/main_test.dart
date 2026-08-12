@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -42,6 +43,18 @@ void main() {
     // about.
     FlutterSecureStorage.setMockInitialValues({});
     addTearDown(() => dir.deleteSync(recursive: true));
+
+    // `main()` now asks the host whether it is a television before it calls
+    // `runApp`. Answered here rather than left unhandled: an un-mocked channel
+    // completes off the `FakeAsync` clock this body runs on, and the `await`
+    // below then never returns — measured as a ten-minute timeout rather than
+    // a failure, which is the worst shape a test can have.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(formFactorChannel, (_) async => false);
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(formFactorChannel, null),
+    );
   });
 
   testWidgets('main() resolves the support directory and starts the app', (
@@ -82,7 +95,9 @@ void main() {
   });
 
   testWidgets('the dependencies it builds are usable', (tester) async {
-    await tester.pumpWidget(entrypoint.buildApp(dir));
+    await tester.pumpWidget(
+      entrypoint.buildApp(dir, formFactor: FormFactor.phone),
+    );
     await tester.pump();
 
     final deps = tester
@@ -108,7 +123,8 @@ void main() {
   ) async {
     final dir = Directory.systemTemp.createTempSync('filefin-main-play-');
     addTearDown(() => dir.deleteSync(recursive: true));
-    final app = entrypoint.buildApp(dir) as FileFinScope;
+    final app =
+        entrypoint.buildApp(dir, formFactor: FormFactor.phone) as FileFinScope;
 
     expect(app.dependencies.network, isA<ConnectivityNetworkStatus>());
     // The factory is INVOKED, not merely inspected: what is being pinned is

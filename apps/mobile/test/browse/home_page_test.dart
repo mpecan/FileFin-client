@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
+import '../support/library_header.dart';
 
 /// F6's three rows, against the payload the real server actually sent.
 ///
@@ -106,7 +107,7 @@ void main() {
         .widgetList<MediaRow>(find.byType(MediaRow))
         .map((r) => r.label);
 
-    expect(labels, ['Continue watching', 'Favourites', 'Watched']);
+    expect(labels, ['Continue', 'Favourites', 'Watched']);
   });
 
   testWidgets('each heading draws ITS OWN bucket, not merely three rows', (
@@ -124,7 +125,7 @@ void main() {
         row.label: row.items,
     };
 
-    expect(byLabel['Continue watching'], distinct.continueRow);
+    expect(byLabel['Continue'], distinct.continueRow);
     expect(byLabel['Favourites'], distinct.favorites);
     expect(byLabel['Watched'], distinct.completed);
   });
@@ -152,7 +153,7 @@ void main() {
       result: HomeRows(continueRow: rows.continueRow),
     );
 
-    expect(find.text('Continue watching'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Favourites'), findsNothing);
     expect(find.text('Watched'), findsNothing);
   });
@@ -233,7 +234,7 @@ void main() {
     var opened = 0;
     await show(tester, onSettings: () => opened++);
 
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
 
     expect(opened, 1);
   });
@@ -241,7 +242,7 @@ void main() {
   testWidgets('no settings callback means no settings button', (tester) async {
     await show(tester);
 
-    expect(find.byTooltip('Playback settings'), findsNothing);
+    expect(find.byIcon(headerMenuIcon), findsNothing);
   });
 
   group('one row, virtualised', () {
@@ -259,7 +260,7 @@ void main() {
           home: Scaffold(
             body: MediaRow(
               api: api,
-              label: 'Continue watching',
+              label: 'Continue',
               items: items,
               onOpen: (_) {},
             ),
@@ -316,7 +317,7 @@ void main() {
     ) async {
       await row(tester, const []);
 
-      expect(find.text('Continue watching'), findsNothing);
+      expect(find.text('Continue'), findsNothing);
       expect(find.byType(ListView), findsNothing);
     });
 
@@ -325,7 +326,7 @@ void main() {
     ) async {
       await row(tester, many(1));
 
-      expect(find.text('Continue watching'), findsOneWidget);
+      expect(find.text('Continue'), findsOneWidget);
       expect(find.byType(PosterTile), findsOneWidget);
     });
 

@@ -91,14 +91,27 @@ void main() {
       // The subtlest of F14's Android wiring and the one with no visible
       // symptom: a plain `FlutterActivity` launches fine, plays fine, and
       // every lock-screen button reaches an engine the service cannot see.
+      //
+      // **Named through our own subclass rather than directly**, and the
+      // assertion has to follow that or it fails on a tree that is correct:
+      // `MainActivity` extends `AudioServiceActivity` and adds the two method
+      // channels — the CA bundle and the form-factor probe — so it must be the
+      // launch activity AND it must still be an `AudioServiceActivity`.
+      // Asserting only the manifest string, as this did until the redesign,
+      // went red the moment the TV banner was added; asserting only the
+      // subclass would miss a manifest pointing somewhere else entirely.
       final text = manifest.readAsStringSync();
       expect(
         text,
-        contains(
-          'android:name="com.ryanheise.audioservice.AudioServiceActivity"',
-        ),
+        contains('android:name="dev.filefin.filefin_mobile.MainActivity"'),
       );
-      expect(text, isNot(contains('android:name=".MainActivity"')));
+      expect(
+        File(
+          'android/app/src/main/kotlin/dev/filefin/filefin_mobile/'
+          'MainActivity.kt',
+        ).readAsStringSync(),
+        contains('class MainActivity : AudioServiceActivity()'),
+      );
     });
 
     test('minSdk is 26 as a literal, not flutter.minSdkVersion (C5)', () {

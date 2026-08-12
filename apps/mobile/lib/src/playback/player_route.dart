@@ -3,6 +3,7 @@ import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
     show PlaybackOutcome;
 import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ Future<PlaybackOutcome?> pushPlayer(
   required MediaDetail detail,
   required FileIndex file,
   required Duration startAt,
+  required PlayerControlsMetrics metrics,
   required VoidCallback onSignIn,
 }) {
   final deps = FileFinScope.of(context);
@@ -44,6 +46,7 @@ Future<PlaybackOutcome?> pushPlayer(
         prefs: deps.settings.read().playback,
         initialFile: file,
         startAt: startAt,
+        metrics: metrics,
         onSignIn: onSignIn,
       ),
     ),

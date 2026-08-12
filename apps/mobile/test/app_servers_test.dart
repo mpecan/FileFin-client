@@ -11,6 +11,7 @@ import 'package:filefin_mobile/src/servers/server_list_page.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/servers/sign_in_page.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -74,7 +75,7 @@ void main() {
       // fake whatever it is handed cannot tell a switch from a no-op.
       apiFactory: (server, {pin}) => apiFor(server),
     ),
-    child: const FileFinApp(),
+    child: const FileFinApp(formFactor: FormFactor.phone),
   );
 
   /// Both servers saved, [selected] signed in and answering.

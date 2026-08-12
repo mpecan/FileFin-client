@@ -10,6 +10,7 @@ import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/platform_secret_store.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -24,7 +25,7 @@ import 'package:path_provider/path_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final support = await getApplicationSupportDirectory();
-  runApp(buildApp(support));
+  runApp(buildApp(support, formFactor: await detectFormFactor()));
 }
 
 /// The widget tree, given the directory `settings.json` lives in.
@@ -47,7 +48,7 @@ Future<void> main() async {
 /// it for the same reason it reports the seven below — this is the same
 /// class, not one of its own (§5, `public_member_no_consumer`).
 @visibleForTesting
-Widget buildApp(Directory support) {
+Widget buildApp(Directory support, {required FormFactor formFactor}) {
   final secrets = PlatformSecretStore();
   return FileFinScope(
     dependencies: AppDependencies(
@@ -73,6 +74,6 @@ Widget buildApp(Directory support) {
         ),
       ),
     ),
-    child: const FileFinApp(),
+    child: FileFinApp(formFactor: formFactor),
   );
 }

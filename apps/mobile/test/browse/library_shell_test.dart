@@ -4,10 +4,12 @@ import 'package:filefin_mobile/src/browse/home_page.dart';
 import 'package:filefin_mobile/src/browse/library_shell.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:filefin_mobile/src/browse/search_page.dart';
+import 'package:filefin_mobile/src/shell/nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
+import '../support/library_header.dart';
 import '../support/shell_harness.dart';
 
 /// The three tabs, and what a cold start costs.
@@ -95,16 +97,15 @@ void main() {
     // above asserts what is *drawn*, and the bar's own selection is the one
     // piece of state no drawn tab can speak for.
     await show(tester);
-    NavigationBar bar() =>
-        tester.widget<NavigationBar>(find.byType(NavigationBar));
+    ShellNavBar bar() => tester.widget<ShellNavBar>(find.byType(ShellNavBar));
 
-    expect(bar().selectedIndex, LibraryTab.home.index);
+    expect(bar().selected, LibraryTab.home.index);
 
     await tab(tester, 'Search');
-    expect(bar().selectedIndex, LibraryTab.search.index);
+    expect(bar().selected, LibraryTab.search.index);
 
     await tab(tester, 'Library');
-    expect(bar().selectedIndex, LibraryTab.library.index);
+    expect(bar().selected, LibraryTab.library.index);
   });
 
   testWidgets('Search REMEMBERS its box, its scope and its results', (
@@ -120,7 +121,7 @@ void main() {
     await tab(tester, 'Search');
     await tester.enterText(find.byType(TextField), 'movie');
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButton<SearchField>));
+    await tester.tap(find.byType(PopupMenuButton<SearchField>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Director').last);
     await tester.pumpAndSettle();
@@ -132,10 +133,10 @@ void main() {
     expect(find.widgetWithText(TextField, 'movie'), findsOneWidget);
     expect(
       tester
-          .widget<DropdownButton<SearchField>>(
-            find.byType(DropdownButton<SearchField>),
+          .widget<PopupMenuButton<SearchField>>(
+            find.byType(PopupMenuButton<SearchField>),
           )
-          .value,
+          .initialValue,
       SearchField.director,
     );
     expect(find.text('Direct Play Movie'), findsWidgets);
@@ -257,7 +258,7 @@ void main() {
     var opened = 0;
     await show(tester, onSettings: () => opened++);
 
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
 
     expect(opened, 1);
   });
@@ -276,5 +277,22 @@ void main() {
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
 
     handle.dispose();
+  });
+
+  /// The design puts a magnifier in the header AS WELL AS in the bottom bar —
+  /// the same affordance at the two ends of a thumb's travel.
+  testWidgets('the header magnifier jumps to Search, from either tab', (
+    tester,
+  ) async {
+    await show(tester);
+
+    await tester.tap(find.byTooltip('Search'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchPage), findsOneWidget);
+
+    await tab(tester, 'Library');
+    await tester.tap(find.byTooltip('Search'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchPage), findsOneWidget);
   });
 }

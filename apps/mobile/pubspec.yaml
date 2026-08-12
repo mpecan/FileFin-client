@@ -152,3 +152,22 @@ flutter:
   # Ships the Material icon font. `Icons.*` glyphs render as boxes without it,
   # and the empty state's server glyph is one.
   uses-material-design: true
+  # The redesign's metadata voice. Only the mono is bundled and
+  # `lib/src/theme/theme.dart` records why: the sans role is the platform's own
+  # UI face, which no reader would distinguish from Inter, while a monospace
+  # substituted per platform has different advance widths and would break the
+  # aligned counts, durations and sizes the design is built on.
+  #
+  # One weight, because the design uses one: every mono run in
+  # `FileFin Redesign.dc.html` is `IBM+Plex+Mono:wght@400`. A second face would
+  # be 174 kB nothing asks for (§1).
+  #
+  # SIL Open Font License 1.1, redistributable with attribution; the licence
+  # ships beside the face as `assets/fonts/OFL.txt` because the OFL requires it
+  # to travel with the font rather than be linked from somewhere.
+  fonts:
+    - family: IBMPlexMono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf
+  assets:
+    - assets/fonts/OFL.txt

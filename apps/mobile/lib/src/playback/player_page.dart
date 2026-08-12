@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:filefin_core/filefin_core.dart';
-import 'package:filefin_mobile/src/browse/file_list.dart' show humanSize;
+import 'package:filefin_mobile/src/browse/file_list.dart'
+    show fileLabel, humanSize;
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/playback/now_playing.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
+import 'package:filefin_mobile/src/playback/player_controls.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/playback/progress_reporter.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
@@ -14,13 +17,30 @@ import 'package:flutter/services.dart';
 
 part 'player_panels.dart';
 
+/// The mono line under the title on the overlay's top bar.
+///
+/// Which file, what container, and **how it is being served** — the last of
+/// which is the one thing a user cannot see anywhere else and the one that
+/// explains a slow start. `transcode` is the server's own verdict
+/// (`internal/server/playback.go:78`), not a guess from the extension.
+///
+/// Public only so a test can reach it; nothing outside this library calls it
+/// (§5, `public_member_no_consumer`).
+@visibleForTesting
+String playerFacts(PlayerController controller) {
+  final file = controller.file;
+  return [
+    if (controller.detail.files.length > 1) fileLabel(file),
+    if (file.ext.isNotEmpty) file.ext.replaceFirst('.', ''),
+    if (file.transcode) 'transcode' else 'direct play',
+  ].join(' · ');
+}
+
 /// The player screen (F7, F8, F9, F13, NF6).
 ///
-/// Uses `MaterialVideoControlsTheme` from `media_kit_video` for transport
-/// controls, fullscreen and orientation — the same prebuilt buttons the
-/// library ships. The only custom pieces are the back button (top-left in
-/// the controls bar) and the subtitle picker, both injected via
-/// [PlaybackHost.buildSurface].
+/// The video surface comes from [PlaybackHost.buildSurface] and carries no
+/// controls at all; [PlayerControls] is stacked over it and is the whole of
+/// F7's transport, both on a phone and on a television.
 class PlayerPage extends StatefulWidget {
   /// Plays [detail]'s [initialFile], starting [startAt] seconds in.
   const PlayerPage({
@@ -33,6 +53,7 @@ class PlayerPage extends StatefulWidget {
     required this.prefs,
     required this.initialFile,
     required this.startAt,
+    required this.metrics,
     this.onSignIn,
     super.key,
   });
@@ -66,6 +87,9 @@ class PlayerPage extends StatefulWidget {
   /// Where to start, from `startSecondsFor`.
   final Duration startAt;
 
+  /// Phone or television sizing for the overlay.
+  final PlayerControlsMetrics metrics;
+
   /// Where a dead session sends the user.
   final VoidCallback? onSignIn;
 
@@ -91,10 +115,14 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // A television is already landscape and has no sensor to disagree with;
+    // asking Android TV to rotate is a no-op that logs.
+    if (widget.metrics == PlayerControlsMetrics.phone) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _lifecycle = AppLifecycleListener(
       onStateChange: (state) => unawaited(_controller.handleLifecycle(state)),
@@ -130,62 +158,8 @@ class _PlayerPageState extends State<PlayerPage> {
     super.dispose();
   }
 
-  /// The title shown in the fullscreen top bar.
-  ///
-  /// For a single-file item: just the title. For a multi-file item:
-  /// "Title — S01E02" when season/episode are present, "Title — filename"
-  /// otherwise.
-  String get _fullscreenTitle {
-    final file = _controller.file;
-    if (_controller.detail.files.length == 1) return widget.detail.title;
-    if (file.season > 0 || file.episode > 0) {
-      return '${widget.detail.title} — '
-          '${file.season}x${file.episode.toString().padLeft(2, '0')}';
-    }
-    return '${widget.detail.title} — ${file.name}';
-  }
-
   void _onChange() {
     if (mounted) setState(() {});
-  }
-
-  void _showSubtitlePicker() {
-    final subtitles = _controller.subtitles;
-    final current = _controller.subtitle;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => ListView(
-        shrinkWrap: true,
-        children: [
-          ListTile(
-            title: const Text('Off'),
-            selected: current == null,
-            onTap: () {
-              _controller.selectSubtitle(null);
-              Navigator.pop(context);
-            },
-          ),
-          if (subtitles.isEmpty)
-            const ListTile(
-              title: Text(
-                'No subtitles available',
-                style: TextStyle(color: Colors.white54),
-              ),
-              enabled: false,
-            )
-          else
-            for (final sub in subtitles)
-              ListTile(
-                title: Text(sub.label),
-                selected: sub.index == current?.index,
-                onTap: () {
-                  _controller.selectSubtitle(sub);
-                  Navigator.pop(context);
-                },
-              ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -223,19 +197,22 @@ class _PlayerPageState extends State<PlayerPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // MaterialVideoControlsTheme wraps the video surface and provides
-        // play/pause, seek, skip, fullscreen, and our back/subtitle buttons.
-        _controller.host.buildSurface(
+        // The surface is the video and nothing else; every control is the
+        // overlay stacked on it. Until the redesign the two swapped places —
+        // the engine built the shipped controls and this page built none — so
+        // what widget tests drove was never what a user saw.
+        _controller.host.buildSurface(),
+        PlayerControls(
+          controller: _controller,
+          title: widget.detail.title,
+          facts: playerFacts(_controller),
+          metrics: widget.metrics,
           onBack: () => Navigator.of(context).maybePop(),
-          // Always show the button — subtitles may not be loaded yet when
-          // the fullscreen route pushes, and the captured widget tree never
-          // sees the later state. The picker itself checks at tap time.
-          onShowSubtitles: _showSubtitlePicker,
-          onNext: _controller.hasNext ? () => _controller.next() : null,
-          onPrevious: _controller.hasPrevious
-              ? () => _controller.previous()
-              : null,
-          title: _fullscreenTitle,
+          // The pickers are always offered — tracks may not be loaded yet when
+          // this route pushes, and the captured widget tree never sees the
+          // later state. Each picker checks what it has at tap time.
+          onShowSubtitles: () => showSubtitlePicker(context, _controller),
+          onShowAudio: () => showAudioPicker(context, _controller),
         ),
         // Banners overlaid on top.
         SafeArea(

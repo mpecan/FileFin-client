@@ -14,6 +14,7 @@ import 'package:filefin_mobile/src/browse/watch_state_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/detail_sections.dart';
 import '../support/fakes.dart';
 
 const _id = MediaId('e4285edb34d5');
@@ -59,7 +60,7 @@ void main() {
   }
 
   group('the two un-watches are two operations, on screen as on the wire', () {
-    testWidgets('Mark as unwatched keeps the position: Continue 0:45 is back', (
+    testWidgets('Mark as unwatched keeps the position: Resume 0:45 is back', (
       tester,
     ) async {
       api.mediaDetailResult = _watchedAt45;
@@ -77,8 +78,8 @@ void main() {
         'mediaDetail(e4285edb34d5)',
         'setWatched(e4285edb34d5, false)',
       ]);
-      expect(find.text('Continue 0:45'), findsOneWidget);
-      expect(find.text('Mark watched'), findsOneWidget);
+      expect(find.text('Resume 0:45'), findsOneWidget);
+      expect(find.byTooltip('Mark watched'), findsOneWidget);
     });
 
     testWidgets('Clear watch state forgets it: no Continue anywhere', (
@@ -98,7 +99,7 @@ void main() {
       // `clearWatched` for the other entry would show `Play` there.
       expect(find.textContaining('Continue'), findsNothing);
       expect(find.text('Play'), findsOneWidget);
-      expect(find.text('Mark watched'), findsOneWidget);
+      expect(find.byTooltip('Mark watched'), findsOneWidget);
     });
 
     testWidgets('each entry says what it costs, in the menu', (tester) async {
@@ -122,7 +123,7 @@ void main() {
       await pump(tester);
 
       expect(find.byType(PopupMenuButton<UnwatchChoice>), findsNothing);
-      await tester.tap(find.text('Mark watched'));
+      await tester.tap(find.byTooltip('Mark watched'));
       await tester.pump();
 
       expect(api.calls, [
@@ -161,6 +162,7 @@ void main() {
       api.mediaDetailResult = _watchedAt45;
       await pump(tester);
 
+      await expandSection(tester, 'Description & cast');
       await tester.tap(find.byType(DropdownButton<int>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('7').last);
@@ -180,6 +182,7 @@ void main() {
       api.mediaDetailResult = _watchedAt45.copyWith(rating: 8);
       await pump(tester);
 
+      await expandSection(tester, 'Description & cast');
       await tester.tap(find.byType(DropdownButton<int>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('8').last);
@@ -194,6 +197,7 @@ void main() {
       api.mediaDetailResult = _watchedAt45.copyWith(rating: 8);
       await pump(tester);
 
+      await expandSection(tester, 'Description & cast');
       await tester.tap(find.byType(DropdownButton<int>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Not rated').last);
@@ -208,6 +212,7 @@ void main() {
       ) async {
         api.mediaDetailResult = _watchedAt45.copyWith(rating: rating);
         await pump(tester);
+        await expandSection(tester, 'Description & cast');
 
         expect(find.textContaining('outside 1-10'), findsNothing);
         expect(tester.takeException(), isNull);
@@ -224,6 +229,7 @@ void main() {
         // rather than rendering, so this branch is correctness, not polish.
         api.mediaDetailResult = _watchedAt45.copyWith(rating: rating);
         await pump(tester);
+        await expandSection(tester, 'Description & cast');
 
         expect(tester.takeException(), isNull);
         expect(find.textContaining('outside 1-10'), findsOneWidget);
@@ -244,6 +250,7 @@ void main() {
     // deleted the explanation, while the server still held 99.
     api.mediaDetailResult = _watchedAt45.copyWith(rating: 99);
     await pump(tester);
+    await expandSection(tester, 'Description & cast');
     expect(find.textContaining('outside 1-10'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Add to favourites'));

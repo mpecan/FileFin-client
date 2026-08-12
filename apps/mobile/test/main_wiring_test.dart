@@ -8,6 +8,7 @@ import 'package:filefin_mobile/main.dart' as entrypoint;
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/platform_secret_store.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -51,7 +52,8 @@ void main() {
   });
 
   AppDependencies deps() =>
-      (entrypoint.buildApp(dir) as FileFinScope).dependencies;
+      (entrypoint.buildApp(dir, formFactor: FormFactor.phone) as FileFinScope)
+          .dependencies;
 
   test('the store it wires is the PLATFORM one, not the in-memory cache', () {
     // The whole of F2's "no password typed on a cold start". An

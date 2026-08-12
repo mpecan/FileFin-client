@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/watch_actions.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
 /// Which un-watch a person picked. Two entries because they are two
@@ -14,7 +15,7 @@ enum UnwatchChoice {
   forgetEverything,
 }
 
-/// F10 on the detail screen: favourite, rating, and the two un-watches.
+/// F10 on the detail screen, as four pieces the redesign places separately.
 ///
 /// **The watched control is where this screen stops hiding the server's
 /// asymmetry and starts explaining it.** `POST {"watched": false}` and
@@ -30,9 +31,45 @@ enum UnwatchChoice {
 /// time; so the controls stay tappable, a second tap is refused with a sentence
 /// (G5), and the only thing `busy` draws is a progress bar saying a save is
 /// under way.
-class WatchStateControls extends StatelessWidget {
-  /// Draws [detail]'s watch state and writes through [actions].
-  const WatchStateControls({
+///
+/// **One class became four at the redesign**, because the layout separated
+/// them: the heart sits over the backdrop, the check sits in the action row,
+/// the rating went behind a disclosure, and what a failed write has to say
+/// belongs under whichever of the three was tapped. The behaviour of each is
+/// unchanged; only where they are drawn is.
+class FavouriteButton extends StatelessWidget {
+  /// Toggles [detail]'s favourite flag through [actions].
+  const FavouriteButton({
+    required this.detail,
+    required this.actions,
+    super.key,
+  });
+
+  /// The item, as the screen currently believes it to be.
+  final MediaDetail detail;
+
+  /// Where a tap goes.
+  final WatchActions actions;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: actions,
+    builder: (context, _) => IconButton(
+      onPressed: () =>
+          unawaited(actions.favourite(detail, favorite: !detail.favorite)),
+      tooltip: detail.favorite ? 'Remove from favourites' : 'Add to favourites',
+      icon: Icon(
+        detail.favorite ? Icons.favorite : Icons.favorite_border,
+        color: detail.favorite ? FileFinPalette.of(context).accentBright : null,
+      ),
+    ),
+  );
+}
+
+/// The check in the action row: mark watched, or the two ways back.
+class WatchedButton extends StatelessWidget {
+  /// Draws [detail]'s watched state and writes through [actions].
+  const WatchedButton({
     required this.detail,
     required this.actions,
     super.key,
@@ -48,98 +85,134 @@ class WatchStateControls extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: actions,
     builder: (context, _) {
-      final notice = actions.notice;
-      return Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => unawaited(
-                    actions.favourite(detail, favorite: !detail.favorite),
-                  ),
-                  tooltip: detail.favorite
-                      ? 'Remove from favourites'
-                      : 'Add to favourites',
-                  icon: Icon(
-                    detail.favorite ? Icons.favorite : Icons.favorite_border,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _WatchedControl(detail: detail, actions: actions),
-              ],
+      final palette = FileFinPalette.of(context);
+      if (!detail.watched) {
+        return _SquareButton(
+          tooltip: 'Mark watched',
+          palette: palette,
+          onPressed: () =>
+              unawaited(actions.markWatched(detail, watched: true)),
+          child: const Icon(Icons.check, size: 18),
+        );
+      }
+      return PopupMenuButton<UnwatchChoice>(
+        tooltip: 'Change watch state',
+        onSelected: (choice) => unawaited(switch (choice) {
+          UnwatchChoice.keepPosition => actions.markWatched(
+            detail,
+            watched: false,
+          ),
+          UnwatchChoice.forgetEverything => actions.clearWatchState(detail),
+        }),
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: UnwatchChoice.keepPosition,
+            child: _Consequence(
+              title: 'Mark as unwatched',
+              detail:
+                  'Keeps where you left off, so it goes back to Continue '
+                  'watching.',
             ),
-            _Rating(detail: detail, actions: actions),
-            if (actions.busy)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: LinearProgressIndicator(),
-              ),
-            if (notice != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  notice,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-          ],
+          ),
+          PopupMenuItem(
+            value: UnwatchChoice.forgetEverything,
+            child: _Consequence(
+              title: 'Clear watch state',
+              detail: 'Forgets the position too, so it leaves every list.',
+            ),
+          ),
+        ],
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: palette.accentFill,
+            border: Border.all(color: palette.accent),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            Icons.check_circle,
+            size: 18,
+            color: palette.accentSoft,
+            semanticLabel: 'Watched',
+          ),
         ),
       );
     },
   );
 }
 
-class _WatchedControl extends StatelessWidget {
-  const _WatchedControl({required this.detail, required this.actions});
+/// A 44-point outlined square — the design's secondary action shape.
+class _SquareButton extends StatelessWidget {
+  const _SquareButton({
+    required this.tooltip,
+    required this.palette,
+    required this.onPressed,
+    required this.child,
+  });
 
-  final MediaDetail detail;
+  final String tooltip;
+  final FileFinPalette palette;
+  final VoidCallback onPressed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        fixedSize: const Size.square(44),
+        minimumSize: const Size.square(44),
+        padding: EdgeInsets.zero,
+        foregroundColor: palette.textMuted,
+        side: BorderSide(color: palette.outline),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: child,
+    ),
+  );
+}
+
+/// What a write that failed has to say, and whether one is in flight.
+///
+/// Drawn once, under the action row, rather than beside each control: F10
+/// allows exactly one write at a time, so there is only ever one thing to say.
+class WatchStateNotice extends StatelessWidget {
+  /// Reports on [actions].
+  const WatchStateNotice({required this.actions, super.key});
+
+  /// The writer being watched.
   final WatchActions actions;
 
   @override
-  Widget build(BuildContext context) {
-    if (!detail.watched) {
-      return FilledButton.tonalIcon(
-        onPressed: () => unawaited(actions.markWatched(detail, watched: true)),
-        icon: const Icon(Icons.check),
-        label: const Text('Mark watched'),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: actions,
+    builder: (context, _) {
+      final notice = actions.notice;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (actions.busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(),
+            ),
+          if (notice != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                notice,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+        ],
       );
-    }
-    return PopupMenuButton<UnwatchChoice>(
-      tooltip: 'Change watch state',
-      onSelected: (choice) => unawaited(switch (choice) {
-        UnwatchChoice.keepPosition => actions.markWatched(
-          detail,
-          watched: false,
-        ),
-        UnwatchChoice.forgetEverything => actions.clearWatchState(detail),
-      }),
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: UnwatchChoice.keepPosition,
-          child: _Consequence(
-            title: 'Mark as unwatched',
-            detail:
-                'Keeps where you left off, so it goes back to Continue '
-                'watching.',
-          ),
-        ),
-        PopupMenuItem(
-          value: UnwatchChoice.forgetEverything,
-          child: _Consequence(
-            title: 'Clear watch state',
-            detail: 'Forgets the position too, so it leaves every list.',
-          ),
-        ),
-      ],
-      child: const Chip(
-        avatar: Icon(Icons.check_circle, size: 18),
-        label: Text('Watched'),
-      ),
-    );
-  }
+    },
+  );
 }
 
 /// One menu entry: what it does, and what that costs.
@@ -168,19 +241,23 @@ class _Consequence extends StatelessWidget {
 /// `DropdownButton` whose `value` is not among its items asserts rather than
 /// rendering. So an out-of-range rating is shown as itself, with no item
 /// selected and a line saying what picking one will do.
-class _Rating extends StatelessWidget {
-  const _Rating({required this.detail, required this.actions});
+class RatingField extends StatelessWidget {
+  /// Draws [detail]'s rating and writes through [actions].
+  const RatingField({required this.detail, required this.actions, super.key});
 
+  /// The item, as the screen currently believes it to be.
   final MediaDetail detail;
+
+  /// Where a choice goes.
   final WatchActions actions;
 
   @override
-  Widget build(BuildContext context) {
-    final rating = detail.rating;
-    final inRange = rating >= 0 && rating <= 10;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: actions,
+    builder: (context, _) {
+      final rating = detail.rating;
+      final inRange = rating >= 0 && rating <= 10;
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -220,7 +297,7 @@ class _Rating extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
-      ),
-    );
-  }
+      );
+    },
+  );
 }

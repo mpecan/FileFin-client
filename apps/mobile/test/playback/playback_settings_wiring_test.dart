@@ -9,10 +9,12 @@ import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
+import '../support/library_header.dart';
 
 /// The settings sheet as the *app* reaches it, which is the half
 /// `playback_settings_sheet_test.dart` cannot prove.
@@ -56,7 +58,7 @@ void main() {
       settings: SettingsStore(dir),
       apiFactory: (_, {pin}) => api,
     ),
-    child: const FileFinApp(),
+    child: const FileFinApp(formFactor: FormFactor.phone),
   );
 
   void saveAtticNas() => SettingsStore(dir).write(
@@ -90,9 +92,9 @@ void main() {
   ) async {
     await signIn(tester);
 
-    expect(find.byTooltip('Playback settings'), findsOneWidget);
+    expect(find.byIcon(headerMenuIcon), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
 
     expect(find.byType(PlaybackSettingsSheet), findsOneWidget);
@@ -106,12 +108,12 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Playback settings'), findsNothing);
+    expect(find.byIcon(headerMenuIcon), findsNothing);
   });
 
   testWidgets('turning Wi-Fi only on reaches settings.json', (tester) async {
     await signIn(tester);
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('wifiOnly')));
@@ -144,14 +146,14 @@ void main() {
     // guard and D10's refusal both silently reverted to their sign-in values.
     await signIn(tester);
 
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('wifiOnly')));
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(400, 20));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
 
     expect(
@@ -174,7 +176,7 @@ void main() {
 
   testWidgets('D10 and the shared block are written together', (tester) async {
     await signIn(tester);
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('allowUnverifiedPlayback')));
@@ -204,7 +206,7 @@ void main() {
     // shows is true, and it is the only case D10's refusal exists for.
     api.transport = PlaybackTransport.pinnedTls;
     await signIn(tester);
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('allowUnverifiedPlayback')));
     await tester.pumpAndSettle();
@@ -219,7 +221,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Film').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Play'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Play'));
     await tester.pumpAndSettle();
 
     expect(find.byType(UnverifiedTlsBanner), findsOneWidget);
@@ -227,7 +229,7 @@ void main() {
 
   testWidgets('a settings file that cannot be written says so', (tester) async {
     await signIn(tester);
-    await tester.tap(find.byTooltip('Playback settings'));
+    await chooseHeaderAction(tester, 'Playback settings');
     await tester.pumpAndSettle();
 
     // A file where the directory should be: `createSync(recursive: true)`

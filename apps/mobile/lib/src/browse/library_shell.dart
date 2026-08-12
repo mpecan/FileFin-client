@@ -9,6 +9,7 @@ import 'package:filefin_mobile/src/browse/search_page.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
     show PlaybackOutcome;
+import 'package:filefin_mobile/src/shell/nav_bar.dart';
 import 'package:flutter/material.dart';
 
 /// The three top-level destinations of a signed-in server.
@@ -134,6 +135,7 @@ class _LibraryShellState extends State<LibraryShell> {
       title: widget.title,
       onOpen: _openDetail,
       onSignIn: widget.onSignIn,
+      onSearch: () => _select(LibraryTab.search),
       onServers: widget.onServers,
       onSettings: widget.onSettings,
       onSignOut: widget.onSignOut,
@@ -143,6 +145,7 @@ class _LibraryShellState extends State<LibraryShell> {
       title: widget.title,
       onOpen: _openCategory,
       onSignIn: widget.onSignIn,
+      onSearch: () => _select(LibraryTab.search),
       onServers: widget.onServers,
       onSettings: widget.onSettings,
       onSignOut: widget.onSignOut,
@@ -207,23 +210,23 @@ class _LibraryShellState extends State<LibraryShell> {
             ),
       ],
     ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: _tab.index,
-      onDestinationSelected: (index) => _select(LibraryTab.values[index]),
+    bottomNavigationBar: ShellNavBar(
+      selected: _tab.index,
+      onSelect: (index) => _select(LibraryTab.values[index]),
       destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
+        ShellDestination(
+          icon: Icons.home_outlined,
+          selectedIcon: Icons.home,
           label: 'Home',
         ),
-        NavigationDestination(
-          icon: Icon(Icons.video_library_outlined),
-          selectedIcon: Icon(Icons.video_library),
+        ShellDestination(
+          icon: Icons.folder_copy_outlined,
+          selectedIcon: Icons.folder_copy,
           label: 'Library',
         ),
-        NavigationDestination(
-          icon: Icon(Icons.search_outlined),
-          selectedIcon: Icon(Icons.search),
+        ShellDestination(
+          icon: Icons.search_outlined,
+          selectedIcon: Icons.search,
           label: 'Search',
         ),
       ],

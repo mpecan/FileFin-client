@@ -1,4 +1,5 @@
 import 'package:filefin_core/filefin_core.dart';
+import 'package:filefin_mobile/src/playback/ca_bundle.dart';
 import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +29,14 @@ PlaybackRequest _request({
 );
 
 void main() {
+  // The host asks `CaBundle` for the device trust store on every open, and
+  // that is a platform channel — which needs a binding even when nothing
+  // answers it. It did not before the redesign, because `CaBundle.path`
+  // short-circuited on `!Platform.isAndroid` and so never reached the channel
+  // on this host; that guard is gone precisely because it made the export
+  // untestable (see `ca_bundle_test.dart`).
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late FakeMpvPlayer player;
   late MediaKitPlaybackHost host;
 
@@ -230,4 +239,49 @@ void main() {
 
     expect(player.disposed, isTrue);
   });
+
+  /// D10's Android half: libmpv cannot read Android's trust store, so the
+  /// device's roots are exported to a PEM file and handed over as
+  /// `tls-ca-file`. Nothing asserted that the path reached the engine.
+  test(
+    'an exported CA bundle is handed to mpv before the file opens',
+    () async {
+      CaBundle.reset();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            CaBundle.channel,
+            (_) async => '/data/cache/ca.pem',
+          );
+      addTearDown(() {
+        CaBundle.reset();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(CaBundle.channel, null);
+      });
+
+      final player = FakeMpvPlayer();
+      final host = MediaKitPlaybackHost(player);
+      addTearDown(host.dispose);
+
+      await host.open(
+        PlaybackRequest(
+          url: Uri.parse('https://nas.local/api/media/x/file/0'),
+          headers: const {'Cookie': 'x'},
+          startAt: Duration.zero,
+          verifyTls: true,
+        ),
+      );
+
+      // Before the open, not after: a file already loading over an unverified
+      // socket is not made safe by a property set later.
+      expect(
+        player.calls.indexOf('setProperty(tls-ca-file=/data/cache/ca.pem)'),
+        allOf(
+          isNonNegative,
+          lessThan(
+            player.calls.indexWhere((c) => c.startsWith('open(')),
+          ),
+        ),
+      );
+    },
+  );
 }

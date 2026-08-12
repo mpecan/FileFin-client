@@ -9,10 +9,12 @@ import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/launch_pages.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fakes.dart';
+import 'support/library_header.dart';
 
 void main() {
   late Directory dir;
@@ -33,7 +35,7 @@ void main() {
       settings: SettingsStore(dir),
       apiFactory: (_, {pin}) => api,
     ),
-    child: const FileFinApp(),
+    child: const FileFinApp(formFactor: FormFactor.phone),
   );
 
   /// Selects the Library tab.
@@ -102,7 +104,7 @@ void main() {
           settings: SettingsStore(dir),
           apiFactory: (_, {pin}) => api,
         ),
-        child: FileFinApp(key: key),
+        child: FileFinApp(formFactor: FormFactor.phone, key: key),
       ),
     );
     theme = Theme.of(tester.element(find.byType(NoServerPage)));
@@ -227,7 +229,7 @@ void main() {
     // `apps/mobile/` called it for two milestones (M7.0/E-1).
     await signIn(tester);
 
-    await tester.tap(find.byTooltip('Sign out'));
+    await chooseHeaderAction(tester, 'Sign out');
     await tester.pumpAndSettle();
 
     expect(api.calls, contains('logout'));
@@ -247,7 +249,7 @@ void main() {
       Uri.parse('http://nas.local/api/logout'),
     );
 
-    await tester.tap(find.byTooltip('Sign out'));
+    await chooseHeaderAction(tester, 'Sign out');
     await tester.pumpAndSettle();
 
     expect(api.calls, contains('logout'));

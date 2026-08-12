@@ -55,8 +55,8 @@ void main() {
 
     expect(find.text('Films'), findsOneWidget);
     expect(find.text('Shows'), findsOneWidget);
-    expect(find.text('12 items · 14 files'), findsOneWidget);
-    expect(find.text('1 item · 1 file'), findsOneWidget);
+    expect(find.text('12 · 14'), findsOneWidget);
+    expect(find.text('1 · 1'), findsOneWidget);
   });
 
   testWidgets('a nested child is hidden until its parent is expanded', (
@@ -145,18 +145,16 @@ void main() {
     expect(opened.single.leaf, 'Shows');
   });
 
-  testWidgets('zero counts say "no items listed", never "0 items"', (
-    tester,
-  ) async {
+  testWidgets('zero counts say nothing at all, never "0"', (tester) async {
     // library.go:73-81 returns both counts as 0 when the CACHE is unavailable,
-    // exactly as it does for a genuinely empty category. "0 items" would state
-    // as a fact something the client cannot know.
+    // exactly as it does for a genuinely empty category. "0 · 0" would state
+    // as a fact something the client cannot know, so the row shows an em dash.
     api.categoriesResult = [_cat(1, leaf: 'Documentaries')];
 
     await pump(tester);
 
-    expect(find.text('No items listed'), findsOneWidget);
-    expect(find.text('0 items · 0 files'), findsNothing);
+    expect(find.text('—'), findsOneWidget);
+    expect(find.text('0 · 0'), findsNothing);
   });
 
   testWidgets('a category with items but no files still reports its items', (
@@ -169,16 +167,20 @@ void main() {
 
     await pump(tester);
 
-    expect(find.text('3 items · 0 files'), findsOneWidget);
-    expect(find.text('No items listed'), findsNothing);
+    expect(find.text('3 · 0'), findsOneWidget);
+    expect(find.text('—'), findsNothing);
   });
 
   testWidgets('a nested row is indented by exactly one step per level', (
     tester,
   ) async {
     // The arithmetic is asserted, not just the ordering: `just mutants`
-    // rewrote `16.0 + depth * 20` to `-16.0 + …` and to `… / 20` and no test
-    // objected, because "further right than the parent" is true of both.
+    // rewrote the indent expression to `-12 + …` and to `… / 20` and no test
+    // objected, because "further right than the parent" is true of both. The
+    // base is everything to the left of the leaf on a root row: the design's
+    // 12-point inset, the 24-point caret gutter every row carries whether or
+    // not it has a caret to put in it, the 16-point folder glyph and the 8
+    // points after it.
     api.categoriesResult = [
       _cat(1, leaf: 'Films'),
       _cat(2, parent: 1, leaf: 'Documentaries'),
@@ -194,7 +196,7 @@ void main() {
     final child = tester.getTopLeft(find.text('Documentaries')).dx;
     final grandchild = tester.getTopLeft(find.text('Nature')).dx;
 
-    expect(root, 16);
+    expect(root, 12 + 24 + 16 + 8);
     expect(child - root, 20);
     expect(grandchild - child, 20);
   });
@@ -272,5 +274,71 @@ void main() {
     await expectLater(tester, meetsGuideline(textContrastGuideline));
 
     handle.dispose();
+  });
+
+  testWidgets('typing in the filter box narrows the tree to matches', (
+    tester,
+  ) async {
+    api.categoriesResult = [
+      _cat(1, leaf: 'Films'),
+      _cat(2, leaf: 'Shows'),
+    ];
+    await pump(tester);
+
+    await tester.enterText(find.byType(TextField), 'sho');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shows'), findsOneWidget);
+    expect(find.text('Films'), findsNothing);
+  });
+
+  testWidgets('a filter that matches nothing says so', (tester) async {
+    api.categoriesResult = [_cat(1, leaf: 'Films')];
+    await pump(tester);
+
+    await tester.enterText(find.byType(TextField), 'zzz');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('No category matches'), findsOneWidget);
+  });
+
+  /// A filtered list is flat and nothing on it expands: every match is already
+  /// showing, and a caret revealing a child the filter excluded would
+  /// contradict the box above it.
+  testWidgets('a filtered row has no expand caret', (tester) async {
+    api.categoriesResult = [
+      _cat(1, leaf: 'Films'),
+      _cat(2, parent: 1, leaf: 'Docs'),
+    ];
+    await pump(tester);
+    expect(find.byTooltip('Expand'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'film');
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Expand'), findsNothing);
+  });
+
+  /// The button starts on the order the tree arrived in, so an untouched
+  /// button changes nothing — `position` is something the server was told
+  /// deliberately.
+  testWidgets('the sort button cycles through its three orders', (
+    tester,
+  ) async {
+    api.categoriesResult = [_cat(1, leaf: 'Films')];
+    await pump(tester);
+    expect(find.text('Folder'), findsOneWidget);
+
+    await tester.tap(find.text('Folder'));
+    await tester.pumpAndSettle();
+    expect(find.text('A–Z'), findsOneWidget);
+
+    await tester.tap(find.text('A–Z'));
+    await tester.pumpAndSettle();
+    expect(find.text('Items'), findsOneWidget);
+
+    await tester.tap(find.text('Items'));
+    await tester.pumpAndSettle();
+    expect(find.text('Folder'), findsOneWidget);
   });
 }

@@ -9,8 +9,8 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/playback/now_playing.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
-import 'package:filefin_mobile/src/playback/player_controls.dart';
 import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +75,7 @@ void main() {
           prefs: const PlaybackPrefs(),
           initialFile: const FileIndex(0),
           startAt: Duration.zero,
+          metrics: PlayerControlsMetrics.phone,
           onSignIn: onSignIn,
         ),
       ),
@@ -305,6 +306,7 @@ void main() {
                       prefs: const PlaybackPrefs(),
                       initialFile: const FileIndex(0),
                       startAt: Duration.zero,
+                      metrics: PlayerControlsMetrics.phone,
                     ),
                   ),
                 ),
@@ -457,6 +459,7 @@ void main() {
                   prefs: const PlaybackPrefs(),
                   initialFile: const FileIndex(0),
                   startAt: Duration.zero,
+                  metrics: PlayerControlsMetrics.phone,
                 ),
               ),
             ),
@@ -514,5 +517,36 @@ void main() {
       // Negative is not reachable from mpv, but a clamp beats a '-1:-1'.
       expect(formatPosition(const Duration(seconds: -5)), '0:00');
     });
+  });
+
+  /// The overlay's back button is the page's own `maybePop`, and the page
+  /// answers it with the outcome F9's caller needs.
+  testWidgets('the overlay back button closes the player', (tester) async {
+    await pumpPlayer(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    // Nothing pushed this route, so there is nothing to pop to — what is being
+    // pinned is that the button is wired to a pop at all, and that it does not
+    // throw on the way.
+    expect(tester.takeException(), isNull);
+  });
+
+  /// The page owns the two pickers because a sheet needs a `Navigator`, and
+  /// the overlay only reports that its pill was pressed.
+  testWidgets("the two track pills open the page's pickers", (tester) async {
+    await pumpPlayer(tester);
+
+    await tester.tap(find.text('Audio'));
+    await tester.pumpAndSettle();
+    expect(find.text('No audio tracks reported'), findsOneWidget);
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Off'));
+    await tester.pumpAndSettle();
+    expect(find.text('No subtitles available'), findsOneWidget);
   });
 }

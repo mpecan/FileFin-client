@@ -3,11 +3,15 @@ import 'dart:io';
 
 import 'package:dpad/dpad.dart';
 import 'package:filefin_api/filefin_api.dart';
+import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/library_shell.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/playback_settings_sheet.dart';
+import 'package:filefin_mobile/src/playback/player_controller.dart'
+    show PlaybackOutcome;
 import 'package:filefin_mobile/src/playback/player_route.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/add_server_page.dart';
 import 'package:filefin_mobile/src/servers/launch_pages.dart';
@@ -16,22 +20,36 @@ import 'package:filefin_mobile/src/servers/server_list_page.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/servers/sign_in_page.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
+import 'package:filefin_mobile/src/theme/theme.dart';
+import 'package:filefin_mobile/src/tv/tv_shell.dart';
 import 'package:flutter/material.dart';
 
-/// The application shell: one `MaterialApp`, one theme, one home.
+/// The application shell: one `MaterialApp`, two ramps, one home.
 class FileFinApp extends StatelessWidget {
-  /// Builds the shell.
-  const FileFinApp({super.key});
+  /// Builds the shell for [formFactor].
+  const FileFinApp({required this.formFactor, super.key});
+
+  /// Which of the two designs this launch draws — resolved once, in `main()`.
+  final FormFactor formFactor;
+
+  /// A television follows no system setting.
+  ///
+  /// The light ramp on a screen across a dark room is a lamp, and Android TV
+  /// has no light/dark switch for a user to have expressed a preference with
+  /// in the first place. Every TV frame in the design document is dark.
+  ThemeMode get _mode =>
+      formFactor == FormFactor.tv ? ThemeMode.dark : ThemeMode.system;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'FileFin',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E5D8A)),
-      useMaterial3: true,
-    ),
+    theme: fileFinTheme(FileFinPalette.light),
+    darkTheme: fileFinTheme(FileFinPalette.dark),
+    themeMode: _mode,
     builder: Dpad.wrap(),
-    home: const HomeRoute(),
+    home: HomeRoute(formFactor: formFactor),
   );
 }
 
@@ -44,7 +62,10 @@ class FileFinApp extends StatelessWidget {
 /// dependency paying rent of "three pushes" (§4).
 class HomeRoute extends StatefulWidget {
   /// Chooses between the empty state and the saved-server flow.
-  const HomeRoute({super.key});
+  const HomeRoute({required this.formFactor, super.key});
+
+  /// Which browsing shell a signed-in server opens into.
+  final FormFactor formFactor;
 
   @override
   State<HomeRoute> createState() => _HomeRouteState();
@@ -310,13 +331,14 @@ class _HomeRouteState extends State<HomeRoute> {
   /// screen with somewhere to say so: `SettingsStore.write` throws on a full
   /// disk or a revoked permission, and a setting that silently did not stick is
   /// worse than one that refused.
-  void _playbackSettings(SavedServer server) {
+  void _playbackSettings(SavedServer server, {VoidCallback? onSignOut}) {
     final settings = FileFinScope.of(context).settings;
     unawaited(
       showPlaybackSettings(
         context,
         server: server,
         prefs: settings.read().playback,
+        onSignOut: onSignOut,
         onChanged: (changed, prefs) {
           setState(() => _server = changed);
           try {
@@ -328,6 +350,30 @@ class _HomeRouteState extends State<HomeRoute> {
       ),
     );
   }
+
+  /// The player route, built once for both shells.
+  ///
+  /// The overlay's sizing is the only thing the two ways in disagree about, and
+  /// it is decided here rather than by the player: `PlayerPage` is pushed on
+  /// top of whichever shell is showing, so the shell is what knows.
+  Future<PlaybackOutcome?> _play(
+    LibraryApi api,
+    SavedServer server,
+    MediaDetail detail,
+    FileIndex file,
+    Duration startAt,
+  ) => pushPlayer(
+    context,
+    api: api,
+    server: server,
+    detail: detail,
+    file: file,
+    startAt: startAt,
+    metrics: widget.formFactor == FormFactor.tv
+        ? PlayerControlsMetrics.tv
+        : PlayerControlsMetrics.phone,
+    onSignIn: _sessionExpired,
+  );
 
   /// Everything this route has to tell a user with no panel to put it in: a
   /// settings write that failed, and a sign-out the server did not answer.
@@ -347,13 +393,32 @@ class _HomeRouteState extends State<HomeRoute> {
       // `LibraryShell` at M6.7, because two of them — the `push<bool>` detail
       // route and the home reload it triggers — are a pair that only the
       // owner of the Home tab can wire.
+      // The KEY is what makes a switch a new shell rather than the old one
+      // wearing a new name. Both shells keep their tabs `Offstage` rather than
+      // disposed, so without it the Home tab keeps the previous server's rows
+      // and never asks the new client for anything. Measured, not guessed: the
+      // assertion in `app_servers_test.dart` fails without it.
+      final shellKey = ValueKey(server.id.value);
+      if (widget.formFactor == FormFactor.tv) {
+        return TvShell(
+          key: shellKey,
+          api: api,
+          title: server.name,
+          onServers: () => unawaited(_openServers()),
+          // Sign-out reaches the television through the settings sheet: its
+          // rail has four destinations and a server row, and the phone's
+          // sliders menu — where sign-out lives there — has no counterpart.
+          onSettings: () => _playbackSettings(
+            server,
+            onSignOut: () => unawaited(_signOut(api)),
+          ),
+          onSignIn: _sessionExpired,
+          onPlay: (detail, file, startAt) =>
+              _play(api, server, detail, file, startAt),
+        );
+      }
       return LibraryShell(
-        // The KEY is what makes a switch a new shell rather than the old one
-        // wearing a new name. Its tabs are `Offstage`, not disposed, so without
-        // it the Home tab keeps the previous server's rows and never asks the
-        // new client for anything. Measured, not guessed: the assertion in
-        // `app_servers_test.dart` fails without it.
-        key: ValueKey(server.id.value),
+        key: shellKey,
         api: api,
         title: server.name,
         onServers: () => unawaited(_openServers()),
@@ -367,15 +432,8 @@ class _HomeRouteState extends State<HomeRoute> {
         // sign in again" with no button and no retry.
         onSignIn: _sessionExpired,
         onSignOut: () => unawaited(_signOut(api)),
-        onPlay: (detail, file, startAt) => pushPlayer(
-          context,
-          api: api,
-          server: server,
-          detail: detail,
-          file: file,
-          startAt: startAt,
-          onSignIn: _sessionExpired,
-        ),
+        onPlay: (detail, file, startAt) =>
+            _play(api, server, detail, file, startAt),
       );
     }
     if (_resuming) return const ResumingPage();

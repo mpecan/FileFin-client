@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/detail_sections.dart';
 import '../support/fakes.dart';
 
 /// The committed payloads, decoded by the real model (§8). A hand-written
@@ -55,7 +56,14 @@ void main() {
       await pump(tester);
 
       expect(find.text('Direct Play Movie'), findsWidgets);
-      expect(find.text('2020'), findsOneWidget);
+      // The year is one clause of the header's mono facts line rather than a
+      // `Text` of its own, because the design writes the whole line as one
+      // run. Asserted whole rather than as a substring: this payload's file
+      // is named `(2020) Direct Play Movie.mp4`, so `textContaining('2020')`
+      // matches the episode row as well and would pass with no year drawn.
+      expect(find.text('2020 · 1 file · test'), findsOneWidget);
+
+      await expandSection(tester, 'Description & cast');
       expect(find.textContaining('A short H.264 clip'), findsOneWidget);
       expect(find.textContaining('Colour bars'), findsOneWidget);
     });
@@ -70,6 +78,7 @@ void main() {
       // client that switched on the key would drop every field the server's
       // table does not know.
       await pump(tester);
+      await expandSection(tester, 'Description & cast');
 
       expect(find.text('customKey'), findsOneWidget);
       expect(
@@ -82,6 +91,8 @@ void main() {
       tester,
     ) async {
       await pump(tester);
+      await expandSection(tester, 'Description & cast');
+      await expandSection(tester, 'Files & technical');
 
       expect(find.text('Ratings'), findsOneWidget);
       expect(find.text('IMDb'), findsOneWidget);
@@ -91,6 +102,7 @@ void main() {
 
     testWidgets('cast, genres and tags render as chips', (tester) async {
       await pump(tester);
+      await expandSection(tester, 'Description & cast');
 
       expect(find.widgetWithText(Chip, 'Ada Lovelace'), findsOneWidget);
       expect(find.widgetWithText(Chip, 'Test'), findsOneWidget);
@@ -106,7 +118,13 @@ void main() {
       await pump(tester);
 
       expect(find.textContaining('S0E0'), findsNothing);
-      expect(find.text('(2020) Direct Play Movie.mp4 (.mp4)'), findsOneWidget);
+      // Twice: once in the episode list above the fold and once in the file
+      // list behind the disclosure. The extension is no longer appended to
+      // either — both print it separately, and a label carrying it as well
+      // said `.mp4` twice on one row.
+      expect(find.text('(2020) Direct Play Movie.mp4'), findsOneWidget);
+      await expandSection(tester, 'Files & technical');
+      expect(find.text('(2020) Direct Play Movie.mp4'), findsNWidgets(2));
     });
 
     testWidgets('the file path is shown verbatim, as the server sent it', (
@@ -116,6 +134,7 @@ void main() {
       // with anything produces a path that addresses nothing and looks like it
       // should.
       await pump(tester);
+      await expandSection(tester, 'Files & technical');
 
       expect(
         find.text(
@@ -170,8 +189,14 @@ void main() {
       );
 
       await pump(tester);
+      // Opened, so the assertion is about what is INSIDE rather than about a
+      // collapsed tile that builds no children and would pass either way.
+      await expandSection(tester, 'Description & cast');
 
       expect(find.text('Bare'), findsWidgets);
+      // 'Files & technical' is not on this list because the row itself is
+      // absent for an item with neither — see `DetailSections`.
+      expect(find.text('Files & technical'), findsNothing);
       for (final header in [
         'Genres',
         'Tags',
@@ -198,6 +223,7 @@ void main() {
       );
 
       await pump(tester, item: const MediaSummary(id: MediaId('aaaaaaaaaaaa')));
+      await expandSection(tester, 'Description & cast');
 
       expect(find.text('Only a description.'), findsOneWidget);
       expect(find.text(''), findsNothing);
@@ -216,6 +242,7 @@ void main() {
       );
 
       await pump(tester, item: const MediaSummary(id: MediaId('aaaaaaaaaaaa')));
+      await expandSection(tester, 'Description & cast');
 
       expect(find.text('The same words.'), findsOneWidget);
     });
@@ -260,7 +287,12 @@ void main() {
     await tester.pump();
 
     expect(find.text('Promised'), findsWidgets);
-    expect(find.byType(Image), findsNothing);
+    // `RawImage`, not `Image`: the header always builds an `Image` for an item
+    // that claims a poster, and its `errorBuilder` is what decides whether any
+    // pixels are painted. `RawImage` is the widget that would paint them, so
+    // its absence is the assertion — where `find.byType(Image)` would now be
+    // asserting that the request was never made.
+    expect(find.byType(RawImage), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

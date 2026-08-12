@@ -9,6 +9,7 @@ import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/launch_pages.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,7 +46,7 @@ void main() {
         return api;
       },
     ),
-    child: const FileFinApp(),
+    child: const FileFinApp(formFactor: FormFactor.phone),
   );
 
   void save({ServerId? selected}) {

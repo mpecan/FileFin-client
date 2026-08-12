@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/browse/search_controller.dart';
 import 'package:filefin_mobile/src/browse/search_field_labels.dart';
 import 'package:filefin_mobile/src/browse/search_query.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
 /// F5: a box, a scope, and the same poster grid the library uses.
@@ -75,66 +76,155 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Search')),
-    body: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: ListenableBuilder(
-            listenable: _controller,
-            builder: (context, _) => Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Search',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: _controller.setText,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                DropdownButton<SearchField>(
-                  value: _controller.query.field,
-                  onChanged: (field) {
-                    if (field != null) _controller.setField(field);
-                  },
-                  items: [
-                    for (final field in SearchField.values)
-                      DropdownMenuItem(
-                        value: field,
-                        child: Text(searchFieldLabel(field)),
+  Widget build(BuildContext context) {
+    final palette = FileFinPalette.of(context);
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+              child: ListenableBuilder(
+                listenable: _controller,
+                builder: (context, _) => Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        // 48 for `androidTapTargetGuideline`, as elsewhere.
+                        height: 48,
+                        child: TextField(
+                          autofocus: true,
+                          style: TextStyle(fontSize: 14, color: palette.text),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: true,
+                            fillColor: palette.bar,
+                            hintText: 'Search',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: palette.textDim,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              size: 17,
+                              color: palette.textDim,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 36,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                            ),
+                            border: _border(palette.outline),
+                            enabledBorder: _border(palette.outline),
+                            focusedBorder: _border(palette.accent),
+                          ),
+                          onChanged: _controller.setText,
+                        ),
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    _ScopeButton(
+                      field: _controller.query.field,
+                      palette: palette,
+                      onChanged: _controller.setField,
+                    ),
                   ],
                 ),
-              ],
+              ),
+            ),
+            Expanded(
+              child: AsyncView<SearchOutcome>(
+                controller: _controller.results,
+                onSignIn: widget.onSignIn,
+                builder: (context, outcome) {
+                  final notice = searchNotice(outcome);
+                  if (notice != null) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          notice,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: palette.textMuted),
+                        ),
+                      ),
+                    );
+                  }
+                  return MediaGrid(
+                    api: widget.api,
+                    items: outcome.results,
+                    onOpen: widget.onOpen,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static OutlineInputBorder _border(Color color) => OutlineInputBorder(
+    borderRadius: BorderRadius.circular(8),
+    borderSide: BorderSide(color: color),
+  );
+}
+
+/// The eleven scopes, behind one pill.
+///
+/// **A menu rather than the row of pills the TV screen draws**, because there
+/// are eleven of them: `db/search.go:70` degrades an unrecognised `field` to
+/// `all` without erroring, so every scope the client can send has to be
+/// nameable, and eleven pills do not fit across a phone at a legible size.
+class _ScopeButton extends StatelessWidget {
+  const _ScopeButton({
+    required this.field,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  final SearchField field;
+  final FileFinPalette palette;
+  final ValueChanged<SearchField> onChanged;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<SearchField>(
+    tooltip: 'Search scope',
+    initialValue: field,
+    onSelected: onChanged,
+    itemBuilder: (_) => [
+      for (final value in SearchField.values)
+        PopupMenuItem(value: value, child: Text(searchFieldLabel(value))),
+    ],
+    child: Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: palette.accentFill,
+        border: Border.all(color: palette.accent),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            searchFieldLabel(field),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: palette.accentSoft,
             ),
           ),
-        ),
-        Expanded(
-          child: AsyncView<SearchOutcome>(
-            controller: _controller.results,
-            onSignIn: widget.onSignIn,
-            builder: (context, outcome) {
-              final notice = searchNotice(outcome);
-              if (notice != null) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(notice, textAlign: TextAlign.center),
-                  ),
-                );
-              }
-              return MediaGrid(
-                api: widget.api,
-                items: outcome.results,
-                onOpen: widget.onOpen,
-              );
-            },
+          const SizedBox(width: 4),
+          Icon(
+            Icons.keyboard_arrow_down,
+            size: 15,
+            color: palette.accentSoft,
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

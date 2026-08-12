@@ -332,6 +332,21 @@ void main() {
 
     expect(api.closed, isTrue);
   });
+
+  testWidgets('the keyboard next key moves to the field below', (
+    tester,
+  ) async {
+    // Two fields and a soft keyboard: without this, "next" dismisses the
+    // keyboard and the second field has to be found by hand.
+    await pump(tester);
+
+    await tester.tap(find.byType(TextField).first);
+    await tester.pumpAndSettle();
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// The problem line, read through its key.

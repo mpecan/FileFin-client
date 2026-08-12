@@ -454,6 +454,36 @@ and each will look like a client bug when it happens:
   `real_mpv_player_test.dart` covers `buildSurface` by giving that test its own
   `Player` and never disposing it.
 
+## D-pad reachability is a gate, not a review note
+
+Every control on a television has to be reachable with four arrow keys and a
+centre button, and "it has a `Focus`" does not establish that. `TvShell`'s rail
+was focusable, correct, and a **trap**: `FocusScope` is a traversal boundary —
+`inDirection` stops at its edge — so focus entered the navigation and `right`
+never left it again. Nothing in `analyze`, `constitution` or the widget suites
+saw it, because every one of them can only ask whether a widget exists.
+
+`test/support/dpad.dart` is the answer and the shape of it is load-bearing:
+
+- **A walk of the directional focus graph, breadth-first, pressing only arrow
+  keys.** It returns the set of labels it reached, and a TV suite asserts its
+  controls are in that set.
+- **It returns to each node before trying the next direction from it.** Two
+  simpler walks were written first and both reported live controls as
+  unreachable — the one answer this check must never invent. Cycling the four
+  directions one press at a time walks a column as A → B → A → B for ever,
+  because `up` undoes every `down`; running each direction to exhaustion escapes
+  the column but then presses `up` from wherever it landed.
+- **A control whose focused subtree has no `Text`, `Tooltip` or labelled `Icon`
+  is reported as `?`**, and that is a finding rather than a limitation: a remote
+  user and a screen reader have nothing to go on either. The scrubber was `?`
+  until it got a `Tooltip` — placed INSIDE the `DpadFocusable`, because a name
+  on an ancestor is not the focused node's name.
+
+The walk found the rail's trap and a server row that was not focusable at all.
+The coverage ratchet found the third — a `TvShell.onSignOut` no widget invoked,
+which is the same class of defect seen through a different instrument.
+
 ## Commit conventions
 
 - Conventional Commits: `type(scope): description`

@@ -3,6 +3,7 @@ import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:filefin_mobile/src/playback/player_controls.dart';
 import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -301,6 +302,7 @@ void main() {
             prefs: const PlaybackPrefs(),
             initialFile: const FileIndex(0),
             startAt: Duration.zero,
+            metrics: PlayerControlsMetrics.phone,
           ),
         ),
       );

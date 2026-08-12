@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:filefin_mobile/src/playback/player_controls.dart';
+import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,7 +64,14 @@ void main() {
           // controls can be driven without the whole screen.
           body: ListenableBuilder(
             listenable: controller,
-            builder: (_, _) => PlayerControls(controller: controller),
+            builder: (_, _) => PlayerControls(
+              controller: controller,
+              title: 'Direct Play Movie',
+              facts: 'mp4 · direct play',
+              metrics: PlayerControlsMetrics.phone,
+              onShowAudio: () {},
+              onShowSubtitles: () {},
+            ),
           ),
         ),
       ),
@@ -68,22 +79,47 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('the audio menu is disabled until the engine reports tracks', (
+  /// Pumps a bare scaffold whose one button opens [picker].
+  ///
+  /// The two track pickers are the PAGE's, not the controls': a sheet needs a
+  /// `Navigator`, and `PlayerControls` only reports that its pill was pressed.
+  /// Driving them straight rather than through `PlayerPage` keeps these cases
+  /// about the sheet rather than about the whole screen.
+  Future<void> openPicker(
+    WidgetTester tester,
+    Future<void> Function(BuildContext, PlayerController) picker,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => unawaited(picker(context, controller)),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the audio picker says so when the engine reported none', (
     tester,
   ) async {
     // `start()` is what registers the stream listeners, so nothing the engine
-    // emits reaches the controller before it.
+    // emits reaches the controller before it. An empty sheet would be a tap
+    // that opens nothing and explains nothing; a disabled row says which.
     await controller.start();
-    await pumpControls(tester);
-    expect(
-      tester
-          .widget<PopupMenuButton<PlaybackTrackRef>>(
-            find.byType(PopupMenuButton<PlaybackTrackRef>),
-          )
-          .enabled,
-      isFalse,
-    );
+    await openPicker(tester, showAudioPicker);
+    expect(find.text('No audio tracks reported'), findsOneWidget);
+  });
 
+  testWidgets('the audio picker lists what the engine did report', (
+    tester,
+  ) async {
+    await controller.start();
     host.emitTracks(
       const PlaybackTracks(
         audio: [
@@ -92,16 +128,11 @@ void main() {
         ],
       ),
     );
-    await tester.pumpAndSettle();
+    await openPicker(tester, showAudioPicker);
 
-    expect(
-      tester
-          .widget<PopupMenuButton<PlaybackTrackRef>>(
-            find.byType(PopupMenuButton<PlaybackTrackRef>),
-          )
-          .enabled,
-      isTrue,
-    );
+    expect(find.text('No audio tracks reported'), findsNothing);
+    expect(find.text('English'), findsOneWidget);
+    expect(find.text('Japanese'), findsOneWidget);
   });
 
   testWidgets('picking an audio track passes libmpv its own id', (
@@ -116,22 +147,20 @@ void main() {
         ],
       ),
     );
-    await pumpControls(tester);
+    await openPicker(tester, showAudioPicker);
 
-    await tester.tap(find.byIcon(Icons.audiotrack));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Japanese'));
     await tester.pumpAndSettle();
 
     expect(host.calls, contains('selectAudioTrack(2)'));
+    // And the overlay's pill now says which, which is the whole reason the
+    // design replaced an icon-only menu with a named one.
+    expect(audioLabel(controller), 'Japanese');
   });
 
   testWidgets('the subtitle menu offers Off and every sidecar', (tester) async {
     await controller.start();
-    await pumpControls(tester);
-
-    await tester.tap(find.byIcon(Icons.subtitles));
-    await tester.pumpAndSettle();
+    await openPicker(tester, showSubtitlePicker);
 
     expect(find.text('Off'), findsOneWidget);
     expect(find.text('English'), findsOneWidget);
@@ -147,10 +176,7 @@ void main() {
     tester,
   ) async {
     await controller.start();
-    await pumpControls(tester);
-
-    await tester.tap(find.byIcon(Icons.subtitles));
-    await tester.pumpAndSettle();
+    await openPicker(tester, showSubtitlePicker);
     await tester.tap(find.text('Off'));
     await tester.pumpAndSettle();
 
@@ -340,9 +366,7 @@ void main() {
 
   Future<void> tapSlovenianAcrossAnAdvance(WidgetTester tester) async {
     await controller.start();
-    await pumpControls(tester);
-    await tester.tap(find.byIcon(Icons.subtitles));
-    await tester.pumpAndSettle();
+    await openPicker(tester, showSubtitlePicker);
     expect(find.text('Slovenian'), findsOneWidget);
 
     await controller.next();
@@ -454,5 +478,34 @@ void main() {
       );
       expect(describeApiFailure(ConnectionFailed(_url)).$2, isFalse);
     });
+  });
+
+  /// An empty sheet would be a tap that opens nothing and explains nothing.
+  /// The API lists sidecars and this item has none.
+  testWidgets('the subtitle picker says so when there are no sidecars', (
+    tester,
+  ) async {
+    controller.dispose();
+    controller = PlayerController(
+      api: api,
+      host: host,
+      network: FakeNetworkStatus(),
+      detail: const MediaDetail(id: _id, title: 'Film', files: [FileInfo()]),
+      server: SavedServer(
+        id: const ServerId('a'),
+        name: 'Attic NAS',
+        baseUrl: Uri.parse('http://nas.local'),
+      ),
+      prefs: const PlaybackPrefs(),
+      initialFile: const FileIndex(0),
+      startAt: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+    await controller.start();
+
+    await openPicker(tester, showSubtitlePicker);
+
+    expect(find.text('No subtitles available'), findsOneWidget);
+    expect(find.text('Off'), findsOneWidget);
   });
 }

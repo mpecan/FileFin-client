@@ -7,6 +7,7 @@ library;
 
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/file_list.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -43,7 +44,7 @@ void main() {
     test('a single-file entry is named by its file, not by SxE', () {
       expect(
         fileLabel(const FileInfo(name: 'Film.mp4', ext: '.mp4')),
-        'Film.mp4 (.mp4)',
+        'Film.mp4',
       );
     });
 
@@ -66,5 +67,24 @@ void main() {
       // would be worse than calling it S1E0.
       expect(fileLabel(const FileInfo(season: 1)), 'S1E0');
     });
+  });
+
+  testWidgets('a file with no extension prints its size and nothing else', (
+    tester,
+  ) async {
+    // The `ext` default is `''` under §8's tolerant decoding, and a trailing
+    // separator with nothing after it reads as a truncated line.
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: FileList(
+            files: [FileInfo(name: 'reel', size: 42000)],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('42 kB'), findsOneWidget);
+    expect(find.textContaining('·'), findsNothing);
   });
 }

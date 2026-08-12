@@ -5,7 +5,9 @@ import 'package:filefin_mobile/src/async/async_controller.dart';
 import 'package:filefin_mobile/src/async/async_view.dart';
 import 'package:filefin_mobile/src/browse/library_actions.dart';
 import 'package:filefin_mobile/src/browse/media_row.dart';
+import 'package:filefin_mobile/src/browse/poster_tile.dart' show MediaTileShape;
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
 /// F6: the three rows `GET /api/home` returns, in the order it returns them.
@@ -31,6 +33,7 @@ class HomePage extends StatefulWidget {
     required this.title,
     required this.onOpen,
     this.onSignIn,
+    this.onSearch,
     this.onServers,
     this.onSettings,
     this.onSignOut,
@@ -48,6 +51,14 @@ class HomePage extends StatefulWidget {
 
   /// Where a `SessionExpired` sends the user (F3's last resort).
   final VoidCallback? onSignIn;
+
+  /// Selects the Search destination.
+  ///
+  /// The design puts a magnifier in this screen's header **as well as** in the
+  /// bottom bar. That is not a duplicate affordance so much as the same one at
+  /// the two ends of a thumb's travel, and it costs a callback rather than a
+  /// screen.
+  final VoidCallback? onSearch;
 
   /// Opens F11's server picker.
   final VoidCallback? onServers;
@@ -99,13 +110,12 @@ class HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(widget.title),
-      actions: libraryAppBarActions(
-        onServers: widget.onServers,
-        onSettings: widget.onSettings,
-        onSignOut: widget.onSignOut,
-      ),
+    appBar: LibraryHeader(
+      title: widget.title,
+      onServers: widget.onServers,
+      onSearch: widget.onSearch,
+      onSettings: widget.onSettings,
+      onSignOut: widget.onSignOut,
     ),
     body: AsyncView<HomeRows>(
       controller: _controller,
@@ -118,11 +128,16 @@ class HomePageState extends State<HomePage> {
         }
         return ListView(
           children: [
+            // "Continue", not "Continue watching": the design shortens it, and
+            // at 13 points beside a count the shorter label is the one that
+            // does not wrap on a narrow phone.
             MediaRow(
               api: widget.api,
-              label: 'Continue watching',
+              label: 'Continue',
               items: rows.continueRow,
               onOpen: widget.onOpen,
+              shape: MediaTileShape.wide,
+              showCount: true,
             ),
             MediaRow(
               api: widget.api,
@@ -139,6 +154,7 @@ class HomePageState extends State<HomePage> {
               items: rows.completed,
               onOpen: widget.onOpen,
             ),
+            const SizedBox(height: 16),
           ],
         );
       },
@@ -155,14 +171,25 @@ class _NothingYet extends StatelessWidget {
   const _NothingYet();
 
   @override
-  Widget build(BuildContext context) => const Center(
-    child: Padding(
-      padding: EdgeInsets.all(24),
-      child: Text(
-        'Nothing here yet. What you play, favourite or mark watched shows up '
-        'on this screen. Browse the library to get started.',
-        textAlign: TextAlign.center,
+  Widget build(BuildContext context) {
+    final palette = FileFinPalette.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.play_circle_outline, size: 40, color: palette.textFaint),
+            const SizedBox(height: 14),
+            Text(
+              'Nothing here yet. What you play, favourite or mark watched '
+              'shows up on this screen. Browse the library to get started.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: palette.textMuted),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

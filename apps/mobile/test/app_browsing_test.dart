@@ -7,6 +7,7 @@ import 'package:filefin_mobile/src/playback/player_page.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -49,7 +50,7 @@ void main() {
       settings: SettingsStore(dir),
       apiFactory: (_, {pin}) => api,
     ),
-    child: const FileFinApp(),
+    child: const FileFinApp(formFactor: FormFactor.phone),
   );
 
   testWidgets('tree to grid to detail, and back out again', (tester) async {

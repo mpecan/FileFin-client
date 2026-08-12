@@ -227,3 +227,92 @@ class _ReportStoppedBanner extends StatelessWidget {
     ),
   );
 }
+
+/// F7's audio picker, as a sheet.
+///
+/// **A sheet owned by the page rather than a menu owned by the controls**, and
+/// that is what makes one overlay serve a phone and a television: a
+/// `PopupMenuButton` positions itself against a pointer, which a D-pad does not
+/// have, while a sheet is a focus scope the remote can walk.
+///
+/// Public because `PlayerControls` only reports that its pill was pressed; the
+/// page is what has a `Navigator` to open a sheet on (§5).
+Future<void> showAudioPicker(
+  BuildContext context,
+  PlayerController controller,
+) => showModalBottomSheet<void>(
+  context: context,
+  builder: (sheet) => ListView(
+    shrinkWrap: true,
+    children: [
+      if (controller.tracks.audio.isEmpty)
+        const ListTile(
+          title: Text('No audio tracks reported'),
+          enabled: false,
+        )
+      else
+        for (final track in controller.tracks.audio)
+          ListTile(
+            title: Text(track.label),
+            selected: track == controller.audio,
+            onTap: () {
+              controller.selectAudio(track);
+              Navigator.pop(sheet);
+            },
+          ),
+    ],
+  ),
+);
+
+/// F7's subtitle picker: Off, and every sidecar the API listed.
+Future<void> showSubtitlePicker(
+  BuildContext context,
+  PlayerController controller,
+) => showModalBottomSheet<void>(
+  context: context,
+  builder: (sheet) => ListView(
+    shrinkWrap: true,
+    children: [
+      ListTile(
+        title: const Text('Off'),
+        selected: controller.subtitle == null,
+        onTap: () {
+          controller.selectSubtitle(null);
+          Navigator.pop(sheet);
+        },
+      ),
+      if (controller.subtitles.isEmpty)
+        const ListTile(title: Text('No subtitles available'), enabled: false)
+      else
+        for (final sub in controller.subtitles)
+          ListTile(
+            title: Text(sub.label),
+            selected: sub.index == controller.subtitle?.index,
+            onTap: () {
+              controller.selectSubtitle(stillOffered(controller, sub));
+              Navigator.pop(sheet);
+            },
+          ),
+    ],
+  ),
+);
+
+/// [chosen], or null when the list has moved on under the open sheet.
+///
+/// **The sheet is built from one file's sidecars and tapped against another
+/// file's.** `PlayerController._open()` replaces the list wholesale and
+/// `_recover()` calls it asynchronously on any mpv error, so an error — or an
+/// advance to the next
+/// episode — while the sheet is open leaves it offering rows that no
+/// longer exist. The old menu carried an INDEX and threw `RangeError` out of a
+/// callback (M4.R/T9); a sheet carries the object, which cannot throw but would
+/// quietly ask the engine for the previous file's sidecar. Off is the honest
+/// answer to "the thing you tapped is gone".
+///
+/// Public only so a test can reach it; nothing outside this library calls it
+/// (§5, `public_member_no_consumer`).
+@visibleForTesting
+SubtitleSource? stillOffered(
+  PlayerController controller,
+  SubtitleSource chosen,
+) => controller.subtitles.any((s) => s.index == chosen.index) ? chosen : null;

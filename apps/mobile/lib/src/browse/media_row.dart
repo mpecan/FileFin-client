@@ -1,17 +1,19 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/poster_tile.dart';
 import 'package:filefin_mobile/src/library_api.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
+import 'package:filefin_mobile/src/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-/// One labelled home row: a heading and a horizontal strip of posters.
+/// One labelled home row: a heading and a horizontal strip of tiles.
 ///
 /// **It draws nothing at all when [items] is empty, and that is the row's own
 /// decision rather than each caller's.** All three home buckets can be empty
-/// independently — a user who has favourited nothing still has a *Continue
-/// watching* row — and a heading over an empty strip reads as something
-/// missing rather than something absent. One rule in one place, so the three
-/// call sites cannot drift.
+/// independently — a user who has favourited nothing still has a *Continue*
+/// row — and a heading over an empty strip reads as something missing rather
+/// than something absent. One rule in one place, so the three call sites
+/// cannot drift.
 ///
 /// **Virtualised for the same reason `MediaGrid` is** (SPEC.md L2 — nothing on
 /// this server paginates): `/api/home` returns whole buckets, and
@@ -25,6 +27,8 @@ class MediaRow extends StatelessWidget {
     required this.label,
     required this.items,
     required this.onOpen,
+    this.shape = MediaTileShape.poster,
+    this.showCount = false,
     super.key,
   });
 
@@ -45,31 +49,48 @@ class MediaRow extends StatelessWidget {
   /// Opens one item's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// How tall one strip is: a 2:3 poster at [_tileWidth] plus its caption.
-  static const _rowHeight = 226.0;
+  /// Which tile shape this row is built from.
+  final MediaTileShape shape;
 
-  /// Narrower than the grid's 160, because a row is scanned rather than
-  /// browsed and more of it should be visible at once.
-  static const _tileWidth = 116.0;
+  /// Whether the heading carries the number of items to its right.
+  ///
+  /// The design shows it on *Continue* and nowhere else, and that asymmetry is
+  /// the point: how many things are half-watched is a number people act on,
+  /// how many they have ever favourited is not.
+  final bool showCount;
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    final palette = FileFinPalette.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(top: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(label, style: Theme.of(context).textTheme.titleMedium),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(label, style: Theme.of(context).textTheme.titleSmall),
+                if (showCount) ...[
+                  const Spacer(),
+                  Text(
+                    '${items.length}',
+                    style: mono(size: 11, color: palette.textFaint),
+                  ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: _rowHeight,
+            height: shape.rowHeight,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
               // Explicit for the reason `MediaGrid` gives: the invariant the
               // tests assert must be a property of this file rather than of
               // whatever the framework defaults to today.
@@ -77,13 +98,14 @@ class MediaRow extends StatelessWidget {
               addAutomaticKeepAlives: false,
               itemCount: items.length,
               itemBuilder: (context, index) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 5),
                 child: SizedBox(
-                  width: _tileWidth,
+                  width: shape.width,
                   child: PosterTile(
                     api: api,
                     item: items[index],
                     onOpen: onOpen,
+                    shape: shape,
                   ),
                 ),
               ),

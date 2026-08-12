@@ -31,13 +31,16 @@ class FileList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Files', style: Theme.of(context).textTheme.titleSmall),
           for (final file in files)
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(fileLabel(file)),
               subtitle: file.path.isEmpty ? null : Text(file.path),
-              trailing: Text(humanSize(file.size)),
+              trailing: Text(
+                file.ext.isEmpty
+                    ? humanSize(file.size)
+                    : '${humanSize(file.size)} · ${file.ext}',
+              ),
               onTap: onPlay == null ? null : () => onPlay!(file.index),
             ),
         ],
@@ -46,19 +49,21 @@ class FileList extends StatelessWidget {
   }
 }
 
-/// How one file is named in the list.
+/// How one file is named, in this list and in the episode list above it.
 ///
 /// `season` and `episode` are **0 for a single-file item** (SPEC.md §3.3), not
 /// absent — so a row that always printed "S0E0" would put a season number on
 /// every film in the library.
+///
+/// **The extension is no longer appended here.** Both call sites now print it
+/// separately — the episode row in its own mono facts line, this list in its
+/// trailing column — and a label carrying it as well said `.mkv` twice on the
+/// same row.
 String fileLabel(FileInfo file) {
-  final ext = file.ext.isEmpty ? '' : ' (${file.ext})';
   if (file.season == 0 && file.episode == 0) {
-    return file.name.isEmpty
-        ? 'File ${file.index.value}$ext'
-        : '${file.name}$ext';
+    return file.name.isEmpty ? 'File ${file.index.value}' : file.name;
   }
-  return 'S${file.season}E${file.episode}$ext';
+  return 'S${file.season}E${file.episode}';
 }
 
 /// A byte count a person can read.

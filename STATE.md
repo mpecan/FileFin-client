@@ -13,6 +13,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M6** — F5, F6 and F10: search with a debounce and eleven scopes, the three home rows, favourite/rating/the two un-watches, and a three-tab shell whose tabs are built only when they are selected. All three proven against the real binary |
 | **Done** | **M6.R** — remediated against three adversarial reviews: six product defects (one of them data loss), nine test holes that were surviving mutants, and six gate defects — including a mutation gate that reported seven survivors as a hang and a §7 clause enforced by nobody |
 | **Done** | **M7** — F11's picker over two real servers, `PlatformSecretStore`, a cold start that restores a session, F15's accept-and-pin loop reaching a user for the first time, F14's background audio and lock-screen transport, the inherited debt, and the **full-spec audit** below |
+| **Done** | **M8** — the `FileFin Redesign` design document, built for both form factors: the phone's `1a` screens, the television's `1b` rail-and-rows, one player overlay serving both, and a D-pad reachability harness that found three controls a remote could not reach |
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **Every milestone is done, and "done" is not the same as "verified".** What no
@@ -45,6 +46,168 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M8 — the redesign, and the four things it found
+
+The design document is `FileFin Redesign.dc.html` in the `Multi-platform
+interface redesign` project on claude.ai/design. It offers one phone direction
+(`1a`) and two television directions; **`1b`, rail and rows, was the one
+chosen** — `1c`'s cinema hero puts full-bleed artwork behind every screen, and
+this server serves one poster per item and no backdrop at all.
+
+### The design asks for four things the server cannot answer, and none of them
+### were invented
+
+Every one of these is a place the drawing shows data that `docs/server-api.md`
+has no endpoint for. §8 says the contract is observed rather than assumed, so
+the shape survives and the invented value does not.
+
+- **The `Continue` card's progress bar and its "28 min left" pill.** `GET
+  /api/home` sends `{id, title, year, hasPoster, watched}` and nothing else — no
+  position, no duration, no landscape artwork anywhere in the API. What survives
+  is the *rhythm* the screen is built on: one wide row above two narrow ones, so
+  resume reads as the first thing on the phone's home screen. The frame is
+  filled with the poster, cropped from the top where the artwork lives.
+- **Episode thumbnails.** The server serves one image per *item* and none per
+  file, so a column of them would be a column of identical placeholders.
+- **The player's `1.0×` speed control.** Not a rendering question: mpv has a
+  `speed` property and this app's engine port has never carried it. It is a
+  feature, and building it because a mock drew it is how a redesign becomes a
+  milestone.
+- **The television hero's `Resume`.** The position a resume needs is on the
+  item's DETAIL (`continueIndex`/`continueSeconds`) and the home payload carries
+  neither, so the hero's button says `Open` and the detail screen behind it —
+  which does have both — is where resuming happens.
+
+### Three sizes moved, and the accessibility gate is why
+
+The design was drawn in CSS pixels against no tap-target rule.
+`androidTapTargetGuideline` runs in this suite and wants 48. The tree row went
+from 46 to 48; the server chip (32) and the season pills (30) keep their drawn
+size inside a 48-point target, since the guideline measures the semantics node
+rather than the painted box.
+
+### Two control implementations became one
+
+There were two before this milestone: a D-pad overlay built inside
+`RealMpvPlayer.buildSurface`, which is what shipped, and `PlayerControls`, which
+is what every widget test drove through a fake host's `surface` field. **Neither
+was covered by the other's assertions.** `buildSurface()` now returns the bare
+video, `PlayerPage` stacks `PlayerControls` over it, and the two sizings a phone
+and a television need are `PlayerControlsMetrics`. What is tested and what
+ships are now the same widget.
+
+### The D-pad reachability harness, and the three controls it found
+
+`test/support/dpad.dart` walks the directional focus graph breadth-first from
+wherever focus starts, pressing only arrow keys, and answers with the set of
+controls it could reach. It is a **walk, not an inventory of `Focus` widgets**,
+because a control can be perfectly focusable and still be unreachable. It found:
+
+- **The rail trapped focus.** `FocusScope` is a traversal boundary — `inDirection`
+  stops at its edge — so focus entered the navigation and `right` never left it
+  again. On a television that is a user stranded in the rail with no way back to
+  the posters. It is a `Focus` with `canRequestFocus: false` now, which reports
+  the same focus changes and is not a boundary.
+- **The server row was not focusable at all**, and `TvShell` was passing an
+  `onServers` that nothing invoked — so a television could not switch servers or
+  sign in to another one.
+- **A television could not sign out.** `TvShell` took an `onSignOut` no widget
+  called. The phone puts it behind the header's sliders menu; a rail has no
+  counterpart, so it is a row in the playback settings sheet, drawn only when
+  the caller passes the callback — which the phone does not.
+
+The first two were found by the walk. The third was found by the coverage
+ratchet, which is the same finding by a different instrument: a closure nothing
+invokes is a line no test covers.
+
+### Two writing mistakes in the harness itself, kept because they look like
+### product bugs
+
+Both reported live controls as unreachable, which is the one answer a
+reachability check must never invent:
+
+- Cycling the four directions one press at a time walks a three-item column as
+  Home → Library → Home → Library for ever, because `up` undoes every `down`. It
+  reported two of three rail destinations as unreachable.
+- Running each direction to exhaustion escapes the column but then presses `up`
+  from wherever it landed, so on a rail-plus-content layout it never goes back
+  for the rail's top half.
+
+The breadth-first walk returns to each node before trying the next direction
+from it, which is what a graph search needs and neither of those was.
+
+### Two guards were deleted because they made their own code untestable
+
+Both were `Platform.isAndroid` checks in front of a method channel, and both
+bought nothing: a host with no handler answers `MissingPluginException`, which
+is what iOS, desktop and the test runner all do and what the code already
+caught. With the guard, every line behind it was unreachable under `flutter
+test` — which reports macOS — so the export, its failure arm and its
+empty-string rule were **shipped and never once executed by a test**.
+`CaBundle` is the one that existed; `shell/form_factor.dart` is the new one
+that was written without the guard for the same reason.
+
+### Two pre-existing failures found on the way, both at HEAD
+
+Measured in a `git worktree` at `1b48603` rather than inferred:
+
+- **`platform_config_test`'s F14 activity assertion was already red.** The
+  manifest names `dev.filefin.filefin_mobile.MainActivity` — changed when the TV
+  banner was added — and the test demanded the literal
+  `com.ryanheise.audioservice.AudioServiceActivity`. It now asserts the manifest
+  entry **and** that `MainActivity` extends `AudioServiceActivity`, which is
+  what F14 actually requires and what the old assertion was reaching for.
+- **`just check` did not exit 0 at HEAD.** Its coverage run cannot finish:
+  eleven cases fail, of which nine are `real_mpv_player_test`'s known
+  intermittent libmpv segfault (CLAUDE.md records 1 failure in 6 runs) and one
+  is the manifest assertion above. This milestone's tree is the first in a while
+  where the whole recipe is green.
+
+### `just mutants` has NOT been run to completion on this diff, and that is
+### the one gate this milestone owes
+
+It was started twice and stopped twice, and the second stop is worth writing
+down because it nearly cost a bad commit.
+
+The gate is diff-scoped and this diff is 38 lib files and ~5,000 lines, so a
+full pass is many hours: `mutation_test` runs the whole suite once per mutant,
+and the suite's baseline here is 42 s. The first attempt was killed by a
+two-minute command timeout and **left a mutant on disk** — `runApp(...)` deleted
+from `main.dart:28`, exactly the hazard CLAUDE.md names. The second was stopped
+deliberately after 65 minutes, and it too was holding one:
+
+```dart
+if (!(detail.files.isNotEmpty )|| detail.technical.isNotEmpty)
+```
+
+in `detail_sections.dart`, where the original has no negation. Committing while
+that run was in flight would have committed the mutant, which is what "anything
+that rewrites lib sources in place runs alone" means in practice.
+
+Both were restored and the tree was then verified three ways, because a
+*surviving* mutant would pass a test run and be committed silently:
+
+- `dart format --set-exit-if-changed` over 264 files, 0 changed —
+  `mutation_test` writes unformatted mutants, and the one above is a specimen;
+- a grep for the shapes it leaves (a negated operand, a stray space before a
+  paren) across every non-generated lib source, nothing found;
+- `just test`, 915 + the app's cases, all passing.
+
+**What is owed:** one uninterrupted `FILEFIN_MUTANTS_BASE=<this commit>~1 just
+mutants`, run alone, and a survivor fixed in a follow-up. Nothing else in `just
+check` is outstanding — coverage is 100% at ratchet 0, and every other gate
+exits 0.
+
+### Debt this milestone chose not to pay
+
+- **The playback-speed control is not built** (above). It is a feature with an
+  engine half, not a rendering.
+- **`docs/verification-backlog.md` gains nothing new**, but every row about the
+  player's pixels now refers to a different widget: the overlay is
+  `PlayerControls`, not `media_kit_video`'s Material controls.
 
 ---
 

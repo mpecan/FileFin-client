@@ -94,6 +94,7 @@ class PlayerController extends ChangeNotifier {
   PlaybackDecision? _decision;
   NetworkType? _sample;
   String? _failure;
+  PlaybackTrackRef? _audio;
   TranscodingDisabled? _unplayable;
   var _needsSignIn = false;
   var _retrySpent = false;
@@ -286,9 +287,18 @@ class PlayerController extends ChangeNotifier {
     return host.setVolume(volume);
   }
 
+  /// The audio track the user last chose, or null before they have — what was
+  /// CHOSEN, never what is playing. The engine port reports what a file
+  /// contains and nothing about which track libmpv selected, so the overlay's
+  /// pill says "Audio" until this is non-null rather than guessing.
+  PlaybackTrackRef? get audio => _audio;
+
   /// Switches audio track (F7).
-  Future<void> selectAudio(PlaybackTrackRef track) =>
-      host.selectAudioTrack(track);
+  Future<void> selectAudio(PlaybackTrackRef track) {
+    _audio = track;
+    _notify();
+    return host.selectAudioTrack(track);
+  }
 
   /// Switches subtitle track, or turns them off (F7).
   Future<void> selectSubtitle(SubtitleSource? source) async {

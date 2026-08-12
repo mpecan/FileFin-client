@@ -118,6 +118,25 @@ binary.
 
 ---
 
+## What the redesign asked for and this API does not have
+
+Recorded here rather than in a commit message, because the next person reading
+`FileFin Redesign.dc.html` beside this document will ask the same four
+questions. None of these is a gap to be filled by a client; each is a value the
+server does not send.
+
+| The design draws | The API has | What ships instead |
+|---|---|---|
+| a progress bar and "28 min left" on every *Continue* card | `GET /api/home` sends `{id, title, year, hasPoster, watched}` — no position, no duration | the wide card and its rhythm, with no bar and no pill |
+| a 16:9 still behind each *Continue* card | one poster per item (`GET /api/media/{id}/poster`), no backdrop route | the poster, cropped from the top |
+| an 88×50 thumbnail per episode row | one image per **item**, none per **file** | no thumbnail; the row keeps its height and its code-then-metadata pairing |
+| `Resume` on the television's home hero | the position lives on the item's *detail* (`continueIndex`, `continueSeconds`), not on the home payload | `Open`, which lands on the detail screen where resuming is real |
+
+The last one is the one worth restating: a hero `Resume` is implementable, but
+only by fetching one detail per hero before the screen can draw. That is a
+second request on the critical path of a cold start, which NF1 exists to stop.
+
+
 ## `GET /api/state`
 
 Reachability and version probe. **Unauthenticated** — this is F1's entire

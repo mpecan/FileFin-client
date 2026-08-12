@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/playback_host.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 // The `Video` widget itself, for the one assertion that pins `buildSurface`.
@@ -205,4 +206,12 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );
+
+  /// The app declines `media_kit_video`'s own transport, and until the
+  /// redesign that decision was an inline closure only a laying-out `Video`
+  /// could invoke — which is the one thing `flutter_tester` cannot do. Named,
+  /// it is one call.
+  test('the library is told to draw no controls of its own', () {
+    expect(noLibraryControls(null), isA<SizedBox>());
+  });
 }

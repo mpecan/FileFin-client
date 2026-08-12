@@ -50,7 +50,7 @@ void main() {
   }
 
   Future<void> pick(WidgetTester tester, String label) async {
-    await tester.tap(find.byType(DropdownButton<SearchField>));
+    await tester.tap(find.byType(PopupMenuButton<SearchField>));
     await tester.pumpAndSettle();
     await tester.tap(find.text(label).last);
     await tester.pumpAndSettle();
@@ -97,10 +97,10 @@ void main() {
 
     expect(
       tester
-          .widget<DropdownButton<SearchField>>(
-            find.byType(DropdownButton<SearchField>),
+          .widget<PopupMenuButton<SearchField>>(
+            find.byType(PopupMenuButton<SearchField>),
           )
-          .value,
+          .initialValue,
       SearchField.director,
     );
     expect(find.text(searchFieldLabel(SearchField.director)), findsOneWidget);
@@ -243,7 +243,7 @@ void main() {
     // nobody can reach, and the enum is the wire vocabulary.
     await show(tester);
 
-    await tester.tap(find.byType(DropdownButton<SearchField>));
+    await tester.tap(find.byType(PopupMenuButton<SearchField>));
     await tester.pumpAndSettle();
 
     for (final field in SearchField.values) {

@@ -1,37 +1,196 @@
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
-/// The app-bar actions both library tabs carry.
+/// The header both library tabs carry: which server, and what to do about it.
 ///
-/// **One list rather than a copy in each page**, because there are now two of
-/// them and the pair is what makes the duplication worth naming: `just dupes`
-/// fires at 15 lines, and — more to the point — a sign-out that existed on one
-/// tab and not the other is exactly the "reachable only from a tab you have to
-/// know to visit" problem `HomePage` already argues against for the settings
-/// button.
+/// **A 48-point row rather than an `AppBar`, because the design's left-hand
+/// affordance is a chip and an `AppBar`'s is a title.** The server name is not
+/// a heading here — it is a control that opens F11's picker, and it says so by
+/// carrying a caret. Drawing it as `AppBar.title` would put a tap target where
+/// a label is expected and lose the one glyph that distinguishes the two.
 ///
-/// Each action appears only when it has somewhere to go, so a test that is not
-/// about settings or sign-out gets neither.
-List<Widget> libraryAppBarActions({
-  VoidCallback? onServers,
-  VoidCallback? onSettings,
-  VoidCallback? onSignOut,
-}) => [
-  if (onServers != null)
-    IconButton(
-      onPressed: onServers,
-      tooltip: 'Servers',
-      icon: const Icon(Icons.dns_outlined),
+/// **Two glyphs where three actions live**, and that is a deliberate reading of
+/// the design rather than a dropped feature. The design draws a magnifier and
+/// a sliders icon; sign-out has no glyph of its own anywhere in it. Sign-out is
+/// rare, destructive and must stay reachable from the tab a launch lands on
+/// (the argument `HomePage` already makes about settings), so it shares the
+/// sliders glyph as the second entry of a menu.
+class LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
+  /// Names [title] as the server, offering whichever actions are wired.
+  const LibraryHeader({
+    required this.title,
+    this.onServers,
+    this.onSearch,
+    this.onSettings,
+    this.onSignOut,
+    super.key,
+  });
+
+  /// The saved server's name.
+  final String title;
+
+  /// Opens F11's picker. Null leaves the chip inert but still legible.
+  final VoidCallback? onServers;
+
+  /// Jumps to the Search destination.
+  final VoidCallback? onSearch;
+
+  /// Opens the playback settings sheet.
+  final VoidCallback? onSettings;
+
+  /// Ends the session and forgets this account (F2, §9).
+  final VoidCallback? onSignOut;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(48);
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FileFinPalette.of(context);
+    return SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            _ServerChip(title: title, palette: palette, onTap: onServers),
+            const Spacer(),
+            if (onSearch != null)
+              _HeaderButton(
+                icon: Icons.search,
+                tooltip: 'Search',
+                palette: palette,
+                onPressed: onSearch!,
+              ),
+            if (onSettings != null || onSignOut != null)
+              _OverflowButton(
+                palette: palette,
+                onSettings: onSettings,
+                onSignOut: onSignOut,
+              ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ServerChip extends StatelessWidget {
+  const _ServerChip({
+    required this.title,
+    required this.palette,
+    required this.onTap,
+  });
+
+  final String title;
+  final FileFinPalette palette;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Servers',
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      // The tap target is 48 and the chip drawn inside it is the design's 32:
+      // `androidTapTargetGuideline` measures the semantics node, which is the
+      // `InkWell`'s box rather than the painted one.
+      child: Container(
+        height: 48,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: palette.raised,
+            border: Border.all(color: palette.outline),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.dns, size: 14, color: palette.accentBright),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: palette.text,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.keyboard_arrow_down,
+                size: 14,
+                color: palette.textDim,
+              ),
+            ],
+          ),
+        ),
+      ),
     ),
-  if (onSettings != null)
-    IconButton(
-      onPressed: onSettings,
-      tooltip: 'Playback settings',
-      icon: const Icon(Icons.settings_outlined),
-    ),
-  if (onSignOut != null)
-    IconButton(
-      onPressed: onSignOut,
-      tooltip: 'Sign out',
-      icon: const Icon(Icons.logout),
-    ),
-];
+  );
+}
+
+class _HeaderButton extends StatelessWidget {
+  const _HeaderButton({
+    required this.icon,
+    required this.tooltip,
+    required this.palette,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final FileFinPalette palette;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    onPressed: onPressed,
+    tooltip: tooltip,
+    iconSize: 20,
+    color: palette.textMuted,
+    icon: Icon(icon),
+  );
+}
+
+/// The sliders glyph, and the two things behind it.
+///
+/// A menu rather than two buttons: the design allots one glyph here, and a
+/// destructive action that is one tap away from a setting is a destructive
+/// action people reach by accident.
+class _OverflowButton extends StatelessWidget {
+  const _OverflowButton({
+    required this.palette,
+    this.onSettings,
+    this.onSignOut,
+  });
+
+  final FileFinPalette palette;
+  final VoidCallback? onSettings;
+  final VoidCallback? onSignOut;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<VoidCallback>(
+    tooltip: 'More',
+    iconSize: 20,
+    iconColor: palette.textMuted,
+    icon: const Icon(Icons.tune),
+    onSelected: (action) => action(),
+    itemBuilder: (_) => [
+      if (onSettings case final settings?)
+        PopupMenuItem(value: settings, child: const Text('Playback settings')),
+      if (onSignOut case final signOut?)
+        PopupMenuItem(value: signOut, child: const Text('Sign out')),
+    ],
+  );
+}
