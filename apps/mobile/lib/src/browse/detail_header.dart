@@ -81,6 +81,16 @@ class DetailHeader extends StatelessWidget {
           SafeArea(
             bottom: false,
             child: Row(
+              // **`start`, and it is load-bearing rather than tidy.** This
+              // `Row` is a non-positioned child of an expanded `Stack`, so it
+              // is handed the header's whole height — and `Row` centres on the
+              // cross axis by default, which put a 48-point button in the
+              // middle of a 186-point header, directly over the title. It read
+              // as a phone-specific bug because it is one in effect: the
+              // status bar inset shifts the centre down, so at a zero inset
+              // the arrow cleared the title by seventeen points and every test
+              // and every desktop run looked right.
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
