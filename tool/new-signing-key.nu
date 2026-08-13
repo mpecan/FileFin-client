@@ -24,7 +24,13 @@ def main [
     --alias: string = "filefin"                  # key alias inside the keystore
     --days: int = 10000                          # validity; Play needs past 2033-10-22
 ] {
-    let file = "filefin-release.jks"
+    # NO DOT IN THE FIELD NAME. `op`'s assignment syntax is
+    # `[section.]field[type]=value`, so a first attempt at
+    # `filefin-release.jks[file]=…` created a SECTION called `filefin-release`
+    # holding a field called `jks` — the upload was perfect and the reference
+    # `…/filefin-release.jks` then resolved to nothing. Measured against the
+    # real CLI, which is the one thing the stubbed tests could not tell us.
+    let field = "keystore"
 
     for tool in [op keytool] {
         if (which $tool | is-empty) {
@@ -38,14 +44,20 @@ def main [
         error make {msg: $"'($title)' already exists in ($vault). A second signing key would strand every install made with the first — delete the item deliberately if you really mean to replace it."}
     }
 
-    # Generated here and never displayed. 40 alphanumerics is ~206 bits, which
-    # is past the point where the keystore's own KDF is the weaker half.
+    # ONE password, because PKCS12 has no second one to hold. `keytool` takes
+    # `-keypass`, IGNORES it for this store type, and sets the key password
+    # equal to the store password — so a second generated value is not a
+    # stronger key, it is a value that unlocks nothing. Storing two produced an
+    # item that looked complete and a build that died in `packageRelease` with
+    # "Given final block not properly padded".
+    #
+    # Generated here and never displayed. 40 alphanumerics is ~206 bits, past
+    # the point where the keystore's own KDF is the weaker half.
     let store_pw = (random chars --length 40)
-    let key_pw = (random chars --length 40)
 
     let work = (mktemp --directory --tmpdir)
     chmod 700 $work
-    let jks = $"($work)/($file)"
+    let jks = $"($work)/filefin-release.jks"
 
     print $"creating the keystore at ($jks)"
     # An argument LIST rather than a multi-line invocation, because nushell
@@ -62,10 +74,10 @@ def main [
         # `:env`, never a bare `-storepass <value>`: an argument is visible in
         # `ps` to anyone on the machine for as long as the process lives.
         "-storepass:env" "FF_STORE_PW"
-        "-keypass:env" "FF_KEY_PW"
+        "-keypass:env" "FF_STORE_PW"
     ]
     let gen = (
-        with-env {FF_STORE_PW: $store_pw, FF_KEY_PW: $key_pw} {
+        with-env {FF_STORE_PW: $store_pw} {
             ^keytool ...$gen_args | complete
         }
     )
@@ -85,9 +97,8 @@ def main [
         "--title" $title
         "--vault" $vault
         $"store password[password]=($store_pw)"
-        $"key password[password]=($key_pw)"
         $"key alias[text]=($alias)"
-        $"($file)[file]=($jks)"
+        $"($field)[file]=($jks)"
     ]
     let created = (^op ...$create_args | complete)
     if $created.exit_code != 0 {
@@ -99,8 +110,26 @@ def main [
     # zero exit code trusts that the upload contained the bytes; this proves it,
     # and a mismatch keeps the local keystore so nothing is lost.
     print "verifying the stored copy before deleting the local one"
+
+    # THE REFERENCE IS DISCOVERED, NOT ASSUMED. Constructing it from the name
+    # we uploaded is what failed the first time this ran: `op` had put the file
+    # somewhere the obvious path did not address, and only the item itself
+    # knows where. Reading it back from the item makes the script immune to how
+    # the CLI chooses to parse an assignment.
+    let stored = (^op item get $title --vault $vault --format json | from json)
+    if ($stored.files? | default [] | is-empty) {
+        error make {msg: $"'($title)' was created but holds no file. The local copy is KEPT at ($jks)."}
+    }
+    let entry = ($stored.files | first)
+    let section = ($entry.section?.label? | default "")
+    let reference = if ($section | is-empty) {
+        $"op://($vault)/($title)/($entry.name)"
+    } else {
+        $"op://($vault)/($title)/($section)/($entry.name)"
+    }
+
     let back = $"($work)/roundtrip.jks"
-    let read = (^op read $"op://($vault)/($title)/($file)" --out-file $back | complete)
+    let read = (^op read $reference --out-file $back | complete)
     if $read.exit_code != 0 {
         error make {msg: $"could not read the key back. The local copy is KEPT at ($jks): ($read.stderr)"}
     }
@@ -126,6 +155,7 @@ def main [
 
     print ""
     print $"stored in 1Password: ($vault) / ($title)"
+    print $"  reference   ($reference)"
     print $"  alias       ($alias)"
     print $"  ($fingerprint)"
     print "  the local keystore has been deleted; 1Password holds the only copy"
