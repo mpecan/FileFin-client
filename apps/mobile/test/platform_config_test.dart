@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:filefin_mobile/src/playback/ca_bundle.dart';
+import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// What this file can and cannot prove, said once so nobody reads more into it.
@@ -193,6 +195,32 @@ void main() {
       ).allMatches(pbxproj.readAsStringSync()).map((m) => m.group(1)).toList();
       expect(targets, isNotEmpty);
       expect(targets, everyElement('15.0'));
+    });
+  });
+
+  /// **The channel names are strings on both sides of a boundary no test
+  /// crosses.** `just mutants` rewrote `dev.filefin.filefin_mobile/ca_bundle`
+  /// and the whole suite stayed green: Dart would ask on one name, Kotlin
+  /// would answer on another, and the failure on device is silent — mpv simply
+  /// never gets the trust store and every `tls-verify` connection fails with
+  /// "Failed to open".
+  group('the method channels Dart and Kotlin have to agree about', () {
+    final activity = File(
+      'android/app/src/main/kotlin/dev/filefin/filefin_mobile/'
+      'MainActivity.kt',
+    );
+
+    test('the CA-bundle channel is the one MainActivity registers', () {
+      expect(CaBundle.channel.name, 'dev.filefin.filefin_mobile/ca_bundle');
+      expect(activity.readAsStringSync(), contains(CaBundle.channel.name));
+    });
+
+    test('the form-factor channel is too', () {
+      expect(
+        formFactorChannel.name,
+        'dev.filefin.filefin_mobile/form_factor',
+      );
+      expect(activity.readAsStringSync(), contains(formFactorChannel.name));
     });
   });
 }

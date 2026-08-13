@@ -194,4 +194,49 @@ void main() {
     expect(fillOf('Director'), FileFinPalette.dark.accentFill);
     expect(fillOf('Everything'), isNot(FileFinPalette.dark.accentFill));
   });
+
+  /// **The shipped debounce, on both sides of it.** The phone's is asserted at
+  /// 299/300 ms; the television's default was not asserted at all, and `just
+  /// mutants` negated it with the suite green. A negative debounce fires a
+  /// request per keypress — on the one screen where every letter is a separate
+  /// press of a remote.
+  testWidgets('the TV default coalesces typing at 300 ms', (tester) async {
+    // The page's OWN default, so this is about the shipped number rather than
+    // about a value the test injected.
+    await pumpTv(
+      tester,
+      Scaffold(
+        body: TvSearchPage(api: api, onOpen: (_) {}),
+      ),
+    );
+
+    // Tapped rather than pressed through `dpadActivate`, whose own
+    // `pumpAndSettle` runs the fake clock past the debounce window and would
+    // make both halves of this case vacuous. Scoped to the keyboard because
+    // the field echoes what has been typed, so `find.text('A')` matches twice
+    // the moment the first key lands.
+    Future<void> press(String key) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TvKeyboard),
+          matching: find.text(key),
+        ),
+      );
+      await tester.pump();
+    }
+
+    await press('A');
+    await press('B');
+    await tester.pump(const Duration(milliseconds: 299));
+    expect(
+      api.calls.where((c) => c.startsWith('search')),
+      isEmpty,
+      reason: 'still inside the window',
+    );
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(api.calls, contains('search(AB, all)'));
+    // ONE request for two presses, which is what a debounce is for.
+    expect(api.calls.where((c) => c.startsWith('search')), hasLength(1));
+  });
 }

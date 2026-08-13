@@ -31,6 +31,28 @@ void main() {
       expect(theme.textTheme.titleMedium?.fontWeight, FontWeight.w500);
     });
 
+    /// `onPrimary` is the one role that cannot be read off the palette: it is
+    /// chosen BY brightness, and `just mutants` inverted that choice with the
+    /// suite green — which puts near-black text on a dark filled button.
+    test('$name: text on a filled button contrasts with the fill', () {
+      final theme = fileFinTheme(palette);
+      final onPrimary = theme.colorScheme.onPrimary;
+      expect(
+        onPrimary,
+        palette.brightness == Brightness.dark
+            ? const Color(0xFF12141F)
+            : const Color(0xFFFDFDFF),
+      );
+      // The property the literal stands for, so a future recolour cannot
+      // satisfy the line above while failing a reader.
+      expect(
+        onPrimary.computeLuminance(),
+        palette.brightness == Brightness.dark
+            ? lessThan(0.5)
+            : greaterThan(0.5),
+      );
+    });
+
     test('$name: the scrubber is violet on a dim track', () {
       final theme = fileFinTheme(palette);
       expect(theme.sliderTheme.activeTrackColor, palette.accent);

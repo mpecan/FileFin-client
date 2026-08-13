@@ -165,4 +165,34 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Try again'), findsOneWidget);
   });
+
+  /// A year of 0 is the model's default for a payload without one, and
+  /// inverting the guard prints "0" under the hero of every un-enriched
+  /// library.
+  testWidgets('a hero with no year prints no year', (tester) async {
+    await show(
+      tester,
+      rows: const HomeRows(
+        continueRow: [MediaSummary(id: MediaId('a'), title: 'Untitled year')],
+      ),
+    );
+
+    expect(find.text('Untitled year'), findsWidgets);
+    expect(find.text('0'), findsNothing);
+  });
+
+  testWidgets('a hero with a year prints it', (tester) async {
+    await show(
+      tester,
+      rows: const HomeRows(
+        continueRow: [
+          MediaSummary(id: MediaId('a'), title: 'Woodstock', year: 1970),
+        ],
+      ),
+    );
+
+    // `findsWidgets`: the hero and the Continue card below it both name the
+    // year, which is the design's own repetition rather than a duplicate.
+    expect(find.text('1970'), findsWidgets);
+  });
 }

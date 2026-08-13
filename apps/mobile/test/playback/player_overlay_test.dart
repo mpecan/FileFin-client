@@ -483,4 +483,27 @@ void main() {
     expect(scrim.colors.last.a, greaterThan(0.5));
     expect(scrim.colors[2].a, 0.0);
   });
+
+  /// **`metrics == tv` decides how a pill is drawn**, and inverting it left the
+  /// suite green: a television would get the phone's 34-point pill with its
+  /// 17-point radius, two metres away, and a phone would get the TV's 56.
+  testWidgets('a pill is drawn at the size its form factor asks for', (
+    tester,
+  ) async {
+    // The style's minimum, not the rendered box: Material pads a button out
+    // to its tap-target size, which is the same 48 on both form factors and
+    // would hide the difference entirely.
+    double pillHeight(WidgetTester t) => t
+        .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Off'))
+        .style!
+        .minimumSize!
+        .resolve({})!
+        .height;
+
+    await show(tester);
+    expect(pillHeight(tester), 34);
+
+    await show(tester, metrics: PlayerControlsMetrics.tv);
+    expect(pillHeight(tester), 56);
+  });
 }

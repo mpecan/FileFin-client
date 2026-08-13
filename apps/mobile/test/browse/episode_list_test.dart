@@ -142,4 +142,42 @@ void main() {
       expect(episodeFacts(const FileInfo()), '');
     });
   });
+
+  /// **`season > 0` is what keeps a film out of the tab strip**, and `just
+  /// mutants` weakened it to `>= 0` with the suite green — which gives a show
+  /// with any un-seasoned extra a "Season 0" tab beside its real ones.
+  testWidgets('a season-0 file never becomes a tab', (tester) async {
+    await show(tester, [
+      const FileInfo(name: 'Trailer'),
+      episode(1, 1),
+      episode(2, 1),
+    ]);
+
+    expect(find.text('Season 1'), findsOneWidget);
+    expect(find.text('Season 2'), findsOneWidget);
+    expect(find.text('Season 0'), findsNothing);
+  });
+
+  /// The tick on the season pill: inverted, every season but the shown one is
+  /// filled, which on a TV is the only thing saying which list is on screen.
+  testWidgets('the chosen season is the filled pill, and only it', (
+    tester,
+  ) async {
+    await show(tester, [episode(1, 1), episode(2, 1)]);
+
+    Color? fillOf(String label) => tester
+        .widgetList<Container>(
+          find.ancestor(
+            of: find.text(label),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .map((d) => d.color)
+        .firstWhere((c) => true, orElse: () => null);
+
+    expect(fillOf('Season 1'), FileFinPalette.dark.accentFill);
+    expect(fillOf('Season 2'), isNot(FileFinPalette.dark.accentFill));
+  });
 }

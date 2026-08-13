@@ -1,5 +1,6 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
+import 'package:filefin_mobile/src/browse/watch_actions.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart'
     show PlaybackOutcome;
 import 'package:flutter/material.dart';
@@ -13,6 +14,8 @@ import '../support/fakes.dart';
 /// `file-size`'s 400-line soft warning, and a gate warning may fall or hold
 /// and never rise.
 void main() {
+  group('the play affordance guards', _guardCases);
+
   late FakeLibraryApi api;
 
   setUp(() {
@@ -262,5 +265,96 @@ void main() {
       ),
       'Resume S1E1 · 2:05',
     );
+  });
+}
+
+/// The two guards in front of the play affordance, and the disjunction that
+/// decides whether the resume button names its file.
+void _guardCases() {
+  MediaDetail withFiles(List<FileInfo> files) =>
+      MediaDetail(id: const MediaId('a'), files: files);
+
+  /// `files.isEmpty || play == null` weakened to `&&` survived: an item with
+  /// no files would then offer a Play button that opens nothing, and a screen
+  /// with no player wired would offer one that goes nowhere.
+  testWidgets('an item with no files offers no play button', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DetailActions(
+            detail: withFiles(const []),
+            actions: WatchActions(api: FakeLibraryApi(), publish: (_) {}),
+            onPlay: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Play'), findsNothing);
+  });
+
+  testWidgets('a screen that cannot play offers no play button either', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DetailActions(
+            detail: withFiles(const [FileInfo(name: 'a')]),
+            actions: WatchActions(api: FakeLibraryApi(), publish: (_) {}),
+            onPlay: null,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Play'), findsNothing);
+  });
+
+  /// `season > 0 || episode > 0 || name.isNotEmpty` — each disjunct alone has
+  /// to be enough, and `just mutants` showed nothing pinned them apart.
+  group('the resume button names its file when the name identifies it', () {
+    const choice = ResumeAvailable(file: FileIndex(1), seconds: 65);
+    MediaDetail two(FileInfo second) =>
+        withFiles([const FileInfo(name: 'first'), second]);
+
+    test('a season alone is enough', () {
+      expect(
+        resumeLabel(
+          two(const FileInfo(index: FileIndex(1), season: 2)),
+          choice,
+        ),
+        'Resume S2E0 · 1:05',
+      );
+    });
+
+    test('an episode alone is enough', () {
+      expect(
+        resumeLabel(
+          two(const FileInfo(index: FileIndex(1), episode: 3)),
+          choice,
+        ),
+        'Resume S0E3 · 1:05',
+      );
+    });
+
+    test('a name alone is enough', () {
+      expect(
+        resumeLabel(
+          two(const FileInfo(index: FileIndex(1), name: 'Reel two')),
+          choice,
+        ),
+        'Resume Reel two · 1:05',
+      );
+    });
+
+    /// None of the three: `fileLabel` would fall back to `File 1`, which tells
+    /// the user nothing while costing the clock its legibility.
+    test('none of the three leaves the clock alone', () {
+      expect(
+        resumeLabel(two(const FileInfo(index: FileIndex(1))), choice),
+        'Resume 1:05',
+      );
+    });
   });
 }

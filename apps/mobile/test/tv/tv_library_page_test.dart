@@ -239,4 +239,19 @@ void main() {
     expect(tintOf('Films'), FileFinPalette.dark.accentFill);
     expect(tintOf('Shows'), isNot(FileFinPalette.dark.accentFill));
   });
+
+  /// **Both counts have to be zero**, and `just mutants` weakened the `&&` to
+  /// `||` with the suite green — which hides the real item count of every
+  /// category whose files the cache has not counted yet.
+  testWidgets('a category with items but no files still reports its items', (
+    tester,
+  ) async {
+    api.categoriesResult = const [
+      Category(id: CategoryId(4), leaf: 'Partial', name: 'Partial', media: 3),
+    ];
+    await show(tester);
+
+    expect(find.text('3 items · 0 files'), findsWidgets);
+    expect(find.text('No items listed'), findsNothing);
+  });
 }
