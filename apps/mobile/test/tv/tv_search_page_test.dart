@@ -1,6 +1,7 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/media_grid.dart';
 import 'package:filefin_mobile/src/browse/search_field_labels.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:filefin_mobile/src/tv/tv_keyboard.dart';
 import 'package:filefin_mobile/src/tv/tv_search_page.dart';
 import 'package:flutter/material.dart';
@@ -167,5 +168,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.calls, contains('search(A, title)'));
+  });
+
+  /// The same defect on the scope pills: `field == chosen` inverted survived,
+  /// which lights the ten scopes the user did not pick.
+  testWidgets('the chosen scope is the filled pill, and only it', (
+    tester,
+  ) async {
+    await show(tester);
+    await dpadActivate(tester, 'Director');
+    await tester.pumpAndSettle();
+
+    Color? fillOf(String label) => tester
+        .widgetList<Container>(
+          find.ancestor(
+            of: find.text(label),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .map((d) => d.color)
+        .firstWhere((c) => true, orElse: () => null);
+
+    expect(fillOf('Director'), FileFinPalette.dark.accentFill);
+    expect(fillOf('Everything'), isNot(FileFinPalette.dark.accentFill));
   });
 }

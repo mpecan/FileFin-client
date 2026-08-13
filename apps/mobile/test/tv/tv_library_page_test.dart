@@ -1,6 +1,7 @@
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/media_grid.dart';
+import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:filefin_mobile/src/tv/tv_library_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -210,5 +211,32 @@ void main() {
     await tester.tap(find.byTooltip('Collapse'));
     await tester.pumpAndSettle();
     expect(find.text('Docs'), findsNothing);
+  });
+
+  /// **The tint is the only thing saying which category the grid belongs to**,
+  /// and nothing asserted it: `just mutants` inverted `chosen?.id ==
+  /// category.id` and the suite stayed green, leaving every category but the
+  /// chosen one lit.
+  testWidgets('the chosen category is the tinted one, and only it', (
+    tester,
+  ) async {
+    await show(tester);
+    await dpadActivate(tester, 'Films');
+    await tester.pumpAndSettle();
+
+    Color? tintOf(String leaf) => tester
+        .widgetList<Container>(
+          find.ancestor(
+            of: find.text(leaf),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .map((d) => d.color)
+        .firstWhere((c) => true, orElse: () => null);
+
+    expect(tintOf('Films'), FileFinPalette.dark.accentFill);
+    expect(tintOf('Shows'), isNot(FileFinPalette.dark.accentFill));
   });
 }
