@@ -141,6 +141,11 @@ void main() {
 
     expect(api.calls, contains('logout'));
     expect(find.byType(TvShell), findsNothing);
+    // And the SHEET is gone. Deleting its `Navigator.pop` survived the last
+    // sweep: sign-out still happened and the shell still went, so every
+    // assertion above passed while the sheet sat over the signed-out screen
+    // with nothing behind it to dismiss it.
+    expect(find.byType(PlaybackSettingsSheet), findsNothing);
   });
 
   /// The other side of it: the phone must NOT grow a second sign-out, because

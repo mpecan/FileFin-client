@@ -87,4 +87,52 @@ void main() {
     expect(find.text('42 kB'), findsOneWidget);
     expect(find.textContaining('·'), findsNothing);
   });
+
+  /// **The guard that decides whether a row plays at all**, inverted: every
+  /// file becomes untappable on a screen that CAN play, and tappable on one
+  /// that cannot — where `onPlay!` then throws out of a callback. The previous
+  /// commit claimed this one and did not actually test it.
+  testWidgets('a row plays its own file when the screen can play', (
+    tester,
+  ) async {
+    final played = <FileIndex>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FileList(
+            files: const [
+              FileInfo(name: 'one'),
+              FileInfo(index: FileIndex(1), name: 'two'),
+            ],
+            onPlay: played.add,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('two'));
+
+    expect(played, [const FileIndex(1)]);
+  });
+
+  testWidgets('a screen that cannot play has inert rows, not throwing ones', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: FileList(files: [FileInfo(name: 'one')]),
+        ),
+      ),
+    );
+
+    // The tile itself carries no handler, which is what makes the tap inert
+    // rather than an `onPlay!` on a null.
+    expect(
+      tester.widget<ListTile>(find.byType(ListTile)).onTap,
+      isNull,
+    );
+    await tester.tap(find.text('one'));
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -293,6 +293,34 @@ void _guardCases() {
     expect(find.text('Play'), findsNothing);
   });
 
+  /// **`files.isEmpty || play == null` weakened to `&&` needs the LABEL to
+  /// tell it apart**, not the button's presence: `DetailActions` guards the
+  /// button separately, so with `&&` an item that has files AND a player still
+  /// draws one — it just computes `offerResume` where the original computed
+  /// null. The previous commit asserted presence and missed this entirely.
+  testWidgets('a partly watched item still says Resume, not Play', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DetailActions(
+            detail: const MediaDetail(
+              id: MediaId('a'),
+              files: [FileInfo(name: 'reel')],
+              continueSeconds: 65,
+            ),
+            actions: WatchActions(api: FakeLibraryApi(), publish: (_) {}),
+            onPlay: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Resume 1:05'), findsOneWidget);
+    expect(find.text('Play'), findsNothing);
+  });
+
   testWidgets('a screen that cannot play offers no play button either', (
     tester,
   ) async {

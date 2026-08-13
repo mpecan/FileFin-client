@@ -155,8 +155,21 @@ String headerFacts(MediaDetail detail) {
   final files = detail.files.length;
   return [
     if (detail.year != 0) '${detail.year}',
-    if (seasons == 1) '1 season' else if (seasons > 1) '$seasons seasons',
-    if (files == 1) '1 file' else if (files > 1) '$files files',
+    ?_plural(seasons, 'season'),
+    ?_plural(files, 'file'),
     if (detail.genres.isNotEmpty) detail.genres.first.toLowerCase(),
   ].join(' · ');
 }
+
+/// `1 season`, `2 seasons`, or nothing at all for none.
+///
+/// **One comparison, not two, and that is the mutation gate's doing.** Written
+/// as `if (n == 1) '1 x' else if (n > 1) '$n xs'`, the second arm is
+/// unreachable for `n == 1` — so rewriting `> 1` to `>= 1` produces a mutant
+/// no assertion can kill, because no input separates them. Turning an
+/// equivalent mutant into no mutant beats excluding it (§3).
+String? _plural(int n, String noun) => switch (n) {
+  0 => null,
+  1 => '1 $noun',
+  _ => '$n ${noun}s',
+};

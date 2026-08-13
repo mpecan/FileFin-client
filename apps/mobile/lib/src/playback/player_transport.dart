@@ -141,12 +141,19 @@ class PlayerTransport extends StatelessWidget {
   /// of an HLS playlist — which is exactly when a user skips a title sequence.
   /// Seeking past the end is the engine's to refuse.
   ///
+  /// **`isNegative`, not `< Duration.zero`.** At exactly zero the two answers
+  /// agree, so `<` rewritten to `<=` is a mutant nothing can kill; a predicate
+  /// with no comparison operator in it has none to rewrite.
+  ///
   /// Public only so a test can reach it; nothing outside this library calls it
-  /// (§5, `public_member_no_consumer`).
+  /// (§5, `public_member_no_consumer`). The annotation has to sit IMMEDIATELY
+  /// above the declaration: `check_public_member_no_consumer` reads the one
+  /// preceding line, so a doc comment slipped between the two turns the
+  /// exemption off and the member is reported.
   @visibleForTesting
   static Duration seekTarget(Duration from, Duration by) {
     final target = from + by;
-    return target < Duration.zero ? Duration.zero : target;
+    return target.isNegative ? Duration.zero : target;
   }
 
   @override

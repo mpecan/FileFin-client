@@ -125,7 +125,16 @@ void main() {
     api.categoriesResult = const <Category>[];
     await show(tester);
 
-    expect(find.textContaining('no categories yet'), findsOneWidget);
+    // The WHOLE sentence: `textContaining` let a mutation rewrite the half it
+    // does not quote, and the second half is the half that explains what a
+    // category is.
+    expect(
+      find.text(
+        'This server has no categories yet. Categories are the top-level '
+        'folders in its media directory.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a category with nothing in it says so, rather than nothing', (
