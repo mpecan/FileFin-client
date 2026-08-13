@@ -1,3 +1,4 @@
+import 'package:dpad/dpad.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/file_list.dart'
     show fileLabel, humanSize;
@@ -93,35 +94,78 @@ class _SeasonTabs extends StatelessWidget {
   final FileFinPalette palette;
   final ValueChanged<int> onPick;
 
+  /// Moves to the next season along, or lets the press escape at the ends.
+  ///
+  /// Returning `false` rather than clamping is what lets `left` from the first
+  /// season leave the selector instead of pressing against a wall.
+  bool _step(TraversalDirection direction) {
+    final delta = switch (direction) {
+      TraversalDirection.left => -1,
+      TraversalDirection.right => 1,
+      TraversalDirection.up || TraversalDirection.down => null,
+    };
+    if (delta == null) return false;
+    final next = seasons.indexOf(chosen) + delta;
+    if (next < 0 || next >= seasons.length) return false;
+    onPick(seasons[next]);
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-    child: Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            // 48 rather than the design's 30: the pill inside stays 30 and the
-            // tap target around it satisfies `androidTapTargetGuideline`.
-            height: 48,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: seasons.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 6),
-              itemBuilder: (context, index) => _SeasonPill(
-                season: seasons[index],
-                selected: seasons[index] == chosen,
-                palette: palette,
-                onTap: () => onPick(seasons[index]),
+    // ONE focusable spanning the whole strip, with left and right stepping
+    // between seasons — not one per pill.
+    //
+    // **A remote could not reach the pills at all**, and the reason is
+    // geometry rather than anything missing: `DpadTraversalPolicy` prefers
+    // candidates overlapping the source on the cross axis and then weights
+    // cross-axis displacement, so a pill 124 points wide at the left edge
+    // loses to a full-width episode row every time — from above, because a
+    // centred *Play* does not overlap it at all; from below, because a row
+    // centred at x=480 is 400 points off the pill's centre and only 8 points
+    // further down. Measured: `down` from *Play* went to S1E1 and `up` from
+    // S1E1 came back to *Play*, with the selector between them and reachable
+    // from neither.
+    //
+    // Widening the pills was tried and is the fragile version of this: it
+    // depends on how the policy happens to weight two axes today. A strip that
+    // spans the row is centred by construction, so it wins on both counts, and
+    // left/right inside it is the pattern `PlayerScrubber` already uses.
+    child: DpadFocusable(
+      onDirection: _step,
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              // 48 rather than the design's 30: the pill inside stays 30 and
+              // the tap target around it satisfies `androidTapTargetGuideline`.
+              height: 48,
+              // The pills stay tappable and stop being focus targets: two
+              // focusables for one control put the remote back where it
+              // started.
+              child: ExcludeFocus(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: seasons.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (context, index) => _SeasonPill(
+                    season: seasons[index],
+                    selected: seasons[index] == chosen,
+                    palette: palette,
+                    onTap: () => onPick(seasons[index]),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          count == 1 ? '1 ep' : '$count eps',
-          style: mono(size: 11, color: palette.textFaint),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Text(
+            count == 1 ? '1 ep' : '$count eps',
+            style: mono(size: 11, color: palette.textFaint),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -140,28 +184,31 @@ class _SeasonPill extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(15),
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      alignment: Alignment.center,
+  Widget build(BuildContext context) => DpadFocusable(
+    onSelect: onTap,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? palette.accentFill : Colors.transparent,
-          border: Border.all(
-            color: selected ? palette.accentBright : palette.outline,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? palette.accentFill : Colors.transparent,
+            border: Border.all(
+              color: selected ? palette.accentBright : palette.outline,
+            ),
+            borderRadius: BorderRadius.circular(15),
           ),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Text(
-          'Season $season',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-            color: selected ? palette.accentSoft : palette.textMuted,
+          child: Text(
+            'Season $season',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              color: selected ? palette.accentSoft : palette.textMuted,
+            ),
           ),
         ),
       ),
