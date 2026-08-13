@@ -6,6 +6,7 @@ import 'package:filefin_mobile/src/playback/playback_host.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:filefin_mobile/src/playback/player_controls.dart';
 import 'package:filefin_mobile/src/playback/player_page.dart';
+import 'package:filefin_mobile/src/playback/player_top_bar.dart';
 import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
