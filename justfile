@@ -93,6 +93,15 @@ deps:
 mutants-parallel:
     @bash tool/run-mutants-parallel.sh
 
+# === release ===
+# The keystore is fetched from 1Password into a 0700 temp dir and removed on
+# exit; the passwords are injected by `op run` for the length of one build.
+# Refuses rather than falling back to the debug key, and asserts the
+# certificate on the way out.
+# Signed release APK, with the signing key never at rest on disk.
+release-apk *ARGS:
+    @bash tool/release-apk.sh {{ARGS}}
+
 # === coverage (CLAUDE.md §3) ===
 coverage:
     @bash tool/run-coverage.sh
