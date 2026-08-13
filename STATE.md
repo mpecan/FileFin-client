@@ -227,6 +227,45 @@ surface, and the fade cases pump past `PlayerControls.fadeAfter`. The lesson is
 the general one: a harness that only ever sees the benign fixture proves the
 benign fixture.
 
+### The RAM disk was measured and rejected, and the measurement is the point
+
+`~/.local/bin/cargo-mutants-ramdisk` exists and works, so the obvious move was
+to point this project's mutation gate at one. **Measured, it is slower**: the
+same seven mutants of `tv_shell.dart`, both trees' build caches warmed first,
+`mutation_test` invoked identically —
+
+| | elapsed | CPU |
+|---|---|---|
+| working tree, APFS on the internal SSD | **1:52** | 634% |
+| git worktree on a 16 GiB HFS+ RAM disk | **2:22** | 481% |
+
+27% slower, and the CPU figure says why: the RAM-disk run got less parallelism
+out of `flutter test`, not more.
+
+The reason is structural, and it is why the Rust script does not transfer.
+Its own header states the premise — cargo-mutants "copies the whole source tree
+(and, by default, `target/`) into one scratch directory per job", tens of GB of
+writes per run. Dart's `mutation_test` **mutates the one working tree in
+place**: one small file rewritten per mutant, then a test run against an
+already-warm `.dart_tool`. There is no copy to move onto RAM, so the disk buys
+nothing — and costs, because a wired HFS+ volume is worse at this than APFS
+plus the unified page cache the tree was already living in.
+
+**The gate's real shape, now that it has been counted.** `mutation_test -d`
+reports **859 mutants** for this diff, at ~16 s each with a warm cache: about
+3.8 hours serially. The tool has no `--jobs`; it cannot have one, because it
+edits in place. Its `--coverage` flag skips uncovered lines and this tree is at
+100%, so it skips nothing. The only lever left is N git worktrees over disjoint
+file subsets, run in parallel — and on this evidence they belong on the SSD.
+
+### The first seven mutants found a real gap
+
+`tv_shell.dart:188` — `TickerMode(enabled: tab == _tab)` rewritten to `!=` —
+survived the whole suite. Inverted, every hidden pane animates while the one on
+screen freezes; `Offstage` hides a pane but does not stop its clock. Killed by
+an assertion that each pane's `TickerMode` matches its own selection, and the
+kill was verified in both directions: 1/7 undetected before, 0/7 after.
+
 ### Debt this milestone chose not to pay
 
 - **The playback-speed control is not built** (above). It is a feature with an

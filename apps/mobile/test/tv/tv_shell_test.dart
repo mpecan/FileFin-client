@@ -172,4 +172,32 @@ void main() {
     // no request.
     expect(api.calls, ['home']);
   });
+
+  /// **Only the showing pane runs tickers**, and nothing asserted it until
+  /// `just mutants` rewrote `enabled: tab == _tab` to `!=` and the whole suite
+  /// stayed green. Inverted, every hidden pane animates — three panes' worth of
+  /// progress indicators and fades on a set-top box — while the one on screen
+  /// freezes. `Offstage` hides a pane; it does not stop its clock.
+  testWidgets('tickers run for the showing pane and no other', (tester) async {
+    await show(tester);
+
+    await dpadActivate(tester, 'Library');
+    await tester.pumpAndSettle();
+
+    // `skipOffstage: false` on the DESCENDANT finder as well as on its two
+    // arguments: a hidden pane is exactly the case being asserted, and the
+    // default would search only the pane that is showing.
+    bool tickingIn(TvTab tab) => tester
+        .widget<TickerMode>(
+          find.descendant(
+            of: find.byKey(ValueKey(tab), skipOffstage: false),
+            matching: find.byType(TickerMode, skipOffstage: false),
+            skipOffstage: false,
+          ),
+        )
+        .enabled;
+
+    expect(tickingIn(TvTab.library), isTrue);
+    expect(tickingIn(TvTab.home), isFalse);
+  });
 }
