@@ -74,7 +74,12 @@ class _PlayerControlsState extends State<PlayerControls> {
   /// with no way to pause it. `skipTraversal` keeps the node out of the arrow
   /// order once the controls are up, so it is never a stop on the way between
   /// two real buttons.
-  final _wake = FocusNode(debugLabel: 'player-wake');
+  //
+  // No `debugLabel`: nothing reads it, and `just mutants` rewrites the string
+  // to `player+wake` — a mutant no assertion can ever kill, because no
+  // behaviour separates the two. A line that cannot be tested is a line §1
+  // asks not to be written.
+  final _wake = FocusNode();
 
   @override
   void initState() {

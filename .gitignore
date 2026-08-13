@@ -65,3 +65,4 @@ mutation-test-report/
 
 # Local server fixtures / scratch (captured payloads live in test/fixtures/)
 /scratch/
+.mutation-survivors/

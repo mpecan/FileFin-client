@@ -58,6 +58,7 @@ void main() {
 
   Future<void> pumpPlayer(
     WidgetTester tester, {
+    PlayerControlsMetrics metrics = PlayerControlsMetrics.phone,
     MediaDetail? detail,
     SavedServer? server,
     VoidCallback? onSignIn,
@@ -75,7 +76,7 @@ void main() {
           prefs: const PlaybackPrefs(),
           initialFile: const FileIndex(0),
           startAt: Duration.zero,
-          metrics: PlayerControlsMetrics.phone,
+          metrics: metrics,
           onSignIn: onSignIn,
         ),
       ),

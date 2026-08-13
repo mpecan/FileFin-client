@@ -458,4 +458,29 @@ void main() {
 
     expect(host.calls, contains('play'));
   });
+
+  /// The scrim is what keeps white text legible over an arbitrary frame, and
+  /// nothing asserted its shape: `just mutants` negated three of its five
+  /// stops and the suite stayed green. A negative stop is not a subtle shade
+  /// difference — `LinearGradient` requires them ascending in [0, 1], so the
+  /// wash stops being a wash.
+  testWidgets('the scrim is opaque at both edges and clear in the middle', (
+    tester,
+  ) async {
+    await show(tester);
+
+    final scrim = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((d) => d.decoration)
+        .whereType<BoxDecoration>()
+        .map((d) => d.gradient)
+        .whereType<LinearGradient>()
+        .single;
+
+    expect(scrim.stops, [0.0, 0.14, 0.38, 0.62, 1.0]);
+    expect(scrim.stops, orderedEquals(<double>[...scrim.stops!]..sort()));
+    expect(scrim.colors.first.a, greaterThan(0.5));
+    expect(scrim.colors.last.a, greaterThan(0.5));
+    expect(scrim.colors[2].a, 0.0);
+  });
 }
