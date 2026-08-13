@@ -82,6 +82,68 @@ void main() {
     );
   });
 
+  /// The title block is `Positioned` against three edges, and a `Stack` clips
+  /// — so an inset of the wrong sign does not push the block outward, it hides
+  /// that much of the text. `just mutants` negated `right` and `bottom` with
+  /// the whole suite green: the facts line loses its last 14 points to the
+  /// frame edge and the pair sits 10 points below the header, under the
+  /// buttons on the row beneath.
+  ///
+  /// Asserted on the block rather than on the `Text`: the title is
+  /// left-aligned and shorter than the frame, so its own rect does not move
+  /// when the right inset does.
+  testWidgets('the title block stays inside the header', (tester) async {
+    await show(tester);
+
+    final header = tester.getRect(find.byType(DetailHeader));
+    final block = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('Fawlty Towers'),
+            matching: find.byType(Column),
+          )
+          .first,
+    );
+
+    expect(block.right, lessThanOrEqualTo(header.right));
+    expect(block.bottom, lessThanOrEqualTo(header.bottom));
+    expect(block.left, greaterThanOrEqualTo(header.left));
+  });
+
+  /// The wash that keeps the title legible over an arbitrary poster, and
+  /// nothing asserted its shape — `just mutants` negated two of its four stops
+  /// with the suite green. A negative stop is not a shade difference:
+  /// `LinearGradient` requires them ascending within `[0, 1]`, so the wash
+  /// stops being a wash and the title is read against whatever the poster
+  /// happens to be.
+  testWidgets('the gradient ascends from the top edge to the bottom', (
+    tester,
+  ) async {
+    await show(tester);
+
+    final gradient = tester
+        .widgetList<DecoratedBox>(
+          find.descendant(
+            of: find.byType(DetailHeader),
+            matching: find.byType(DecoratedBox),
+          ),
+        )
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .map((decoration) => decoration.gradient)
+        .whereType<LinearGradient>()
+        .single;
+    final stops = gradient.stops!;
+
+    expect(stops, orderedEquals(<double>[...stops]..sort()));
+    expect(stops.first, greaterThanOrEqualTo(0));
+    expect(stops.last, lessThanOrEqualTo(1));
+    // The wash is opaque at the top, where the buttons are, and solid at the
+    // bottom, where the title is — which is the whole reason it exists.
+    expect(gradient.colors.last.a, 1.0);
+    expect(gradient.colors.first.a, greaterThan(gradient.colors[2].a));
+  });
+
   /// How far the back button sits below the top of the safe area.
   ///
   /// Material's own padding around the glyph, and nothing else — so it is a
