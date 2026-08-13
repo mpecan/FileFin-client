@@ -54,8 +54,17 @@ command -v jq >/dev/null 2>&1 ||
 # FILEFIN_OP_ITEM still overrides, for a key kept somewhere else entirely.
 resolve_reference() {
     local json section name
-    json="$(op item get "$OP_TITLE" --vault "$OP_VAULT" --format json)" ||
-        fail "no 1Password item '$OP_VAULT/$OP_TITLE' — run \`just new-signing-key\` first"
+    local err
+    err="$(mktemp)"
+    # `op`'s OWN message, not a guess at what went wrong. This said "no such
+    # item — run new-signing-key first" for an authorization TIMEOUT, which
+    # points at recreating a key that exists and is exactly the wrong thing to
+    # do to a signing key.
+    if ! json="$(op item get "$OP_TITLE" --vault "$OP_VAULT" --format json 2>"$err")"; then
+        local why; why="$(tr -d '\r' < "$err" | tail -1)"; rm -f "$err"
+        fail "could not read '$OP_VAULT/$OP_TITLE' from 1Password: ${why:-unknown error}"
+    fi
+    rm -f "$err"
     [ "$(printf '%s' "$json" | jq '.files | length')" -eq 1 ] ||
         fail "'$OP_TITLE' holds $(printf '%s' "$json" | jq '.files | length') files; it must hold exactly the keystore"
     section="$(printf '%s' "$json" | jq -r '.files[0].section.label // ""')"
@@ -94,10 +103,16 @@ say "building, with the passwords injected for this command only"
     flutter build apk --release "$@") ||
     fail "the build failed — the keystore has been removed either way"
 
-apk="$APP_DIR/build/app/outputs/flutter-apk/app-release.apk"
-[ -f "$apk" ] ||
-    apk="$(find "$APP_DIR/build/app/outputs/flutter-apk" -name '*-release.apk' | sort | head -1)"
-[ -f "$apk" ] || fail "the build reported success but produced no release APK"
+# EVERY release APK the build produced, not the first one found.
+# `--split-per-abi` emits one per architecture, and verifying a single artefact
+# out of three would leave two unchecked while reporting success — the same
+# shape as a gate that measures less than it claims to.
+apks=()
+while IFS= read -r a; do [ -n "$a" ] && apks+=("$a"); done < <(
+    find "$APP_DIR/build/app/outputs/flutter-apk" -name '*release*.apk' \
+        ! -name '*debug*' -newermt '-10 minutes' 2>/dev/null | sort
+)
+[ ${#apks[@]} -gt 0 ] || fail "the build reported success but produced no release APK"
 
 # THE SIGNATURE IS ASSERTED, NOT ASSUMED. The whole reason this script exists
 # is that a debug-signed artefact installs and runs and says nothing, so a
@@ -107,10 +122,12 @@ signer="$(find "${ANDROID_HOME:-$HOME/Library/Android/sdk}/build-tools" \
     -name apksigner -maxdepth 2 2>/dev/null | sort | tail -1)"
 [ -n "$signer" ] || fail "apksigner not found — cannot verify what signed the APK"
 
-certs="$("$signer" verify --print-certs "$apk")" ||
-    fail "apksigner refused $apk — it is not validly signed"
-printf '%s\n' "$certs" | grep -q 'CN=Android Debug' &&
-    fail "the APK is DEBUG-signed — the environment did not reach gradle"
-
-say "$(printf '%s' "$certs" | grep -m1 'certificate DN')"
-say "signed: $apk"
+for apk in "${apks[@]}"; do
+    certs="$("$signer" verify --print-certs "$apk")" ||
+        fail "apksigner refused $apk — it is not validly signed"
+    if printf '%s\n' "$certs" | grep -q 'CN=Android Debug'; then
+        fail "$apk is DEBUG-signed — the environment did not reach gradle"
+    fi
+    say "$(printf '%s' "$certs" | grep -m1 'certificate DN')"
+    say "signed: $apk"
+done
