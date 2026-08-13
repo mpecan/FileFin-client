@@ -35,41 +35,39 @@ directory no other user can read, for one build" — not "never written". Point
 
 ## Creating it, once
 
-`keytool` prompts for passwords, so run it yourself:
-
-```sh
-mkdir -p ~/keys && keytool -genkeypair -v \
-  -keystore ~/keys/filefin-release.jks \
-  -storetype PKCS12 \
-  -keyalg RSA -keysize 4096 -validity 10000 \
-  -alias filefin
+```
+just new-signing-key
 ```
 
-- **`-validity 10000`** is about 27 years. Play refuses a key expiring before
-  22 October 2033, and an expired key strands every install signed with it.
-- **PKCS12**, because JKS is the obsolete format and `keytool` warns on every
-  use of it.
+That is the whole of it. The script generates a 4096-bit RSA key valid for
+10 000 days, generates both passwords, stores key and passwords in 1Password as
+**FileFin Android signing** in the **Private** vault, reads the stored keystore
+back and compares it byte-for-byte with what it generated, and only then
+deletes the local copy. It prints the certificate fingerprint and nothing else
+— no password is ever displayed, logged, or written to a file.
 
-Then put it in 1Password and delete the local copy:
+`--title`, `--vault`, `--alias` and `--days` override the defaults. If you move
+the item, set `FILEFIN_OP_ITEM` to its full `op://` path so `just release-apk`
+can still find it.
 
-```sh
-op item create --category "Secure Note" --title "FileFin Android signing" \
-  --vault Private \
-  "store password[password]=…" \
-  "key password[password]=…" \
-  "key alias[text]=filefin" \
-  filefin-release.jks=@$HOME/keys/filefin-release.jks
+Three properties are worth knowing about, because each is a decision rather
+than an implementation detail:
 
-rm ~/keys/filefin-release.jks
-```
+- **It refuses to run twice.** An existing item is a hard stop. A second
+  signing key is not a mistake anyone notices — builds keep succeeding, and
+  every install made with the first key can never be upgraded again.
+- **Passwords reach `keytool` through `-storepass:env`**, never as an argument.
+  An argument is visible in `ps` to anyone on the machine for as long as the
+  process lives.
+- **The local keystore is deleted only after the round trip.** Trusting a zero
+  exit code from `op item create` trusts that the upload contained the bytes; a
+  hash comparison proves it. If the comparison fails the local copy is kept and
+  the path is printed, so a bad upload costs a retry rather than the key.
 
-The field names are the ones `tool/signing.env` references; change one and
-change both. If the item lives in another vault or under another name, set
-`FILEFIN_OP_ITEM` to its full `op://` path rather than editing the script.
-
-`tool/signing.env` is **committed on purpose** — every value in it is an
-`op://` reference, not a secret, and committing the references is what stops
-the next person guessing which item the key is in.
+Why `-validity 10000` (~27 years): Play refuses a key expiring before
+22 October 2033, and an expired key strands every install signed with it.
+PKCS12 rather than JKS because JKS is the obsolete format and `keytool` warns
+on every use of it.
 
 ## Backing it up
 
@@ -97,6 +95,14 @@ that assertion itself, so the check is run whether or not anyone remembers to.
 | debug build needs none of it | run; `app-debug.apk` built |
 | a debug-signed APK is caught | run against the last debug artefact; detected |
 | a staged keystore or `key.properties` fails `just constitution` | run; `tracked_secrets` reported both, and passed once unstaged |
+| `just new-signing-key` refuses when the item exists | run against a stubbed `op`; refused |
+| it keeps the local key when the round trip disagrees | run with a stub returning wrong bytes; kept, path printed |
+| it deletes the local key when the round trip agrees | run against a stub; temp directory gone |
+| it refuses when `op` is absent | run with a stripped PATH; refused |
+
+The four `new-signing-key` rows were proven against a **stubbed** `op`, not
+against the real vault: proving a script works is not a reason to write test
+items into somebody's password manager.
 
 ## If this ever goes to Play
 

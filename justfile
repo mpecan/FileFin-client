@@ -94,6 +94,14 @@ mutants-parallel:
     @bash tool/run-mutants-parallel.sh
 
 # === release ===
+# Generates the key, stores it with both passwords in 1Password, verifies the
+# stored copy byte-for-byte, then deletes the local one. Refuses if the item
+# already exists — a second signing key strands every install made with the
+# first. Run once, ever.
+# Create the Android release signing key and put it in 1Password.
+new-signing-key *ARGS:
+    @nu tool/new-signing-key.nu {{ARGS}}
+
 # The keystore is fetched from 1Password into a 0700 temp dir and removed on
 # exit; the passwords are injected by `op run` for the length of one build.
 # Refuses rather than falling back to the debug key, and asserts the
