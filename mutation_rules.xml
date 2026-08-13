@@ -287,6 +287,49 @@
          Same reasoning as imports. Never retires. -->
     <token begin="part &apos;" end="&apos;;"/>
 
+    <!-- PRESENTATIONAL NUMERIC LITERALS: a size, an inset, a radius, a
+         weight, an opacity or an animation duration, named by the parameter
+         it is passed to.
+
+         WHAT THIS IS. `builtin.number.negative` rewrites `padding: 14` to
+         `padding: -14`. That is NOT an equivalent mutant — it changes the
+         layout — so this is a deliberate concession rather than a
+         correctness argument: killing it means asserting rendered geometry,
+         and the full sweep of the M8 redesign put 55 of its 124 survivors in
+         this one class. Asserting all of them would pin the design against
+         drift; it would also add several hundred assertions whose only
+         subject is a number already written down in the design document.
+         The decision was taken explicitly, with the count in hand.
+
+         WHAT IT DOES NOT COVER, and the allowlist is what keeps that true.
+         Only the parameter names below are excluded, and every one of them
+         feeds a painter. A bare number anywhere else is still mutated:
+         `ScrollCacheExtent.pixels(400)` — which NF2 rests on and which the
+         grid suite does kill — a `Duration(seconds: 10)` seek step, an index,
+         a count, a threshold, a timeout. Widening this list is how the
+         concession stops being one, so it is written out rather than
+         approximated by a pattern over "numbers near widgets".
+
+         IT ALSO TAKES THE TWO TIMEOUTS WITH IT. An animation duration negated
+         is an `AnimatedContainer` or `AnimatedOpacity` that never settles, and
+         a `pumpAndSettle` behind it spins until the per-mutant timeout — which
+         mutation_test then counts as undetected. Two of the 858 did exactly
+         that, at 156 s each. Only a `duration:` ARGUMENT is covered: a bare
+         `Duration(seconds: 10)` is still mutated, because the seek step and
+         the overlay's fade delay are behaviour with assertions on them. A
+         first draft of this block excluded every `Duration(...)` and silently
+         took both with it.
+
+         RETIREMENT CONDITION. Delete this block the day the app has golden or
+         layout-geometry tests over the redesign's screens, which would kill
+         these mutants for real rather than excusing them. Until then, the one
+         guard that survives is `androidTapTargetGuideline` in the widget
+         suites: it fails on a target under 48 points however the number got
+         there. -->
+    <regex pattern="\b(padding|margin|contentPadding|tilePadding|childrenPadding|prefixIconConstraints|width|height|minWidth|maxWidth|minHeight|maxHeight|size|iconSize|fontSize|letterSpacing|wordSpacing|spacing|runSpacing|blurRadius|spreadRadius|elevation|trackHeight|strokeWidth|thickness|radius|borderRadius|minimumSize|fixedSize|dimension|alpha|opacity|duration|reverseDuration)\s*:\s*[-0-9][0-9.]*"/>
+    <regex pattern="\b(EdgeInsets|BorderRadius|Radius|Size|Offset)\.[a-zA-Z]+\([^();]*\)"/>
+    <regex pattern="\b(duration|reverseDuration)\s*:\s*(const\s+)?Duration\([^()]*\)"/>
+
     <!-- Loops: the builtin rules invert loop conditions, which turns a bounded
          loop into an unbounded one and hangs the run rather than reporting a
          survivor. Retires if mutation_test gains a per-mutant kill that can
