@@ -85,6 +85,14 @@ constitution-accept:
 deps:
     @bash tool/check-deps.sh
 
+# Sharded across git worktrees, for a diff big enough that the serial gate
+# stops being run at all. NOT in `check` and NOT the authority: `mutants` above
+# is both. It exists because the same 859-mutant sweep is four hours serially
+# and about one in parallel — and because it never writes to the working tree,
+# where an interrupted serial run leaves a mutant behind.
+mutants-parallel:
+    @bash tool/run-mutants-parallel.sh
+
 # === coverage (CLAUDE.md §3) ===
 coverage:
     @bash tool/run-coverage.sh
