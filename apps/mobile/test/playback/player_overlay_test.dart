@@ -83,6 +83,18 @@ void main() {
     );
   }
 
+  double overlayOpacity(WidgetTester tester) =>
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity;
+
+  /// Taps the picture rather than a control: a tenth of the way in from the
+  /// left edge, at mid height, which is below the top bar, above the scrubber
+  /// and well clear of the centred transport row.
+  Future<void> tapPicture(WidgetTester tester) async {
+    final frame = tester.getRect(find.byType(PlayerControls));
+    await tester.tapAt(Offset(frame.left + frame.width * 0.1, frame.center.dy));
+    await tester.pumpAndSettle();
+  }
+
   /// The lock exists so a pocket or a sleeve cannot scrub a film. Everything
   /// else goes; the padlock stays, or there is no way back.
   testWidgets('locking hides every control except the padlock', (
@@ -312,18 +324,84 @@ void main() {
 
     await tester.pump(PlayerControls.fadeAfter + const Duration(seconds: 1));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      0.0,
-    );
+    expect(overlayOpacity(tester), 0.0);
 
     await tester.tapAt(tester.getCenter(find.byType(PlayerControls)));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      1.0,
-    );
+    expect(overlayOpacity(tester), 1.0);
   });
+
+  /// **A tap TOGGLES.** A tap that could only ever show was a tap that could
+  /// not undo itself: the overlay's scrim and transport cover the picture, and
+  /// the only way back to a clean frame was to touch nothing for five seconds
+  /// — while every stray touch restarted the wait. Nothing else on the phone
+  /// hides them.
+  testWidgets(
+    'a tap on the picture hides the controls, and another shows them',
+    (
+      tester,
+    ) async {
+      await show(tester);
+      expect(overlayOpacity(tester), 1.0);
+
+      await tapPicture(tester);
+      expect(overlayOpacity(tester), 0.0);
+
+      await tapPicture(tester);
+      expect(overlayOpacity(tester), 1.0);
+    },
+  );
+
+  /// The toggle belongs to the picture, not to the overlay. A control that
+  /// also collapsed the controls would take the transport away at the moment
+  /// it is being used — one tap on `Forward 10 seconds` and the second is a
+  /// tap on an invisible button.
+  testWidgets('a tap on a control leaves the controls up', (tester) async {
+    await show(tester);
+
+    await tester.tap(find.byTooltip('Forward 10 seconds'));
+    await tester.pumpAndSettle();
+
+    expect(overlayOpacity(tester), 1.0);
+  });
+
+  /// Hiding by tap has to leave the remote somewhere to press, exactly as the
+  /// timer's own hide does: the wake node is what the faded overlay is driven
+  /// by, and a hide that did not hand focus back to it would strand a
+  /// television that had been touched once.
+  testWidgets('controls hidden by a tap still wake on a key', (tester) async {
+    await show(tester, metrics: PlayerControlsMetrics.tv);
+
+    await tapPicture(tester);
+    expect(overlayOpacity(tester), 0.0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(overlayOpacity(tester), 1.0);
+  });
+
+  /// A tap that hid the controls must not leave the five-second timer running:
+  /// it would fire against an already-hidden overlay and, worse, a tap that
+  /// showed them again inherits a countdown that started before it.
+  testWidgets(
+    'a tap that shows the controls gives them the full five seconds',
+    (
+      tester,
+    ) async {
+      await show(tester);
+
+      await tapPicture(tester);
+      await tester.pump(PlayerControls.fadeAfter - const Duration(seconds: 1));
+      await tapPicture(tester);
+      expect(overlayOpacity(tester), 1.0);
+
+      // Past the moment the FIRST countdown would have fired, and still up.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(overlayOpacity(tester), 1.0);
+    },
+  );
 
   /// Every control on the television overlay, reachable with the four arrows
   /// and nothing else — a remote has no other way to get to any of them.
@@ -411,18 +489,12 @@ void main() {
 
     await tester.pump(PlayerControls.fadeAfter + const Duration(seconds: 1));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      0.0,
-    );
+    expect(overlayOpacity(tester), 0.0);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    expect(
-      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
-      1.0,
-    );
+    expect(overlayOpacity(tester), 1.0);
   });
 
   /// The waking press must not ALSO act. A remote user pressing down to see

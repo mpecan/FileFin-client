@@ -95,21 +95,49 @@ class _PlayerControlsState extends State<PlayerControls> {
 
   /// Brings the controls back and restarts the countdown.
   ///
-  /// Called by a tap anywhere and by every child that takes focus, which is
-  /// what makes a D-pad press wake the overlay.
+  /// Called by every child that takes focus, which is what makes a D-pad press
+  /// wake the overlay, and by a tap on the picture that found them hidden.
   void _show() {
     if (!_visible) setState(() => _visible = true);
     _restartFade();
   }
 
+  /// Takes the controls away, from the countdown or from a tap.
+  ///
+  /// The timer is cancelled rather than left to fire against an overlay that
+  /// has already gone: a pending countdown outlives the tap that hid the
+  /// controls and would then expire part-way through the next showing, which
+  /// is a five-second promise kept for one.
+  void _hide() {
+    _fade?.cancel();
+    setState(() => _visible = false);
+    // Requested as the controls go, not before: until they do, focus belongs
+    // to whichever button the user was on. A television that has been touched
+    // once still has only the D-pad, so this is what it wakes them with.
+    _wake.requestFocus();
+  }
+
+  /// What a tap on the picture does.
+  ///
+  /// **A toggle, not a show.** The scrim and the transport cover the frame,
+  /// and while showing was the only thing a tap could do the sole way back to
+  /// a clean picture was to touch nothing for five seconds — which every
+  /// subsequent stray touch restarted. A tap on a *control* does not come
+  /// here: the button's own recognizer is deeper in the hit-test order and
+  /// takes the gesture arena, which is what leaves the transport up while it
+  /// is being used.
+  void _toggle() {
+    if (_visible) {
+      _hide();
+    } else {
+      _show();
+    }
+  }
+
   void _restartFade() {
     _fade?.cancel();
     _fade = Timer(PlayerControls.fadeAfter, () {
-      if (!mounted) return;
-      setState(() => _visible = false);
-      // Requested as the controls go, not before: until they do, focus belongs
-      // to whichever button the user was on.
-      _wake.requestFocus();
+      if (mounted) _hide();
     });
   }
 
@@ -147,7 +175,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       skipTraversal: true,
       onKeyEvent: _wakeOnKey,
       child: GestureDetector(
-        onTap: _show,
+        onTap: _toggle,
         behavior: HitTestBehavior.translucent,
         child: AnimatedOpacity(
           opacity: _visible ? 1 : 0,
