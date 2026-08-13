@@ -163,6 +163,31 @@ void main() {
       expect(orientationsSet(), isEmpty);
     });
 
+    /// **Immersive mode is NOT part of the phone branch**, and the brace that
+    /// says so is one a mutation can move: rewriting the block to close after
+    /// the call left the suite green while a television kept its system UI —
+    /// a status bar and a navigation hint across the top of every film. Both
+    /// form factors are asserted, because the mutant only shows up on one.
+    testWidgets('both form factors go immersive', (tester) async {
+      await pumpPlayer(tester);
+      expect(
+        platform.map((c) => c.method),
+        contains('SystemChrome.setEnabledSystemUIMode'),
+      );
+
+      // Torn down first: pumping a second `PlayerPage` of the same type over
+      // the first REUSES its state, so `initState` never runs again and the
+      // second half of this test would assert against an empty list.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      platform.clear();
+      await pumpPlayer(tester, metrics: PlayerControlsMetrics.tv);
+      expect(
+        platform.map((c) => c.method),
+        contains('SystemChrome.setEnabledSystemUIMode'),
+      );
+    });
+
     testWidgets('leaving the player releases the lock', (tester) async {
       await pumpPlayer(tester);
       await tester.pumpWidget(const SizedBox.shrink());
