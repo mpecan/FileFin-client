@@ -129,6 +129,28 @@ void main() {
     expect(focusedLabel(tester), isNot('Season 1'));
   });
 
+  /// The same at the other end, and this is the half that CRASHES rather than
+  /// merely sticking: without the upper guard the step indexes one past the
+  /// last season and throws `RangeError` out of a key handler. `just mutants`
+  /// is what asked for it — the guard was written, and no case pressed right
+  /// from the last season to find out whether it held.
+  testWidgets('right from the last season leaves the selector, not a crash', (
+    tester,
+  ) async {
+    await show(tester);
+    await dpadFocus(tester, 'Season 1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(find.text('S2E1'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // Still on the last season: the press left the strip rather than wrapping.
+    expect(find.text('S2E1'), findsOneWidget);
+  });
+
   /// The seasons are only the reported symptom. A screen whose controls were
   /// never walked has no reason to have exactly one gap, and each of these is
   /// a control a remote user can see and cannot use.

@@ -105,9 +105,18 @@ class _SeasonTabs extends StatelessWidget {
       TraversalDirection.up || TraversalDirection.down => null,
     };
     if (delta == null) return false;
-    final next = seasons.indexOf(chosen) + delta;
-    if (next < 0 || next >= seasons.length) return false;
-    onPick(seasons[next]);
+    final index = seasons.indexOf(chosen) + delta;
+    // **`elementAtOrNull` for the upper bound, an explicit test for the
+    // lower.** Written as `index >= seasons.length`, the mutation gate rewrote
+    // it to `index == seasons.length` and nothing could tell the difference:
+    // `indexOf` is at most `length - 1` and `delta` is 1, so the index can
+    // reach `length` and never pass it. An equivalent mutant with no
+    // comparison left to rewrite beats one excluded by name (§3). The lower
+    // bound stays a comparison because `elementAtOrNull` THROWS on a negative
+    // index rather than answering null.
+    final next = index < 0 ? null : seasons.elementAtOrNull(index);
+    if (next == null) return false;
+    onPick(next);
     return true;
   }
 
