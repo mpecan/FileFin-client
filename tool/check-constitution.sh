@@ -698,7 +698,36 @@ check_public_member_no_consumer() {
     rm -rf "$work"
 }
 
-CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http public_member_no_consumer"
+# --- tracked_secrets ---------------------------------------------------------
+#
+# A signing key, or the file holding its passwords, committed to the repository.
+#
+# WHY A CHECK AND NOT A .gitignore ENTRY. `.gitignore` is advisory: it stops a
+# bare `git add .` from picking a file up and stops nothing else. `git add -f`
+# overrides it, a `git add <path>` on an already-tracked file ignores it
+# entirely, and neither prints a warning. What makes this worth a gate is that
+# the damage is not reversible by deleting the file: a key that has reached the
+# history has to be replaced, and replacing an Android signing key means every
+# install already in the world can no longer be upgraded — they have to
+# uninstall first, losing their saved servers and everything in the Keystore.
+#
+# ASKS GIT, NOT THE FILESYSTEM. The question is "is this tracked", which only
+# the index can answer; a `find` would report the developer's own untracked
+# keystore sitting correctly in place and fail an honest tree.
+#
+# The patterns cover the two shapes a leak takes — the keystore itself
+# (`.jks`, `.keystore`, `.p12`, `.pepk`) and `key.properties`, which carries
+# the passwords in plain text and is the easier of the two to add by accident
+# because it is small and looks like configuration.
+check_tracked_secrets() {
+    git ls-files -- \
+        '*.jks' '*.keystore' '*.p12' '*.pepk' \
+        '**/key.properties' 'key.properties' 2>/dev/null |
+        grep -v '^tool/testserver/' || true
+}
+
+
+CHECKS="placeholders core_purity id_typedefs dead_types undocumented_endpoint secret_tostring app_no_raw_http public_member_no_consumer tracked_secrets"
 
 # --- ratchet ----------------------------------------------------------------
 
