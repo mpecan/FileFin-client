@@ -136,6 +136,26 @@ crash_is_known_flake() {
     [ "$files" = "$FLAKY_CRASH_FILE" ]
 }
 
+# True when a `mutation_test` run aborted on ITS OWN baseline check because the
+# known libmpv flake crashed the suite, rather than because the suite is red.
+#
+# mutation_test runs the test command against unmodified code before it mutates
+# anything and aborts if that fails — correctly, since every mutant would
+# otherwise read as undetected. But it has no notion of a flaky suite, and it
+# gives the two cases one message. At the measured ~4.8% per run this aborts a
+# whole shard roughly one time in twenty, and the first whole-tree sweep lost
+# 472 mutants to exactly that.
+#
+# It is deliberately NARROW, and inherits every guarantee `crash_is_known_flake`
+# already states: only a crashed shell qualifies, only in the one known file,
+# and a genuinely red suite is still a red gate. It only adds the requirement
+# that the abort came from the baseline check rather than from a mutant.
+mutation_aborted_on_known_flake() {
+    local out="$1"
+    grep -qF 'failed with unmodified code' <<< "$out" || return 1
+    crash_is_known_flake "$out"
+}
+
 # Run a test command, retrying ONCE if and only if the run died of the known
 # libmpv crash. Prints the run's output either way; leaves it in $LAST_TEST_OUT
 # for a caller that wants to assert on it. Usage:

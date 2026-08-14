@@ -456,6 +456,22 @@ for pkg in $packages; do
         dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
         > "$log" 2>&1
     rc=$?
+    # mutation_test aborts on its own baseline check when the suite fails on
+    # unmodified code. That is right in general and wrong for the one file that
+    # crashes its own runner about once in twenty runs: nothing was measured, so
+    # reporting "the suite is red" would be a confidently wrong diagnosis of a
+    # flake. Retried ONCE, and only for that crash — a genuinely red suite still
+    # fails, and a crash in any other file still fails.
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] && [ "$rc" -ne 137 ] \
+        && mutation_aborted_on_known_flake "$(cat "$log")"; then
+        echo "NOTICE: $pkg — $FLAKY_CRASH_FILE crashed its own shell during"
+        echo "        mutation_test's baseline check, so no mutant was measured."
+        echo "        RETRYING ONCE, and once only."
+        (cd "$WT/$pkg" && timeout --kill-after=30s "${run_cap}s" \
+            dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
+            > "$log" 2>&1
+        rc=$?
+    fi
     set -e
     if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
         echo "ERROR: $pkg — the mutation run exceeded its ${run_cap}s whole-run cap"

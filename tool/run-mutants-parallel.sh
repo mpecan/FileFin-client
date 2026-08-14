@@ -345,8 +345,26 @@ for pkg in $packages; do
             # worktree has no .dart_tool, and `--no-pub` in the test command
             # means the run would fail on the first mutant rather than resolve.
             flutter pub get >/dev/null 2>&1 || dart pub get >/dev/null 2>&1
-            dart run mutation_test --rules "$RULES" -f md -o "$SCRATCH/report-$slug-$j" \
-                "$wt/targets-$slug-$j.xml" > "$SCRATCH/out-$slug-$j.txt" 2>&1
+            log="$SCRATCH/out-$slug-$j.txt"
+            rc=0
+            dart run mutation_test --rules "$RULES" -f md \
+                -o "$SCRATCH/report-$slug-$j" "$wt/targets-$slug-$j.xml" \
+                > "$log" 2>&1 || rc=$?
+            # mutation_test aborts on its own baseline check when the suite
+            # fails on unmodified code — correct in general, and wrong for the
+            # one file that crashes its own runner about once in twenty runs.
+            # The first whole-tree sweep lost a 472-mutant shard to exactly
+            # this, forty seconds in. Retried ONCE, and only for that crash.
+            if [ "$rc" -ne 0 ] && mutation_aborted_on_known_flake "$(cat "$log")"; then
+                echo "NOTICE: shard $slug-$j — $FLAKY_CRASH_FILE crashed its own" >&2
+                echo "        shell during mutation_test's baseline check, so no" >&2
+                echo "        mutant was measured. RETRYING ONCE, and once only." >&2
+                rc=0
+                dart run mutation_test --rules "$RULES" -f md \
+                    -o "$SCRATCH/report-$slug-$j" "$wt/targets-$slug-$j.xml" \
+                    > "$log" 2>&1 || rc=$?
+            fi
+            exit "$rc"
         ) &
         pids="$pids $!:$slug-$j"
         say "shard $slug-$j started ($(wc -l < "$list" | tr -d ' ') file(s), timeout ${cmd_timeout}s)"
