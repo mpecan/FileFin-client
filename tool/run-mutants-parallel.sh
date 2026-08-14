@@ -31,6 +31,27 @@ cd "$(repo_root)"
 # to relocate and a wired HFS+ volume only takes the working set out of the
 # page cache it was already living in.
 #
+# IT SPANS PACKAGES, and until M8.R it refused to. A SHARD is single-package and
+# has to be — `mutation_test` takes paths relative to its working directory and
+# runs from the package root, and the test command differs (`flutter test` under
+# `apps/`, `dart test` under `packages/`) — but shards from different packages
+# are just processes, so they all run at once under one job budget.
+#
+# The refusal was not academic: the M8.R documentation pass spanned all three
+# packages, so the only tool that could take it was the serial gate, at about
+# ten hours. Looping the packages here instead would have been simpler and
+# wrong in its own way — it leaves most cores idle while `filefin_core`'s
+# one-second suite works through its share.
+#
+# THE PER-MUTANT TIMEOUT IS DERIVED PER PACKAGE, and that is the load-bearing
+# part of spanning them. It comes from that package's own clean-suite time, and
+# the packages differ by about fifty times: `filefin_core` finishes inside a
+# second and lands on the 60s floor, `apps/mobile` measures tens of seconds and
+# lands in the hundreds. One shared timeout would be wrong for one of them in
+# the dangerous direction — apps/mobile's value applied to `filefin_core` lets a
+# hung mutant burn ten minutes before anything notices, which is exactly the
+# "survivor or hang?" confusion check-mutants.sh exists to keep separable.
+#
 #   FILEFIN_MUTANTS_BASE=<sha> bash tool/run-mutants-parallel.sh
 #   MUTANTS_JOBS=3 FILEFIN_MUTANTS_BASE=<sha> bash tool/run-mutants-parallel.sh
 #
@@ -132,155 +153,205 @@ changed=$(
 )
 [ -n "$changed" ] || { say "no changed Dart lib sources vs $BASE"; exit 0; }
 
-packages=$(printf '%s\n' "$changed" | sed 's|/lib/.*||' | sort -u)
-[ "$(printf '%s\n' "$packages" | wc -l)" -eq 1 ] || fail "this driver shards ONE
-       package; the diff spans:
-$packages
-       Run the serial gate, or extend this to loop over packages."
-PKG="$packages"
-case "$PKG" in
-    apps/*)     TEST_CMD='flutter test --no-pub' ;;
-    packages/*) TEST_CMD='dart test' ;;
-    *) fail "$PKG is neither under packages/ nor apps/" ;;
-esac
+# The same comment-only filter the gate applies, and it has to be the same one
+# for the reason the union assertion exists: two drivers that disagree about
+# WHICH files to mutate answer different questions while claiming to answer one.
+# `mutation_test` never touches a comment, so a file whose code is byte-identical
+# to the base would only regenerate the base's own mutants.
+before=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
+changed=$(
+    printf '%s\n' "$changed" | while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        file_is_comment_only "$BASE" "$f" || echo "$f"
+    done
+)
+dropped=$(( before - $(printf '%s\n' "$changed" | grep -c . || true) ))
+[ "$dropped" -gt 0 ] && say "$dropped file(s) differ only in comments — dropped"
+[ -n "$changed" ] || { say "every changed lib source was comments; nothing to mutate"; exit 0; }
 
+# EVERY package in the diff, sharded together rather than one at a time.
+#
+# A SHARD is single-package and has to be: `mutation_test` takes file paths
+# relative to its working directory and is run from the package root, and the
+# test command differs (`flutter test` under apps/, `dart test` under
+# packages/). But shards from DIFFERENT packages are just processes, so they
+# all run at once under one job budget. Looping the packages instead would
+# leave most cores idle while `filefin_core`'s one-second suite works through
+# its share.
+packages=$(printf '%s\n' "$changed" | sed 's|/lib/.*||' | sort -u)
 mkdir -p "$SCRATCH"
 
-# --- balance the shards by MUTANT count, not by file count --------------------
+slug_of() { printf '%s' "$1" | tr '/' '_'; }
+
+# --- per package: the runner, the mutant counts, the baseline, the timeout ----
 #
-# The 38 files of the redesign hold between 1 and 60 mutants each, so an even
-# split by filename puts one shard at four times the work of another and the
-# run is as slow as that shard. `mutation_test -d` counts without running
-# anything, in about two seconds for the whole diff, which is cheap enough to
-# do every time rather than guess.
-dry="$SCRATCH/dry.xml"
-{
-    echo '<?xml version="1.0" encoding="UTF-8"?>'
-    echo '<mutations version="1.0">'
-    echo '  <files>'
-    printf '%s\n' "$changed" | while IFS= read -r f; do
-        printf '    <file>%s</file>\n' "${f#"$PKG"/}"
-    done
-    echo '  </files>'
-    echo '</mutations>'
-} > "$dry"
+# THE TIMEOUT IS PER PACKAGE AND THAT IS THE LOAD-BEARING PART. It is derived
+# from that package's own clean-suite time, and the packages differ by about
+# fifty times — `filefin_core` finishes inside a second and lands on the 60s
+# floor, `apps/mobile` measures tens of seconds and lands in the hundreds. One
+# shared timeout would be wrong for one of them in the dangerous direction:
+# apps/mobile's value applied to `filefin_core` would let a hung mutant burn ten
+# minutes before being noticed, which is the "reported as a hang" confusion
+# check-mutants.sh exists to keep distinguishable.
+total=0
+for pkg in $packages; do
+    slug="$(slug_of "$pkg")"
+    [ -f "$pkg/pubspec.yaml" ] || fail "$pkg has changed lib sources but no pubspec.yaml"
+    [ -d "$pkg/test" ] || fail "$pkg has changed lib sources but no test/ directory"
 
-say "counting mutants in $(printf '%s\n' "$changed" | wc -l | tr -d ' ') file(s)…"
-counts="$SCRATCH/counts.txt"
-# The dry run EXITS NON-ZERO and that is not a failure: it runs no tests, so
-# every mutation it counts is "undetected" and the quality gate it applies to
-# its own tally is F. Under `set -e` with `pipefail` that killed the script
-# three lines into a sweep, with the last thing on screen being the word
-# "counting" — which reads exactly like a hang. The status is discarded here
-# and the OUTPUT is what gets checked, two lines down.
-set +e
-(cd "$PKG" && dart run mutation_test --rules "$RULES" -d -o "$SCRATCH/dry" "$dry") \
-    > "$SCRATCH/dry.out" 2>/dev/null
-set -e
-sed -nE 's|^(.*\.dart) : ([0-9]+) mutations$|\2 \1|p' "$SCRATCH/dry.out" \
-    | sort -rn > "$counts"
-[ -s "$counts" ] || fail "the dry run produced no per-file counts — the output
-       format of mutation_test may have changed. Run the serial gate."
+    case "$pkg" in
+        apps/*)     printf '%s' 'flutter test --no-pub' > "$SCRATCH/cmd-$slug" ;;
+        packages/*) printf '%s' 'dart test'             > "$SCRATCH/cmd-$slug" ;;
+        *) fail "$pkg is neither under packages/ nor apps/" ;;
+    esac
+    test_cmd="$(cat "$SCRATCH/cmd-$slug")"
 
-total=$(awk '{s+=$1} END {print s+0}' "$counts")
+    printf '%s\n' "$changed" | grep "^$pkg/" | sed "s|^$pkg/||" > "$SCRATCH/files-$slug"
+
+    dry="$SCRATCH/dry-$slug.xml"
+    {
+        echo '<?xml version="1.0" encoding="UTF-8"?>'
+        echo '<mutations version="1.0">'
+        echo '  <files>'
+        while IFS= read -r f; do printf '    <file>%s</file>\n' "$f"; done < "$SCRATCH/files-$slug"
+        echo '  </files>'
+        echo '</mutations>'
+    } > "$dry"
+
+    say "counting mutants in $pkg ($(wc -l < "$SCRATCH/files-$slug" | tr -d ' ') file(s))…"
+    # The dry run EXITS NON-ZERO and that is not a failure: it runs no tests, so
+    # every mutation it counts is "undetected" and its own quality gate is F.
+    # Under `set -e` that killed the script with "counting" as the last thing on
+    # screen, which reads exactly like a hang. The status is discarded; the
+    # OUTPUT is what is checked.
+    set +e
+    (cd "$pkg" && dart run mutation_test --rules "$RULES" -d -o "$SCRATCH/dry-$slug" "$dry") \
+        > "$SCRATCH/dry-$slug.out" 2>/dev/null
+    set -e
+    sed -nE 's|^(.*\.dart) : ([0-9]+) mutations$|\2 \1|p' "$SCRATCH/dry-$slug.out" \
+        | sort -rn > "$SCRATCH/counts-$slug"
+    [ -s "$SCRATCH/counts-$slug" ] || fail "the dry run produced no per-file counts for
+       $pkg — mutation_test's output format may have changed. Run the serial gate."
+
+    pkg_total=$(awk '{s+=$1} END {print s+0}' "$SCRATCH/counts-$slug")
+    echo "$pkg_total" > "$SCRATCH/total-$slug"
+    total=$(( total + pkg_total ))
+
+    say "measuring $pkg's clean-tree suite baseline…"
+    baseline_start=$(date +%s)
+    set +e
+    (cd "$pkg" && eval "$test_cmd") >/dev/null 2>&1
+    baseline_rc=$?
+    set -e
+    baseline_secs=$(( $(date +%s) - baseline_start ))
+    [ "$baseline_rc" -eq 0 ] || fail "$pkg — the suite fails on the UNMUTATED tree."
+    [ "$baseline_secs" -lt 5 ] && baseline_secs=5
+    [ "$baseline_secs" -gt 120 ] && baseline_secs=120
+    pkg_timeout=$(( baseline_secs * 12 ))
+    [ "$pkg_timeout" -lt 60 ] && pkg_timeout=60
+    echo "$pkg_timeout" > "$SCRATCH/timeout-$slug"
+    say "$pkg: $pkg_total mutants, baseline ${baseline_secs}s, per-mutant timeout ${pkg_timeout}s"
+done
+
 [ "$total" -gt 0 ] || fail "the dry run counted 0 mutants across the whole diff.
        The serial gate treats that as a condition needing FILEFIN_MUTANTS_ALLOW_ZERO
        and a written reason; it is not something this driver may decide."
 
+# --- split the job budget across packages, by mutant share --------------------
 cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc)
 # One suite run already saturates about six cores (measured: 634% CPU on an
 # M4 Max), so the useful shard count is the core count over that, not the core
 # count. Oversubscribing turns a fast sweep into a slow one.
 JOBS="${MUTANTS_JOBS:-$(( cores / 6 ))}"
 [ "$JOBS" -lt 1 ] && JOBS=1
-files_n=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
-[ "$JOBS" -gt "$files_n" ] && JOBS="$files_n"
 
-# Greedy longest-processing-time first: heaviest file to the lightest shard.
-# It is not optimal bin packing and does not need to be — LPT is within 4/3 of
-# optimal, and the difference between that and perfect is noise against a
-# sixteen-second mutant.
-awk -v jobs="$JOBS" -v out="$SCRATCH" -v pkg="$PKG" '
-    BEGIN { for (j = 0; j < jobs; j++) load[j] = 0 }
-    {
-        best = 0
-        for (j = 1; j < jobs; j++) if (load[j] < load[best]) best = j
-        load[best] += $1
-        sub(/^[0-9]+ /, "")
-        print $0 >> (out "/shard-" best ".txt")
-    }
-    END { for (j = 0; j < jobs; j++) printf "shard %d: %d mutants\n", j, load[j] }
-' "$counts" >&2
+# Every package with mutants gets at least one shard, so a small package is
+# never starved into running after everything else; the rest of the budget goes
+# by mutant share. The total may exceed JOBS by at most one shard per package,
+# which is the price of not serialising the small ones.
+for pkg in $packages; do
+    slug="$(slug_of "$pkg")"
+    pkg_total=$(cat "$SCRATCH/total-$slug")
+    files_n=$(wc -l < "$SCRATCH/files-$slug" | tr -d ' ')
+    n=$(( JOBS * pkg_total / total ))
+    [ "$n" -lt 1 ] && n=1
+    [ "$n" -gt "$files_n" ] && n="$files_n"
+    echo "$n" > "$SCRATCH/jobs-$slug"
+
+    # Greedy longest-processing-time first: heaviest file to the lightest shard.
+    # LPT is within 4/3 of optimal, and the difference between that and perfect
+    # is noise against a sixteen-second mutant.
+    awk -v jobs="$n" -v out="$SCRATCH" -v slug="$slug" '
+        BEGIN { for (j = 0; j < jobs; j++) load[j] = 0 }
+        {
+            best = 0
+            for (j = 1; j < jobs; j++) if (load[j] < load[best]) best = j
+            load[best] += $1
+            sub(/^[0-9]+ /, "")
+            print $0 >> (out "/shard-" slug "-" best ".txt")
+        }
+    ' "$SCRATCH/counts-$slug"
+done
 
 # THE UNION ASSERTION. Everything above is arithmetic on filenames, and an
-# arithmetic slip here loses a file silently — which is the one failure mode a
-# sharded gate has that a serial one does not. Reassembled and compared against
-# the list the gate itself would have used.
+# arithmetic slip loses a file silently — the one failure mode a sharded gate
+# has that a serial one does not. Reassembled across ALL packages, as full
+# paths, and compared against the list the serial gate itself would have used.
 sharded="$SCRATCH/sharded.txt"
-cat "$SCRATCH"/shard-*.txt 2>/dev/null | sort -u > "$sharded"
+: > "$sharded"
+for pkg in $packages; do
+    slug="$(slug_of "$pkg")"
+    cat "$SCRATCH"/shard-"$slug"-*.txt 2>/dev/null | sed "s|^|$pkg/|" >> "$sharded"
+done
+sort -u -o "$sharded" "$sharded"
 expected="$SCRATCH/expected.txt"
-printf '%s\n' "$changed" | sed "s|^$PKG/||" | sort -u > "$expected"
+printf '%s\n' "$changed" | sort -u > "$expected"
 if ! diff -q "$expected" "$sharded" >/dev/null; then
     fail "the shards do not reassemble into the changed file list:
 $(diff "$expected" "$sharded" || true)"
 fi
 
-# --- the suite baseline, and the timeouts derived from it ---------------------
-#
-# Measured once, in the real tree, exactly as the gate measures it — the same
-# clamps and the same 12x multiplier, because a per-mutant timeout is the
-# difference between "detected" and "reported as a hang" and the two scripts
-# must not disagree about it. See check-mutants.sh for the measurement that
-# fixed 12, and for why there is no environment override.
-say "measuring the clean-tree suite baseline…"
-baseline_start=$(date +%s)
-set +e
-(cd "$PKG" && eval "$TEST_CMD") >/dev/null 2>&1
-baseline_rc=$?
-set -e
-baseline_secs=$(( $(date +%s) - baseline_start ))
-[ "$baseline_rc" -eq 0 ] || fail "$PKG — the suite fails on the UNMUTATED tree."
-[ "$baseline_secs" -lt 5 ] && baseline_secs=5
-[ "$baseline_secs" -gt 120 ] && baseline_secs=120
-cmd_timeout=$(( baseline_secs * 12 ))
-[ "$cmd_timeout" -lt 60 ] && cmd_timeout=60
+say "$total mutants across $(printf '%s\n' "$packages" | wc -l | tr -d ' ') package(s), $JOBS-way budget"
 
-say "$total mutants, $JOBS shard(s), baseline ${baseline_secs}s, per-mutant timeout ${cmd_timeout}s"
-
-# --- run the shards -----------------------------------------------------------
+# --- run every shard of every package, concurrently ---------------------------
 pids=""
-for j in $(seq 0 $(( JOBS - 1 ))); do
-    list="$SCRATCH/shard-$j.txt"
-    [ -s "$list" ] || continue
-    wt="$SCRATCH/wt-$j"
-    git worktree add --detach "$wt" HEAD >/dev/null 2>&1 \
-        || fail "could not create a worktree at $wt"
-    {
-        echo '<?xml version="1.0" encoding="UTF-8"?>'
-        echo '<mutations version="1.1">'
-        echo '  <commands>'
-        printf '    <command group="test" expected-return="0" working-directory="." timeout="%s">%s</command>\n' \
-            "$cmd_timeout" "$TEST_CMD"
-        echo '  </commands>'
-        echo '  <files>'
-        while IFS= read -r f; do printf '    <file>%s</file>\n' "$f"; done < "$list"
-        echo '  </files>'
-        echo '</mutations>'
-    } > "$wt/targets.xml"
+for pkg in $packages; do
+    slug="$(slug_of "$pkg")"
+    test_cmd="$(cat "$SCRATCH/cmd-$slug")"
+    cmd_timeout="$(cat "$SCRATCH/timeout-$slug")"
+    n=$(cat "$SCRATCH/jobs-$slug")
+    for j in $(seq 0 $(( n - 1 ))); do
+        list="$SCRATCH/shard-$slug-$j.txt"
+        [ -s "$list" ] || continue
+        wt="$SCRATCH/wt-$slug-$j"
+        git worktree add --detach "$wt" HEAD >/dev/null 2>&1 \
+            || fail "could not create a worktree at $wt"
+        {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            echo '<mutations version="1.1">'
+            echo '  <commands>'
+            printf '    <command group="test" expected-return="0" working-directory="." timeout="%s">%s</command>\n' \
+                "$cmd_timeout" "$test_cmd"
+            echo '  </commands>'
+            echo '  <files>'
+            while IFS= read -r f; do printf '    <file>%s</file>\n' "$f"; done < "$list"
+            echo '  </files>'
+            echo '</mutations>'
+        } > "$wt/targets-$slug-$j.xml"
 
-    (
-        cd "$wt/$PKG" || exit 1
-        # `flutter pub get` rather than the workspace's resolved state: a fresh
-        # worktree has no .dart_tool, and `--no-pub` in the test command means
-        # the run would fail on the first mutant rather than resolve for itself.
-        flutter pub get >/dev/null 2>&1 || dart pub get >/dev/null 2>&1
-        dart run mutation_test --rules "$RULES" -f md -o "$SCRATCH/report-$j" \
-            "$wt/targets.xml" > "$SCRATCH/out-$j.txt" 2>&1
-    ) &
-    pids="$pids $!:$j"
-    say "shard $j started ($(wc -l < "$list" | tr -d ' ') file(s))"
+        (
+            cd "$wt/$pkg" || exit 1
+            # `pub get` rather than the workspace's resolved state: a fresh
+            # worktree has no .dart_tool, and `--no-pub` in the test command
+            # means the run would fail on the first mutant rather than resolve.
+            flutter pub get >/dev/null 2>&1 || dart pub get >/dev/null 2>&1
+            dart run mutation_test --rules "$RULES" -f md -o "$SCRATCH/report-$slug-$j" \
+                "$wt/targets-$slug-$j.xml" > "$SCRATCH/out-$slug-$j.txt" 2>&1
+        ) &
+        pids="$pids $!:$slug-$j"
+        say "shard $slug-$j started ($(wc -l < "$list" | tr -d ' ') file(s), timeout ${cmd_timeout}s)"
+    done
 done
-
 status=0
 for entry in $pids; do
     pid="${entry%%:*}"; j="${entry##*:}"
