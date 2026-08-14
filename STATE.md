@@ -221,6 +221,50 @@ It also gained the gate's comment-only filter, because the two must compute
 `changed` identically — two drivers that disagree about which files to mutate
 answer different questions while claiming to answer one.
 
+### The whole-tree mutation baseline: two packages clean, the third owed
+
+The number the M8.R review said did not exist. Scope is every non-generated
+`lib` source — **108 of 108 files, 1,408 mutants** — run through
+`mutants-parallel` against the root commit, which is what makes every file
+"changed". Tests and generated code are excluded by design: mutating a test
+measures the suite against itself, and generated code is regenerated rather
+than fixed.
+
+| package | mutants | undetected | timeouts | real survivors |
+|---|---|---|---|---|
+| `filefin_core` | 252 | 0 | 0 | **0** — rating A |
+| `filefin_api` | 213 | 1 | 1 | **0** |
+| `apps/mobile` | 943 | *574 of 943 run, 0 timeouts* | | *incomplete* |
+
+**`filefin_core` and `filefin_api` have no surviving mutants across every line
+they contain.** 465 mutants, nothing a test failed to notice. `filefin_api`'s
+lone "undetected" is a timeout, not a survivor:
+`survivors = undetected - timeouts - not_covered` = 0, which is the arithmetic
+`check-mutants.sh` exists to keep separable.
+
+**`apps/mobile` is owed and must be re-run on an idle machine.** It was stopped
+at 574/943, not because of anything it found — zero timeouts and no survivors to
+that point — but because the box was shared: two `cargo test` builds took the
+load average to **177 on 16 cores with 21M swapins**, and the sweep both
+suffered and contributed. A mutation result gathered under thrashing is not one
+to publish: a contended run can exceed the per-mutant timeout, and a timeout
+counts as undetected, so contention manufactures false failures. The 168s
+allowance absorbed it here, which is why the partial numbers above are still
+good — but that is luck rather than a guarantee.
+
+**A speculation to retire, since it was wrong.** `filefin_api`'s timeout was
+first read as evidence that the 60s floor is too tight when shards contend, and
+a design change was proposed on that basis. The simpler explanation was in `ps`:
+the machine was thrashing under someone else's build. Look at the load before
+theorising about a threshold.
+
+**The sweep also found a gate defect before it found anything about the code.**
+Its first attempt lost a 472-mutant shard forty seconds in, when the known
+libmpv flake crashed the suite during `mutation_test`'s own baseline check.
+`run_tests_retrying_known_crash` already existed but could not reach it — the
+abort happens inside `mutation_test`, not in a command we invoke. The same
+predicate now applies one level up.
+
 ### The gate stopped mutating the tree you are standing in
 
 Four interrupted runs left a mutant on disk during M8.R. The reason none of them
