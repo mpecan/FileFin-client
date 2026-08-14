@@ -3,14 +3,14 @@ import 'package:flutter/material.dart';
 
 /// The item's files, and the two labels a row is built from.
 ///
-/// Extracted from `media_detail_page.dart` at M6.4 rather than left in place:
-/// that file was 414 lines against `file-size`'s 400-line soft warning and F10
+/// Extracted from `media_detail_page.dart` rather than left in place:
+/// that file crossed the size gate's soft warning and the watch-state writes
 /// adds to it, and a gate warning may fall or hold and never rise. The split
 /// is by subject — a file row knows nothing about watch state — so `jscpd` has
 /// nothing to find and the two halves stay readable.
 ///
 /// **`path` is displayed AS-IS or not at all.** It is relative to the server's
-/// data directory (M2's finding C3), so joining it with anything — a base URL,
+/// data directory, so joining it with anything — a base URL,
 /// a local directory — produces a path that addresses nothing and looks like
 /// it should.
 class FileList extends StatelessWidget {
@@ -51,7 +51,7 @@ class FileList extends StatelessWidget {
 
 /// How one file is named, in this list and in the episode list above it.
 ///
-/// `season` and `episode` are **0 for a single-file item** (SPEC.md §3.3), not
+/// `season` and `episode` are **0 for a single-file item**, not
 /// absent — so a row that always printed "S0E0" would put a season number on
 /// every film in the library.
 ///
@@ -68,9 +68,9 @@ String fileLabel(FileInfo file) {
 
 /// A byte count a person can read.
 ///
-/// `size` is the only bandwidth signal the API gives (SPEC.md §3.3), so it is
-/// worth showing rather than hiding — F13's metered guard is built on the same
-/// number at M4.
+/// `size` is the only bandwidth signal the API gives, so it is
+/// worth showing rather than hiding — the metered guard is built on the same
+/// number.
 ///
 /// **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** Dividing
 /// by 1024 under those labels understated every size by 2.4% per step, and

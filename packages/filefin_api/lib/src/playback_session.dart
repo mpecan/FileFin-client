@@ -3,11 +3,11 @@ import 'package:meta/meta.dart';
 /// The HTTP headers libmpv must send to play this server's bytes.
 ///
 /// **One value type rather than a bare `Map`, and the name is chosen so a gate
-/// watches it**: `secret_tostring` (§9) matches every class named `*Session*`,
-/// so the redacting `toString` is enforced rather than remembered — and what
+/// watches it**: `secret_tostring` matches every class named `*Session*`,
+/// so the redacting `toString()` is enforced rather than remembered — and what
 /// this holds is the session cookie.
 ///
-/// SPEC.md §5.3 is the mechanism: `Media(url, httpHeaders: …)` hands these to
+/// is the mechanism: `Media(url, httpHeaders: …)` hands these to
 /// libmpv, which preserves them across the 307 and onto every segment.
 @immutable
 class PlaybackSessionHeaders {
@@ -33,7 +33,7 @@ class PlaybackSessionHeaders {
     for (final key in _headers.keys.toList()..sort()) '$key=${_headers[key]}',
   ]);
 
-  /// Prints the header **names** and none of the values (§9, NF4).
+  /// Prints the header **names** and none of the values.
   ///
   /// The names are worth printing — "did it carry a Cookie at all?" is the
   /// first question anyone debugging playback asks — and the values never are.

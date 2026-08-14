@@ -53,7 +53,7 @@ class TvRail extends StatefulWidget {
   /// Which server is signed in, on the row at the foot of the rail.
   final String serverName;
 
-  /// Opens F11's picker.
+  /// Opens the server picker.
   ///
   /// **The row carrying the server's name was not focusable until a
   /// reachability walk said so**, and `TvShell` was passing an `onServers` that

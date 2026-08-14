@@ -29,18 +29,18 @@ class ErrorMessage {
   final bool needsSignIn;
 }
 
-/// Turns one of `filefin_api`'s errors into words (F12's discipline).
+/// Turns one of `filefin_api`'s errors into words a person can act on.
 ///
 /// **The switch is exhaustive and has no default arm, and that is the design.**
 /// Adding `TranscodingDisabled` stopped this compiling; a default would have
-/// said "something went wrong" for the one error F12 asks us to name.
+/// said "something went wrong" for the one error that has to be named exactly.
 ///
 /// Every URL goes through `redactUserInfo`: a message is a log line waiting to
-/// happen (§9, NF4) and a saved-server URL is typed by a user.
+/// happen and a saved-server URL is typed by a user.
 ///
-/// **A message names the cause it actually has.** `SessionExpired` used to
-/// blame a server restart — what F3 renews silently. It means no stored
-/// session, or no password.
+/// **A message names the cause it actually has.** `SessionExpired` does not
+/// mean a server restart, which renewal handles silently; it means there is no
+/// stored session, or no password.
 ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
   RequestTimedOut(:final phase, :final requested) => ErrorMessage(
     title: 'The server did not answer in time',
@@ -52,7 +52,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
   ),
 
   // Never rendered — AsyncController drops cancellation — but present, because
-  // exhaustiveness is what makes M5's new variant a compile error.
+  // exhaustiveness is what makes a new variant a compile error.
   RequestCancelled() => const ErrorMessage(
     title: 'Cancelled',
     detail: 'That request was cancelled before it finished.',
@@ -67,7 +67,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     retryable: true,
   ),
 
-  // F3 already retried, so a retry repeats what did not work.
+  // The 401 retry already ran, so retrying repeats what did not work.
   SessionExpired() => const ErrorMessage(
     title: 'Please sign in again',
     detail:
@@ -93,7 +93,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
         '${redactUserInfo(requested).host} since this list was loaded.',
   ),
 
-  // "possibly", not "rebuilding": media.go:192-198 writes `cache unavailable`
+  // "possibly", not "rebuilding": media.go writes `cache unavailable`
   // for ANY ensureDB failure, so promising a rebuild promises an end that may
   // never come.
   CacheUnavailable() => const ErrorMessage(
@@ -116,7 +116,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
   ),
 
   // The value came off the wire (`MediaSummary.id` defaults to `MediaId('')`
-  // under §8), so blaming the user sends them hunting a typo they never made.
+  // so blaming the user sends them hunting a typo they never made.
   MalformedIdentifier(:final field, :final value) => ErrorMessage(
     title: 'The server sent an item we cannot open',
     detail:
@@ -124,7 +124,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
         'to ask for. This is a problem with the library on the server.',
   ),
 
-  // auth.go:157-169 runs one bcrypt compare against a dummy hash for an
+  // auth.go runs one bcrypt compare against a dummy hash for an
   // unknown account, so nothing separates the three causes. Guessing would be
   // inventing information.
   InvalidCredentials() => const ErrorMessage(
@@ -153,7 +153,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
         'server may be a version this app has not been checked against.',
   ),
 
-  // F12. Not retryable: the setting is the server's (measured, M5.0/E-B).
+  // Not retryable: the setting is the server's.
   TranscodingDisabled(:final requested) => ErrorMessage(
     title: 'This file needs transcoding',
     detail:
@@ -171,7 +171,7 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
     retryable: true,
   ),
 
-  // F15: the fingerprint is shown and accepted deliberately; a retry button
+  // The fingerprint is shown and accepted deliberately; a retry button
   // would invite mashing it until something gives.
   CertificateNotTrusted(:final fingerprint, :final subject, :final validTo) =>
     ErrorMessage(
@@ -183,9 +183,9 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
           'vouches for; check the fingerprint before accepting it.',
     ),
 
-  // F15's loud half: a CHANGED fingerprint blocks rather than re-accepting,
+  // The loud half: a CHANGED fingerprint blocks rather than re-accepting,
   // shows both values, and says "refused" — never "nothing was sent", which
-  // `errors_certificates.dart:53-62` measured at 106 bytes already gone.
+  // `errors_certificates.dart` measured at 106 bytes already gone.
   CertificatePinMismatch(:final expected, :final actual) => ErrorMessage(
     title: "This server's certificate has changed",
     detail:

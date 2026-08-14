@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 /// The header both library tabs carry: which server, and what to do about it.
 ///
 /// **A 48-point row rather than an `AppBar`**, because the server name is not
-/// a heading — it is a control that opens F11's picker, and says so by carrying
-/// a caret. `AppBar.title` would put a tap target where a label is expected.
+/// a heading — it is a control that opens the server picker, and says so by
+/// carrying a caret. `AppBar.title` would put a tap target where a label is
+/// expected.
 ///
 /// **Two glyphs where three actions live**, deliberately: the design has no
 /// sign-out glyph, and sign-out is rare, destructive and must stay reachable
@@ -25,7 +26,7 @@ class LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
   /// The saved server's name.
   final String title;
 
-  /// Opens F11's picker. Null leaves the chip inert but still legible.
+  /// Opens the server picker. Null leaves the chip inert but still legible.
   final VoidCallback? onServers;
 
   /// Jumps to the Search destination.
@@ -34,7 +35,7 @@ class LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
   /// Opens the playback settings sheet.
   final VoidCallback? onSettings;
 
-  /// Ends the session and forgets this account (F2, §9).
+  /// Ends the session and forgets this account.
   final VoidCallback? onSignOut;
 
   @override

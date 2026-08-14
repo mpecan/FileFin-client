@@ -2,13 +2,13 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:meta/meta.dart';
 
-/// What kind of connection the device is on (F13).
+/// What kind of connection the device is on.
 ///
 /// A port for the same reason `LibraryApi` is one: `Connectivity` is a plugin
 /// behind a method channel, and a widget test that wants the metered prompt
 /// should not have to stand one up. The seam is proven rather than assumed —
 /// `ConnectivityPlatform.instance` substitutes headlessly (measured at
-/// M4.0/E7), which is what keeps [ConnectivityNetworkStatus] itself covered.
+/// ), which is what keeps [ConnectivityNetworkStatus] itself covered.
 ///
 /// `one_member_abstracts` wants a top-level function instead, and it is wrong
 /// here for the reason it would be wrong about `SecretStore`: a top-level
@@ -22,7 +22,7 @@ abstract base class NetworkStatus {
 
   /// Samples the connection **now**.
   ///
-  /// SPEC F13 says "before playing", so `PlayerController` calls this once at
+  /// The rule says "before playing", so `PlayerController` calls this once at
   /// start and never subscribes. A mid-playback switch from Wi-Fi to cellular
   /// is out of scope and recorded as debt rather than silently handled.
   Future<NetworkType> current();
@@ -37,8 +37,8 @@ abstract base class NetworkStatus {
 /// `none` entries are dropped first; a list containing `wifi` prefers `wifi`,
 /// because the OS reports every active transport at once.
 ///
-/// The residual is the exact case F13 exists for: **a tethered hotspot reports
-/// as `wifi`**, so the guard does not fire.
+/// The residual is the exact case the guard exists for: **a tethered hotspot
+/// reports as `wifi`**, so the guard does not fire.
 /// `docs/verification-backlog.md` row 20 has the device experiment.
 @visibleForTesting
 NetworkType networkTypeOf(List<ConnectivityResult> results) {

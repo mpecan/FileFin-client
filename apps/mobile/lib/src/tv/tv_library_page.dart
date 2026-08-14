@@ -11,7 +11,7 @@ import 'package:filefin_mobile/src/theme/theme.dart';
 import 'package:filefin_mobile/src/tv/tv_row.dart';
 import 'package:flutter/material.dart';
 
-/// F4 on a television: the tree on the left, the focused category's grid on
+/// On a television: the tree on the left, the focused category's grid on
 /// the right.
 ///
 /// **Two panes rather than the phone's two screens**, and that is the design's
@@ -34,7 +34,7 @@ class TvLibraryPage extends StatefulWidget {
   /// Opens one item's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   @override
@@ -168,7 +168,7 @@ class _TvLibraryPageState extends State<TvLibraryPage> {
 
 /// The counts beside a category's name, worded so 0 does not read as "empty".
 ///
-/// `library.go:73-81` returns `media` and `files` as **0 when the cache is
+/// `library.go` returns `media` and `files` as **0 when the cache is
 /// unavailable**, exactly as it does for a genuinely empty category, so a
 /// heading that said "0 items" would state as a fact something it does not
 /// know.

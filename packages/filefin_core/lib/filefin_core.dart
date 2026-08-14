@@ -1,11 +1,11 @@
 /// The pure-Dart core of the FileFin client.
 ///
 /// Everything reachable from here is I/O-free, Flutter-free and deterministic
-/// (CLAUDE.md §6). Time and network state arrive as arguments; nothing in this
+///. Time and network state arrive as arguments; nothing in this
 /// package reads a clock, a socket or a file.
 ///
 /// This barrel is the package's entire public surface: a symbol not exported
-/// here has no consumer outside the library and is dead by §5. `ApiPaths` is
+/// here has no consumer outside the library and is dead code. `ApiPaths` is
 /// hidden by that same criterion — unhide it the day `filefin_api` needs a
 /// bare path.
 library;

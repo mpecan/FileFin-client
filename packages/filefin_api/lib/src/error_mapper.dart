@@ -8,14 +8,14 @@ import 'package:filefin_api/src/tls/pin_decision.dart';
 
 /// Turns dio's one exception type into our sealed hierarchy.
 ///
-/// In a **different file from `errors.dart` on purpose**: `dead_types` (§5)
+/// In a **different file from `errors.dart` on purpose**: `dead_types`
 /// wants every sealed variant constructed outside its declaring file.
 ///
 /// [requested] is passed rather than read from `error.requestOptions.uri`,
 /// because the caller knows the URL it *meant* to fetch — dio's copy has been
 /// through `BaseOptions` merging, and on the 307 the two genuinely differ.
 ///
-/// **This never inspects a content type** (D21). [pinner] is consulted only for
+/// **This never inspects a content type**. [pinner] is consulted only for
 /// the two exception types TLS can produce, and is what turns a
 /// `HandshakeException` into a message naming the fingerprint to compare.
 FileFinApiException mapDioException(
@@ -115,7 +115,7 @@ FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
     400 => BadRequest(requested, body),
     401 => SessionExpired(requested),
     404 => NotFound(requested),
-    // F12's, and it is the file route's 415 rather than the HLS route's: this
+    // It is the file route's 415 rather than the HLS route's: this
     // client never requests `.../hls/index.m3u8` itself (`errors_playback.dart`
     // says why), so `transcoding disabled` is the only shape that reaches here.
     //
@@ -133,7 +133,7 @@ FileFinApiException _fromStatus(Response<dynamic> response, Uri requested) {
   };
 }
 
-/// Whether [url] is the media FILE route — the one route whose 415 SPEC §3.4
+/// Whether [url] is the media FILE route — the one route whose 415
 /// gives a meaning.
 ///
 /// Matched on the LAST segments rather than on the whole path, so a FileFin
@@ -155,9 +155,9 @@ bool _isFileRoute(Uri url) {
 
 /// Reads `Retry-After` as whole seconds, keeping the raw value when it is not.
 ///
-/// Integer-only, deliberately: `auth.go:149` writes `int(retry.Seconds()) + 1`
+/// Integer-only, deliberately: `auth.go` writes `int(retry.Seconds) + 1`
 /// and nothing upstream can produce an HTTP-date, so a date branch would be
-/// code for a case this server cannot reach (§1). A proxy rewriting the header
+/// code for a case this server cannot reach. A proxy rewriting the header
 /// is *not* dismissed — the value survives verbatim in
 /// [RateLimited.rawRetryAfter] and the parsed duration stays zero rather than
 /// becoming a number nobody measured.

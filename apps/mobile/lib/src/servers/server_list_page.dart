@@ -9,7 +9,7 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
 
-/// F11's picker: the saved servers, which one a launch opens, and removal.
+/// the server picker: the saved servers, which one a launch opens, and removal.
 ///
 /// **It reads `settings.json` on every build rather than caching a list**,
 /// deliberately: the file is the truth, a removal changes it, and a cached copy
@@ -39,7 +39,7 @@ class ServerListPage extends StatefulWidget {
   /// its client if that is the one it was showing.
   final void Function(SavedServer server) onRemoved;
 
-  /// Starts F1's add-a-server flow.
+  /// Starts the add-a-server flow.
   final VoidCallback onAdd;
 
   @override
@@ -52,7 +52,7 @@ class _ServerListPageState extends State<ServerListPage> {
   /// Forgets [server] completely: the session on the server, then its three
   /// secrets, then its settings entry.
   ///
-  /// **The secrets go first, and the order is the §9 decision.** The other
+  /// **The secrets go first, and the order is deliberate.** The other
   /// order strands a password in the Keychain for a server no screen can reach,
   /// with nothing left that could delete it; losing a credential is the safe
   /// direction.
@@ -83,11 +83,11 @@ class _ServerListPageState extends State<ServerListPage> {
   ///
   /// `logout()` needs the session secret this method is about to delete, so it
   /// happens first or not at all — and "not at all" means a server keeping a
-  /// live session for an account the phone has forgotten, which is what F2's
+  /// live session for an account the phone has forgotten, which is what
   /// sign-out exists to prevent.
   ///
   /// A server that does not answer is no reason to refuse the removal:
-  /// `logout`'s `finally` has already cleared the jar and both secrets by the
+  /// `logout()`'s `finally` has already cleared the jar and both secrets by the
   /// time it throws, and someone whose NAS is unplugged must still forget it.
   Future<String?> _endSession(AppDependencies deps, SavedServer server) async {
     final api = await apiForServer(deps, server);

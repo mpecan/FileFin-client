@@ -28,7 +28,7 @@ class AsyncView<T> extends StatelessWidget {
   /// Draws the loaded value.
   final Widget Function(BuildContext context, T value) builder;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   @override

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// **An enum with fields rather than a `ThemeExtension`.** An extension would
 /// buy `copyWith` and `lerp` over fifteen fields — a hundred lines of
 /// boilerplate nothing in this app calls, that `just mutants` would produce
-/// fifteen unkillable mutants from, and that §1 has no milestone for. Two
+/// fifteen unkillable mutants from, and that nothing needs yet. Two
 /// canonical values and one lookup is the whole mechanism.
 ///
 /// **Roles, never swatch names.** [accentBright] is *the colour a small glyph

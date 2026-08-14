@@ -2,14 +2,14 @@ import 'package:filefin_mobile/src/browse/file_list.dart' show humanSize;
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/material.dart';
 
-/// The sizes the metered prompt can be set to fire above (F13).
+/// The sizes the metered prompt can be set to fire above.
 ///
 /// The current value is unioned in by [PlaybackSettingsSheet] rather than
 /// assumed to be one of these: `settings.json` is hand-editable and a
 /// `DropdownButton` whose `value` is not among its items throws.
 /// **All four are powers of 1000**, matching the kB/MB/GB `humanSize` writes on
 /// them and matching `PlaybackPrefs`' own default. Three of them were powers of
-/// 1024 until M4.R/P7, mixed in with one that was not, so the list a person
+/// 1024 once, mixed in with one that was not, so the list a person
 /// chose from read "100 MB, 477 MB, 1.0 GB, 4.0 GB" — one entry rendered from a
 /// different base than its neighbours and none of them the round number it
 /// claimed to be.
@@ -23,12 +23,11 @@ const meteredWarnChoices = <int>[
 /// The reporting intervals, in **media** seconds. 30 is upstream's own.
 const progressIntervalChoices = <int>[10, 30, 60, 120];
 
-/// SPEC §7's playback settings, per server and not.
+/// The playback settings, per server and not.
 ///
-/// **This sheet is why `Refuse(wifiOnlyOnMetered)` and D10's refusal are
-/// reachable at all.** Both are decided by fields on [SavedServer], and until
-/// M4.8 nothing in a running app could set either — a settings field nobody can
-/// write is §5's dead branch wearing §1's clothes.
+/// **This sheet is why `Refuse(wifiOnlyOnMetered)` and the unverified-playback
+/// refusal are reachable at all.** Both are decided by fields on [SavedServer],
+/// and a settings field nothing in a running app can write is a dead branch.
 ///
 /// It edits a copy and reports every change through [onChanged], rather than
 /// owning a `SettingsStore`: the write can fail (a full disk, a revoked
@@ -50,7 +49,7 @@ class PlaybackSettingsSheet extends StatefulWidget {
   /// The settings that are not per server.
   final PlaybackPrefs prefs;
 
-  /// Ends the session and forgets this account (F2, §9), or null when the
+  /// Ends the session and forgets this account, or null when the
   /// screen that opened this sheet offers it somewhere else.
   ///
   /// **Non-null only on a television.** The phone puts sign-out behind the
@@ -112,9 +111,10 @@ class _PlaybackSettingsSheetState extends State<PlaybackSettingsSheet> {
             onChanged: (on) =>
                 _apply(server: _server.copyWith(allowUnverifiedPlayback: on)),
             title: const Text('Play over an unverified certificate'),
-            // D10's cost, named rather than summarised as "less secure". The
-            // banner is mentioned here because it is part of what is being
-            // agreed to: it stays on screen for the whole of every file.
+            // What unverified playback costs, named rather than summarised as
+            // "less secure". The banner is mentioned here because
+            // it is part of what is being agreed to: it stays on screen for the
+            // whole of every file.
             subtitle: const Text(
               'This server uses a certificate only this app trusts, and the '
               'player cannot check it. Turning this on sends the session '

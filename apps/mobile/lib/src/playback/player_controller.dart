@@ -10,15 +10,13 @@ import 'package:filefin_mobile/src/playback/subtitle_repair.dart';
 import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:flutter/widgets.dart';
 
-// A `part` rather than a second library, for the reason `client_playback.dart`
-// is one: this file reached `file-size`'s 600-line HARD limit when M5.R
-// threaded a `CancelToken` through `_open`, and a gate warning may fall or hold
-// and never rise. Splitting by subject keeps both halves readable and — because
-// it is a part — costs no import churn at the call sites that already take
-// `describeApiFailure` and `PlaybackOutcome` from here.
+// A `part` rather than a second library: the two halves share private state,
+// and keeping them one library costs no import churn at the call sites that
+// already take `describeApiFailure` and `PlaybackOutcome` from here.
 part 'player_failure.dart';
 
-/// Drives one playing item: F7, F8, F9, F13, NF6 and playback's half of F3.
+/// Drives one playing item: its files, its position, and what the server is
+/// told about both.
 ///
 /// **A `ChangeNotifier`, deliberately not an `AsyncController`.** That one is
 /// one-shot-fetch shaped and cancels its work on dispose, which is exactly
@@ -26,7 +24,7 @@ part 'player_failure.dart';
 /// long-lived state machine that opens files, advances between them, survives
 /// a backgrounding and has a final report to make on the way out.
 ///
-/// Every policy it consults is a pure function in `filefin_core` — `decide`,
+/// Every policy it consults is a pure function in `filefin_core` — `decide()`,
 /// `decideReport`, `startSecondsFor` — so what is left here is sequencing, and
 /// sequencing is what a widget test can drive.
 class PlayerController extends ChangeNotifier {
@@ -56,7 +54,7 @@ class PlayerController extends ChangeNotifier {
   /// The engine. One per screen, disposed with it.
   final PlaybackHost host;
 
-  /// F13's sample, taken once at [start].
+  /// The connection type, sampled once at [start].
   final NetworkStatus network;
 
   /// The item being played.
@@ -71,10 +69,10 @@ class PlayerController extends ChangeNotifier {
   final ProgressReporter _reporter;
   final List<StreamSubscription<Object?>> _subs = [];
 
-  /// NF5's token for every request this controller makes.
+  /// The cancel token for every request this controller makes.
   ///
   /// The pre-flight made the window worth closing: `_open` awaits up to three
-  /// round trips before it reaches `host.open`, and backing out of the route
+  /// round trips before it reaches `host.open()`, and backing out of the route
   /// in that window used to resume into `host.open()` on a `Player` that
   /// `dispose` had already torn down — measured as
   /// `after gate: opened=1 calls=[dispose, open(…), play]`.
@@ -115,7 +113,7 @@ class PlayerController extends ChangeNotifier {
   /// Where the volume slider is, `0.0`–`1.0`. Full until someone moves it.
   double get volume => _volume;
 
-  /// The audio tracks the engine found (F7).
+  /// The audio tracks the engine found.
   PlaybackTracks get tracks => _tracks;
 
   /// The sidecar subtitles fetched for the current file.
@@ -130,7 +128,7 @@ class PlayerController extends ChangeNotifier {
   /// Whatever went wrong, phrased for a person, or null.
   String? get failure => _failure;
 
-  /// The 415, when that is why nothing is playing (F12). Null otherwise.
+  /// The 415, when that is why nothing is playing. Null otherwise.
   ///
   /// Separate from [failure] because the two drive different surfaces: an
   /// ordinary failure is a banner over a video that may still be playing,
@@ -144,7 +142,7 @@ class PlayerController extends ChangeNotifier {
   /// Why progress reporting stopped, or null while it is running.
   ReportStop? get reportStop => _reporter.stopped;
 
-  /// What the screen that pushed the player has to know on the way out (F9).
+  /// What the screen that pushed the player has to know on the way out.
   PlaybackOutcome get outcome => PlaybackOutcome(
     state: _reporter.state,
     needsDetailRefetch: _reporter.needsDetailRefetch,
@@ -155,7 +153,7 @@ class PlayerController extends ChangeNotifier {
     wrote: _reporter.lastSent != null,
   );
 
-  /// Whether there is another file after this one (F7's Next).
+  /// Whether there is another file after this one (Next).
   bool get hasNext => _current.value + 1 < detail.files.length;
 
   /// Whether there is a file before this one.
@@ -164,19 +162,18 @@ class PlayerController extends ChangeNotifier {
   /// The file currently playing.
   FileInfo get file => detail.files[_current.value];
 
-  /// Takes F13's decision and, if it says so, opens the file.
+  /// Decides whether to play, and opens the file when the answer is yes.
   ///
-  /// **The network is sampled once, here.** SPEC F13 says "before playing", and
-  /// a mid-playback switch from Wi-Fi to cellular is out of scope — stated as
-  /// debt rather than half-handled.
+  /// **The network is sampled once, here.** A mid-playback switch from Wi-Fi to
+  /// cellular is out of scope rather than half-handled.
   Future<void> start() => _decideAndOpen();
 
-  /// F13 asked again, for whichever file is now current.
+  /// Asks the size question again, for whichever file is now current.
   ///
-  /// **`fileInfo.size` is per file and F13 is written per file**, so this runs
+  /// **The size guard is per file**, so this runs
   /// for every file rather than only the first: a 10-byte episode 1 followed by
   /// a 9 GiB episode 2 opened with no prompt at all before [next] came through
-  /// here (M4.R/P4). The *sample* stays once-per-session — that is the debt
+  /// here. The *sample* stays once-per-session — that is the debt
   /// STATE.md names, and re-sampling here would quietly retire it — so the
   /// answer is memoised rather than re-taken.
   Future<void> _decideAndOpen() async {
@@ -196,7 +193,7 @@ class PlayerController extends ChangeNotifier {
     if (decision is PlayNow) await _open();
   }
 
-  /// The user accepted F13's size prompt.
+  /// The user accepted the size prompt.
   Future<void> confirmLargeOnMetered() async {
     final decision = _decision;
     if (decision is! ConfirmLargeOnMetered) return;
@@ -205,7 +202,7 @@ class PlayerController extends ChangeNotifier {
     await _open();
   }
 
-  /// Advances to the next file (F7).
+  /// Advances to the next file.
   ///
   /// **We advance ourselves rather than using mpv's playlist**, and the reason
   /// is that the playlist index would be a second source of truth for "which
@@ -237,10 +234,9 @@ class PlayerController extends ChangeNotifier {
   /// Moves to [file], discarding everything that described the old one.
   ///
   /// `_position` and `_duration` are keyed on `_current`, and zeroing them here
-  /// is the first of the three mechanisms D23 describes — [_positionIsCurrent]
-  /// and [_engineOwnsCurrent] are the other two. Each is there because the one
-  /// before it turned out to be insufficient, and D23 names the data corruption
-  /// each was measured to allow.
+  /// is the first of three mechanisms that stop a report describing a file the
+  /// engine is not holding — [_positionIsCurrent] and [_engineOwnsCurrent] are
+  /// the other two, each there because the one before it proved insufficient.
   void _switchTo(FileIndex file) {
     _current = file;
     _position = Duration.zero;
@@ -263,7 +259,7 @@ class PlayerController extends ChangeNotifier {
   ///
   /// Kept here because the slider has to draw it: a `Slider` whose `value` was
   /// the literal `1` snapped its thumb back to full on the very next rebuild
-  /// while mpv held the dragged value (M4.R/P6).
+  /// while mpv held the dragged value.
   Future<void> setVolume(double volume) {
     _volume = volume;
     _notify();
@@ -276,27 +272,26 @@ class PlayerController extends ChangeNotifier {
   /// pill says "Audio" until this is non-null rather than guessing.
   PlaybackTrackRef? get audio => _audio;
 
-  /// Switches audio track (F7).
+  /// Switches audio track.
   Future<void> selectAudio(PlaybackTrackRef track) {
     _audio = track;
     _notify();
     return host.selectAudioTrack(track);
   }
 
-  /// Switches subtitle track, or turns them off (F7).
+  /// Switches subtitle track, or turns them off.
   Future<void> selectSubtitle(SubtitleSource? source) async {
     _subtitle = source;
     _notify();
     await host.selectSubtitleTrack(source);
   }
 
-  /// NF6 and F14: the OS is taking the app away.
+  /// The OS is taking the app away.
   ///
   /// **It reports and does NOT pause.** Reporting is the only thing that
   /// survives an OS kill, so the pointer written here is what the user comes
-  /// back to; the pause that used to accompany it read NF6 as "playback stops",
-  /// and F14 says the opposite. What makes that possible per platform is in
-  /// `docs/field-notes.md`, and `mpv_player.dart`'s
+  /// back to. It does not pause: audio is meant to continue, which is what a
+  /// lock-screen transport is for. `mpv_player.dart`'s
   /// `pauseUponEnteringBackgroundMode: false` is the other half.
   ///
   /// `resumed` deliberately does nothing: the engine never stopped.
@@ -339,7 +334,7 @@ class PlayerController extends ChangeNotifier {
   /// which makes the guard fire in the case it exists for. It can be stale.
   ///
   /// [mayRetry] bounds the retry **structurally** rather than as a condition —
-  /// D23 has the hang that taught us the difference.
+  ///
   Future<void> _open({bool mayRetry = true}) async {
     _failure = null;
     _unplayable = null;
@@ -378,13 +373,13 @@ class PlayerController extends ChangeNotifier {
   /// An open that never reached the engine, and the two things it must do.
   ///
   /// **Silence what is still playing**, then **retry once unless the answer is
-  /// permanent** — D23 has both, and why the retry is bounded twice over.
+  /// permanent** —
   ///
   /// `_positionIsCurrent = false` is deliberately absent here:
   /// [_engineOwnsCurrent] already stops the old file's ticks from setting it,
   /// so it would be dead on the [next] path — and live and *wrong* on the
   /// other one, where [_recover] re-opens the file the engine still holds and
-  /// `_positionIsCurrent` preserves F8's offset.
+  /// `_positionIsCurrent` preserves the resume offset.
   Future<void> _openFailed(
     FileFinApiException error, {
     required bool mayRetry,
@@ -468,7 +463,7 @@ class PlayerController extends ChangeNotifier {
         // No `_engineOwnsCurrent` here, and the absence is measured: this
         // reports `position: _duration`, which the two gates above hold at
         // zero for a file the engine does not own — `notStarted`. A third gate
-        // is a branch no input can distinguish (§1); it survived the suite.
+        // is a branch no input can distinguish; it survived the suite.
         if (!done) return;
         // `position: duration` so the crossing is unambiguous: mpv's last
         // position tick can land a few milliseconds short of the end, which is
@@ -484,12 +479,12 @@ class PlayerController extends ChangeNotifier {
   /// **libmpv does not surface status codes, so we ask the layer that does.**
   ///
   /// A 401 and a missing file produce the same sentence from mpv. One `me()`
-  /// separates them: if it succeeds the session was fine — or F3 has just
-  /// renewed it — so re-opening once is worth a try; if it fails the user has
+  /// separates them: if it succeeds the session was fine — or has just been
+  /// renewed — so re-opening once is worth a try; if it fails the user has
   /// to sign in.
   ///
   /// **The retry is spent until playback demonstrably resumes**, which a
-  /// position tick says and nothing else does (D23). Spending it still stops
+  /// position tick says and nothing else does. Spending it still stops
   /// the loop — a file that cannot play never ticks.
   Future<void> _recover(String message) async {
     if (_disposed) return;
@@ -507,8 +502,8 @@ class PlayerController extends ChangeNotifier {
       _reporter.resume();
       // Only where a tick has actually been, for the reason [_switchTo] gives:
       // `_position` describes nothing until the engine has said so, and
-      // overwriting `_startAt` with it threw away F8's resume offset when the
-      // very first open failed.
+      // overwriting `_startAt` with it threw away the resume resume offset when
+      // the very first open failed.
       if (_positionIsCurrent) _startAt = _position;
       await _open();
     } on FileFinApiException catch (e) {

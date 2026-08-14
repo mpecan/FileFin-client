@@ -12,11 +12,11 @@ import 'package:filefin_mobile/src/theme/theme.dart';
 import 'package:filefin_mobile/src/tv/tv_row.dart';
 import 'package:flutter/material.dart';
 
-/// F6 on a television: a hero over the same three rows.
+/// On a television: a hero over the same three rows.
 ///
 /// **The hero is the first item of the *continue* bucket, and it is the whole
 /// argument for the screen.** That bucket arrives `ORDER BY us.updated DESC`
-/// (M6.0/E-3), so its first entry is the last thing this person watched — which
+///, so its first entry is the last thing this person watched — which
 /// is what a television is switched on to carry on with.
 class TvHomePage extends StatefulWidget {
   /// Shows [api]'s home rows; [onOpen] opens an item.
@@ -33,7 +33,7 @@ class TvHomePage extends StatefulWidget {
   /// Opens one item's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   @override

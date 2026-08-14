@@ -4,11 +4,11 @@ import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-/// The poster grid itself, and NF2's subject.
+/// The poster grid itself, and the thing large libraries stress.
 ///
 /// **One widget for the category listing and for search results**, which is
-/// structural rather than tidy: a second copy would be D14's virtualisation
-/// duplicated. D14 is what the `itemCount`, the
+/// structural rather than tidy: a second copy would be that virtualisation
+/// duplicated. That is what the `itemCount`, the
 /// `addAutomaticKeepAlives: false` and the sort-free `build()` are for.
 ///
 /// **It renders nothing for an empty list, deliberately.** What "empty" means

@@ -1,7 +1,7 @@
-/// The identifiers the server addresses things by (CLAUDE.md §7).
+/// The identifiers the server addresses things by.
 ///
 /// They wrap **different** primitives — a `MediaId` is a 12-char hex string
-/// (`import.go:354`), a `CategoryId` is an `int64` (`library.go:29`) — so once
+///, a `CategoryId` is an `int64` — so once
 /// either decays to its representation the compiler can no longer catch a
 /// mix-up, and the server answers a wrong one with a 404 rather than an
 /// explanation.
@@ -27,12 +27,12 @@ extension type const SubtitleIndex(int value) implements Object {}
 /// **Our own** identifier for a saved server. It is never sent to any server.
 ///
 /// The other four name things the server named. This one names a row in the
-/// client's own server list (SPEC.md §7, F11), and keys the three per-server
+/// client's own server list, and keys the three per-server
 /// things `filefin_api` holds apart: the cookie jar, the secret-store
 /// namespace (`filefin/{serverId}/session|password|certpin`) and the accepted
 /// fingerprint. Two servers sharing a jar would send one's session cookie to
-/// the other; two sharing a pin would defeat F15.
+/// the other; two sharing a pin would defeat pinning.
 ///
 /// It carries no `JsonConverter`, unlike the four above: it appears in no
-/// payload in either direction, so one would be a dead branch (§5).
+/// payload in either direction, so one would be a dead branch.
 extension type const ServerId(String value) implements Object {}

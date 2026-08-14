@@ -31,9 +31,9 @@ class PlaybackTrackRef {
 
 /// What the engine found inside the file.
 ///
-/// **Audio only, and that is C2 (SPEC §11) narrowed rather than ignored.** The
+/// **Audio only, narrowed rather than ignored.** The
 /// API lists sidecar subtitles and nothing else — `fileInfo` has no audio array
-/// at all — so F7's audio-track selection is *only* satisfiable from what
+/// at all — so audio-track selection is *only* satisfiable from what
 /// libmpv sees. Embedded **subtitles** stay deferred; embedded audio is used
 /// because nothing else can satisfy the requirement.
 @immutable
@@ -56,8 +56,8 @@ class PlaybackTracks {
 /// [data] is the WebVTT text, not a URL, and that is the design rather than a
 /// convenience. The subtitle route sits behind `s.auth`, so handing libmpv a
 /// URL would make it open its own unauthenticated, unpinned connection; reading
-/// the text through `LibraryApi` keeps the cookie jar, F3's retry and F15's pin
-/// on the one part of playback that can still have them.
+/// the text through `LibraryApi` keeps the cookie jar, the 401 retry and the
+/// certificate pin on the one part of playback that can still have them.
 @immutable
 class SubtitleSource {
   /// The [index]-th sidecar, shown as [label], carrying [data].
@@ -104,11 +104,11 @@ class PlaybackRequest {
   /// Whether the engine should verify the peer's certificate.
   ///
   /// True for [PlaybackTransport.osTrustedTls]. False for a pinned server the
-  /// user has explicitly allowed (D10): turning verification on there would
+  /// user has explicitly allowed: turning verification on there would
   /// refuse the very certificate they accepted.
   final bool verifyTls;
 
-  /// Prints the header **names** and none of their values (§9, NF4).
+  /// Prints the header **names** and none of their values.
   @override
   String toString() =>
       'PlaybackRequest($url, ${headers.keys.join(', ')}: <redacted>, '
@@ -126,12 +126,12 @@ class PlaybackRequest {
 /// builds `media_kit_video`'s `Video`: a fake returns a coloured box and every
 /// screen test runs, while the real one is exercised by `test_live/`.
 ///
-/// `abstract base class` for the reason D22 gives.
+/// `abstract base class` for the reason
 abstract base class PlaybackHost {
   /// Allows implementations to be `const`.
   const PlaybackHost();
 
-  /// Where playback is now. The trigger for every checkpoint report (F9).
+  /// Where playback is now. The trigger for every checkpoint report.
   Stream<Duration> get position;
 
   /// How long the file is. `Duration.zero` until the engine knows.
@@ -143,7 +143,7 @@ abstract base class PlaybackHost {
   /// Fires `true` at the end of the file, driving the `ended` report.
   Stream<bool> get completed;
 
-  /// What the engine found inside the file (F7's audio menu).
+  /// What the engine found inside the file.
   Stream<PlaybackTracks> get tracks;
 
   /// Whatever the engine failed at, in its own words.

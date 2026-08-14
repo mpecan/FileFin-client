@@ -1,18 +1,17 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:meta/meta.dart';
 
-/// One server the user has saved (SPEC.md §7's `servers[]`).
+/// One server the user has saved.
 ///
-/// **No secrets, ever** (§9): `settings.json` is plain JSON any app on a rooted
-/// device can read. [lastUser] is here because F2's silent renewal needs it.
-/// [wifiOnly] and [allowUnverifiedPlayback] are per server; the latter is D10.
+/// **No secrets, ever**: `settings.json` is plain JSON any app on a rooted
+/// device can read. [lastUser] is here because a silent renewal needs it.
+/// [wifiOnly] and [allowUnverifiedPlayback] are both per server.
 ///
 /// **A `baseUrl` carrying `userInfo` is a credential**, and the constructor
-/// refuses one — M3 shipped one to disk and back out as a `Basic` header.
-/// [SavedServer.fromTypedUrl] is where a typed URL loses it; the assert stops
-/// a second path skipping that, and is an assert rather than a repair because
-/// a silent repair is a leak nobody finds. Asserts are off in release, so the
-/// shipped guarantee is that one path plus its test.
+/// refuses one: letting it through writes a password to disk and sends it back
+/// out as a `Basic` header. [SavedServer.fromTypedUrl] is where a typed URL
+/// loses it, and the assert stops a second path skipping that. Asserts are off
+/// in release, so the shipped guarantee is that one path plus its test.
 @immutable
 class SavedServer {
   /// A saved server, identified by [id] and reached at [baseUrl].
@@ -35,11 +34,11 @@ class SavedServer {
   /// whichever screen collected the text:
   ///
   /// - the origin IS the id. It is stable across restarts without a clock or a
-  ///   random source, so re-adding the same server updates the saved entry
-  ///   rather than creating a second one with its own cookie jar and its own
-  ///   certificate pin.
+  ///  random source, so re-adding the same server updates the saved entry
+  ///  rather than creating a second one with its own cookie jar and its own
+  ///  certificate pin.
   /// - `userInfo` is dropped. `Uri.origin` already drops it; [baseUrl] is the
-  ///   field that used to keep it, and keeping it persisted a password.
+  ///   field that carries it, and persisting it would persist a password.
   factory SavedServer.fromTypedUrl(Uri url) => SavedServer(
     id: ServerId(url.origin),
     name: url.host,
@@ -65,13 +64,14 @@ class SavedServer {
   /// Where it lives.
   final Uri baseUrl;
 
-  /// The account last signed in, for F2's silent renewal. Not a secret.
+  /// The account last signed in, for a silent renewal. Not a secret.
   final String lastUser;
 
-  /// F13's hard refusal: never play over a metered connection at all.
+  /// The hard refusal: never play over a metered connection at all.
   final bool wifiOnly;
 
-  /// D10: play anyway when only F15's pin vouches for the certificate.
+  /// Play anyway when only the certificate
+  /// pin vouches for the certificate.
   final bool allowUnverifiedPlayback;
 
   /// Encodes one entry.
@@ -126,17 +126,17 @@ class SavedServer {
     allowUnverifiedPlayback,
   );
 
-  /// **No `baseUrl`.** A `toString()` is a log line waiting to happen (§9), and
+  /// **No `baseUrl`.** A `toString()` is a log line waiting to happen, and
   /// the id already names which server this is without ever having held
   /// `userInfo`.
   @override
   String toString() => 'SavedServer(${id.value}, $name)';
 }
 
-/// SPEC.md §7's `playback { … }` block — the settings that are not per server.
+/// The `playback { … }` block — the settings that are not per server.
 ///
 /// **Adding this block discarded every `settings.json` an earlier build
-/// wrote** — §13 working as designed: the decoder is strict and a failed decode
+/// wrote** — working as designed: the decoder is strict and a failed decode
 /// becomes [AppSettings.empty]. Nothing has shipped, but it does happen to a
 /// developer with a saved server.
 ///
@@ -158,10 +158,10 @@ class PlaybackPrefs {
   );
 
   /// How far playback must move before a checkpoint is reported, in **media**
-  /// seconds. 30 is upstream's own (`web/src/views/library/Player.svelte`).
+  /// seconds. 30 is upstream's own.
   final int progressIntervalSecs;
 
-  /// The size above which a metered attempt asks first (F13).
+  /// The size above which a metered attempt asks first.
   final int meteredWarnBytes;
 
   /// Encodes the block.
@@ -195,9 +195,9 @@ class PlaybackPrefs {
 /// Everything `settings.json` holds.
 ///
 /// **The decoder is strict on purpose, and this comment exists so nobody
-/// "fixes" it.** §8's tolerance governs the *server's* formats; this is our
-/// own, and §13 says ours change freely before release — no migration, no
-/// lenient decoder. A missing key means a build that no longer exists wrote
+/// "fixes" it.** Tolerance governs the *server's* formats; this is our own,
+/// and ours change freely before release — no migration, no
+/// lenient decoder. A missing key means an obsolete build wrote
 /// the file, and the right answer is to start over rather than half-read it.
 /// `SettingsStore` turns the failure into empty settings, so it costs a user
 /// nothing.
@@ -225,8 +225,8 @@ class AppSettings {
   /// Reads `selectedServerId`, whose VALUE is nullable but whose KEY is not.
   ///
   /// `json['selectedServerId'] as String?` would have read a file written
-  /// before M7.3 as "nothing selected" and carried on, which is the lenient
-  /// decoder §13 forbids for our own formats: a file an older build wrote is
+  /// read as "nothing selected" and carried on, which is the lenient decoder
+  /// we do not write for our own formats: a file an older build wrote is
   /// replaced, not half-read. Requiring the key is what makes that happen, and
   /// `SettingsStore.read` turns the refusal into empty settings.
   static ServerId? _decodeSelected(Map<String, Object?> json) {
@@ -246,10 +246,10 @@ class AppSettings {
   /// The saved servers, in the order they were added.
   final List<SavedServer> servers;
 
-  /// The settings that are not per server (SPEC.md §7).
+  /// The settings that are not per server.
   final PlaybackPrefs playback;
 
-  /// Which saved server a launch should open (F11), or null before the first
+  /// Which saved server a launch should open, or null before the first
   /// sign-in.
   ///
   /// The id rather than an index, because `servers` is reordered by nothing
@@ -261,7 +261,8 @@ class AppSettings {
   ///
   /// Falls back to the first saved server when [selectedServerId] is null or
   /// names one that is gone. That fallback is not a stand-in for a picker —
-  /// M7.4's picker is what writes the selection — it is what stops a removed
+  /// The server picker is what writes the selection — it is what stops a
+  /// removed
   /// server stranding every later launch on an empty screen.
   SavedServer? get selectedServer {
     for (final server in servers) {

@@ -59,7 +59,7 @@ class FileFinApp extends StatelessWidget {
 /// decision rather than an omission: every screen here needs a typed argument
 /// (a `SavedServer`, then a `LibraryApi`), and a named route hands over
 /// `Object?`. The routing surface is three pushes; a router package would be a
-/// dependency paying rent of "three pushes" (§4).
+/// dependency paying rent of "three pushes".
 class HomeRoute extends StatefulWidget {
   /// Chooses between the empty state and the saved-server flow.
   const HomeRoute({required this.formFactor, super.key});
@@ -75,7 +75,7 @@ class _HomeRouteState extends State<HomeRoute> {
   LibraryApi? _api;
   SavedServer? _server;
 
-  /// True while F2's cold start is in flight.
+  /// True while the cold-start restore is in flight.
   ///
   /// It is false unless something is actually happening, which is what keeps
   /// the first-launch screen an empty state rather than a spinner: with no
@@ -91,7 +91,7 @@ class _HomeRouteState extends State<HomeRoute> {
   /// Why the last launch did not reach a library, unless it merely expired.
   ///
   /// **Every reason used to land on the same silent "Signed out" screen**,
-  /// including the one F15 exists to make loud: a `CertificatePinMismatch`
+  /// including the one pinning exists to make loud: a `CertificatePinMismatch`
   /// read as an invitation to retype a password at a server whose identity had
   /// just failed. The words existed in `describeApiError`; nothing called them.
   FileFinApiException? _launchFailure;
@@ -112,13 +112,12 @@ class _HomeRouteState extends State<HomeRoute> {
     super.dispose();
   }
 
-  /// F2's cold start: the saved session, restored without a password typed.
+  /// The cold start: the saved session, restored without a password typed.
   ///
-  /// Three outcomes, and the third is the one F2 exists for. No saved server
+  /// Three outcomes, and the third is the one this exists for. No saved server
   /// lands on *"No server yet"*; a saved server whose secrets are gone lands on
-  /// *"Signed out"*; and a saved server whose session the server has since
-  /// forgotten is renewed silently by F3 from the stored password and lands in
-  /// the library — see `LibraryApi.restore`.
+  /// *"Signed out"*; and a saved server whose session has been forgotten is
+  /// renewed silently from the stored password and lands in the library.
   void _launch() {
     final target = FileFinScope.of(context).settings.read().selectedServer;
     if (target == null) return;
@@ -127,10 +126,9 @@ class _HomeRouteState extends State<HomeRoute> {
   }
 
   Future<void> _resume(SavedServer target) async {
-    // `apiForServer`, not `apiFactory`: it resolves F15's accepted fingerprint
-    // out of the secure store first. M7.5 wired the pin into every path that
-    // builds a client EXCEPT this one, and this is the path F2 exists for — so
-    // a self-signed server, F15's stated common case, failed every cold start
+    // `apiForServer`, not `apiFactory`: it resolves the accepted fingerprint
+    // out of the secure store first. Without it a self-signed server — the
+    // common case for a home server — fails every cold start
     // with `CertificateNotTrusted` and sent the user to type a password the
     // store already held.
     final api = await apiForServer(FileFinScope.of(context), target);
@@ -174,7 +172,7 @@ class _HomeRouteState extends State<HomeRoute> {
     ),
   );
 
-  /// F11's picker, and the three things it can ask for.
+  /// the server picker, and the three things it can ask for.
   ///
   /// `onAdd` pops this route **before** starting the add-server flow, and that
   /// is not tidiness: [_signInRoute] pops exactly once on success, which is
@@ -201,8 +199,8 @@ class _HomeRouteState extends State<HomeRoute> {
     );
   }
 
-  /// F11's switch: one method, because closing the previous client is the half
-  /// that leaks a socket when it is written twice.
+  /// Switching servers: one method, because closing the previous client is the
+  /// half that leaks a socket when it is written twice.
   ///
   /// The selection is written **before** the restore, so a server whose session
   /// has since died is still the one the next launch opens — the user asked for
@@ -240,7 +238,7 @@ class _HomeRouteState extends State<HomeRoute> {
     setState(() {
       _api?.close();
       _api = null;
-      // Dropped, unlike in [_sessionExpired]: this server no longer exists, so
+      // Dropped, unlike in [_sessionExpired]: this server is gone, so
       // offering to sign in to it is offering a screen with nowhere to go.
       _server = null;
     });
@@ -279,7 +277,7 @@ class _HomeRouteState extends State<HomeRoute> {
   /// dropping it sent someone who signed out of their second server to their
   /// first, with no picker to correct it. **It also does NOT call `logout()`**,
   /// which is the whole distinction from [_signOut]: the stored password is
-  /// what F3 renews from, so clearing it would make every server restart a
+  /// what a renewal draws on, so clearing it would make every server restart a
   /// password prompt.
   void _sessionExpired() {
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -289,18 +287,18 @@ class _HomeRouteState extends State<HomeRoute> {
     });
   }
 
-  /// The user asking to be forgotten (F2, §9).
+  /// The user asking to be forgotten.
   ///
   /// `logout()` first, then the local drop: closing the client releases the
   /// sockets the request would travel on.
   ///
-  /// A server that does not answer still signs the user out. `logout`'s
+  /// A server that does not answer still signs the user out. `logout()`'s
   /// `finally` has cleared the jar and both secrets by the time it throws, so
   /// treating that as "still signed in" would claim a session neither side
   /// holds — and strand anyone whose server is down.
   ///
   /// It takes the API rather than reading [_api], so there is no "what if there
-  /// isn't one" branch nothing could ever cover (§5).
+  /// isn't one" branch nothing could ever cover.
   Future<void> _signOut(LibraryApi api) async {
     try {
       await api.logout();
@@ -375,7 +373,7 @@ class _HomeRouteState extends State<HomeRoute> {
     final api = _api;
     if (api != null && server != null) {
       // The five browsing screens and the routes between them moved into
-      // `LibraryShell` at M6.7, because two of them — the `push<bool>` detail
+      // `LibraryShell`, because two of them — the `push<bool>` detail
       // route and the home reload it triggers — are a pair that only the
       // owner of the Home tab can wire.
       // The KEY is what makes a switch a new shell rather than the old one
@@ -412,7 +410,7 @@ class _HomeRouteState extends State<HomeRoute> {
         // route push: home, the tree, the grid, search and the detail page can
         // all be the screen that discovers the session is gone, and every one
         // of them must land on the same place. All of them therefore get
-        // `_signOut` — the grid and the detail page shipped M3 without it,
+        // `_signOut` — the grid and the detail page once lacked it,
         // which left the two screens a user actually lives in showing "Please
         // sign in again" with no button and no retry.
         onSignIn: _sessionExpired,

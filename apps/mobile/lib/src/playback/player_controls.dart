@@ -6,7 +6,7 @@ import 'package:filefin_mobile/src/playback/player_transport.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Everything a person can do to playback (F7), drawn over the video.
+/// Everything a person can do to playback, drawn over the video.
 ///
 /// **One overlay for the phone and the television**, differing only in the
 /// sizes [PlayerControlsMetrics] carries. The alternative — a `TvPlayerPage`
@@ -76,7 +76,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   //
   // No `debugLabel`: nothing reads it, and `just mutants` rewrites the string
   // to `player+wake` — a mutant no assertion can ever kill, because no
-  // behaviour separates the two. A line that cannot be tested is a line §1
+  // behaviour separates the two. A line that cannot be tested is a line
   // asks not to be written.
   final _wake = FocusNode();
 

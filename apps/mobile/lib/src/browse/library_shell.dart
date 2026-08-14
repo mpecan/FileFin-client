@@ -18,28 +18,28 @@ import 'package:flutter/material.dart';
 /// default arm and a fourth destination is a compile error rather than a blank
 /// tab.
 enum LibraryTab {
-  /// F6's three rows.
+  /// The three home rows.
   home,
 
-  /// F4's category tree.
+  /// The category tree.
   library,
 
-  /// F5's search.
+  /// Search.
   search,
 }
 
 /// What a signed-in server looks like: Home, Library and Search, and the one
 /// route that opens an item from any of them.
 ///
-/// **Tabs are built on first selection, never before, and NF1 is why**: a cold
-/// start must issue one request, not three, where `IndexedStack` and
-/// `TabBarView` build every child at once. A selected tab stays built.
+/// **Tabs are built on first selection, never before**: a cold start must issue
+/// one request, not three, where `IndexedStack` and `TabBarView` build every
+/// child at once. A selected tab stays built.
 ///
 /// **One `_openDetail` for all three tabs**, popping `true` when it wrote watch
-/// state — the only thing that reloads the home rows (`docs/field-notes.md`).
-/// The rejected alternative is worth naming: a `WatchStateBus` across the three
-/// tabs, exactly the "second state mechanism" D9 names as its retirement
-/// condition.
+/// state — the only thing that reloads the home rows, which cannot be
+/// predicted. The rejected alternative is worth naming: a `WatchStateBus`
+/// across the three tabs, which is a second state mechanism and exactly what
+/// the hand-written controllers exist to avoid.
 class LibraryShell extends StatefulWidget {
   /// Browses [api] under [title].
   const LibraryShell({
@@ -67,10 +67,10 @@ class LibraryShell extends StatefulWidget {
   )?
   onPlay;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
-  /// Opens F11's server picker: switch to another saved server, or forget
+  /// Opens the server picker: switch to another saved server, or forget
   /// one. The switch itself is `HomeRoute`'s, because closing the previous
   /// client is.
   final VoidCallback? onServers;
@@ -78,12 +78,12 @@ class LibraryShell extends StatefulWidget {
   /// Opens the playback settings sheet.
   final VoidCallback? onSettings;
 
-  /// Ends the session and forgets this account (F2, §9).
+  /// Ends the session and forgets this account.
   ///
   /// Distinct from [onSignIn], which is what a `SessionExpired` reaches: that
   /// one is the server having already forgotten, and the stored password is
-  /// what F3 renews from, so it must NOT be cleared. This is the user asking
-  /// to be forgotten, and it clears everything.
+  /// what a renewal draws on, so it must NOT be cleared. This is the user
+  /// asking to be forgotten, and it clears everything.
   final VoidCallback? onSignOut;
 
   @override
@@ -99,9 +99,9 @@ class _LibraryShellState extends State<LibraryShell> {
   /// **A set of tabs, never a map of widgets, and the difference was a
   /// data-loss bug.** Caching the built `Widget` froze every argument it was
   /// built from, including the `onSettings` closure `app.dart` rebuilds around
-  /// the current `SavedServer` — so Wi-Fi only and D10's allowance reverted to
-  /// their sign-in values on a second visit and the next toggle wrote the stale
-  /// value back (M6.R/P1.1).
+  /// the current `SavedServer` — so Wi-Fi only and the unverified-playback
+  /// allowance reverted to their sign-in values on a second visit, and the next
+  /// toggle wrote the stale value back.
   ///
   /// Rebuilding each selected tab is what Flutter expects anyway: the
   /// `Offstage`'s `ValueKey(tab)` carries each tab's element, and so its state

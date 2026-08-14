@@ -4,10 +4,10 @@ import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/foundation.dart';
 
-/// F10's four writes on one screen: published immediately, serialised, and
-/// reverted when the server refuses.
+/// The four watch-state writes on one screen: published immediately,
+/// serialised, and reverted when the server refuses.
 ///
-/// D17 is the whole design: published before the round trip, exact rather than
+/// The design: published before the round trip, exact rather than
 /// hopeful, exactly one write in flight, and a queue deliberately rejected.
 ///
 /// It imports no widget, so every case below is a plain `test()`.
@@ -34,7 +34,7 @@ class WatchActions extends ChangeNotifier {
   /// Whether any write has succeeded.
   ///
   /// The rows come from the `user_state` mirror and are ordered by an `updated`
-  /// stamp that **every** write re-stamps (M6.0/E-3), so a screen that changed
+  /// stamp that **every** write re-stamps, so a screen that changed
   /// anything has invalidated an ordering it cannot recompute.
   bool get wrote => _wrote;
 
@@ -42,7 +42,7 @@ class WatchActions extends ChangeNotifier {
   /// has not answered yet**.
   ///
   /// This is what the detail route pops with, and [wrote] alone was wrong for
-  /// it — D17 has the defect and the residual race this leaves, which is named
+  /// it — That is the defect and the residual race this leaves, which is named
   /// rather than hidden.
   bool get wroteOrWriting => _wrote || _busy;
 
@@ -54,24 +54,24 @@ class WatchActions extends ChangeNotifier {
   /// clears it; a failure is true until something else is attempted. With one
   /// field the refusal was cleared only by the *next accepted write*, so a red
   /// sentence saying a save was under way sat on screen indefinitely after that
-  /// save had finished (M6.R/P1.5).
+  /// save had finished.
   String? get notice => _failure ?? _refusal;
 
-  /// `POST .../favorite`.
+  /// `POST.../favorite`.
   Future<void> favourite(MediaDetail detail, {required bool favorite}) => _run(
     detail,
     setFavorite(WatchState.fromDetail(detail), favorite: favorite),
     () => _api.setFavorite(detail.id, favorite: favorite),
   );
 
-  /// `POST .../rating` — 1-10, and 0 is how the server clears one.
+  /// `POST.../rating` — 1-10, and 0 is how the server clears one.
   Future<void> rate(MediaDetail detail, {required int rating}) => _run(
     detail,
     setRating(WatchState.fromDetail(detail), rating: rating),
     () => _api.setRating(detail.id, rating: rating),
   );
 
-  /// `POST .../watched` — sets or clears the flag and **keeps the pointer**.
+  /// `POST.../watched` — sets or clears the flag and **keeps the pointer**.
   ///
   /// Pointing this at [LibraryApi.clearWatched] is the single most valuable
   /// mutation to try against this milestone's tests: the widget case that
@@ -83,7 +83,7 @@ class WatchActions extends ChangeNotifier {
     () => _api.setWatched(detail.id, watched: watched),
   );
 
-  /// `DELETE .../watched` — clears the flag **and** the pointer.
+  /// `DELETE.../watched` — clears the flag **and** the pointer.
   Future<void> clearWatchState(MediaDetail detail) => _run(
     detail,
     clearWatched(WatchState.fromDetail(detail)),
@@ -127,7 +127,7 @@ class WatchActions extends ChangeNotifier {
   /// `ChangeNotifier` asserts on `notifyListeners()` after disposal, and the
   /// `finally` above runs whenever the write answers — which is routinely after
   /// the screen has gone. *Tap favourite, then Back before the response* threw
-  /// `A WatchActions was used after being disposed` in debug (M6.R/P1.3), and
+  /// `A WatchActions was used after being disposed` in debug, and
   /// the crash named the notifier rather than the screen that closed.
   @override
   void dispose() {

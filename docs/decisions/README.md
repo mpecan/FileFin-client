@@ -68,9 +68,21 @@ What this costs, and what now depends on it.
 `Retires when` is the field most worth filling. A decision with no retirement
 condition is one nobody will ever feel entitled to reverse.
 
+## The code does not cite these
+
+There is deliberately no `/// See D12.` anywhere. A citation is a reference, a
+reference can rot, and a dangling one is worse than none — nothing checks that
+`D12` still exists or still says what the comment claims. CLAUDE.md §2 is the
+rule; a comment states the thing it needs to state, in the present tense, and
+stops.
+
+That makes this directory findable by reading it rather than by following a
+pointer. It is small, the titles are full sentences, and `SPEC.md` §13 lists
+every one. If a decision is hard to find from the code it constrains, the fix
+is a clearer title here — not a pointer there.
+
 ## Adding one
 
 1. Take the next free number from `SPEC.md` §13. Numbers are never reused.
 2. Write `Dnn-short-slug.md` here.
 3. Add the row to `SPEC.md` §13 linking to it.
-4. In the code, leave a one-line citation: `/// See D12.`

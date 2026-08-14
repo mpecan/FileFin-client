@@ -23,7 +23,8 @@ part 'client_browse.dart';
 part 'client_playback.dart';
 part 'client_watch_state.dart';
 
-/// One server's API, typed, with F3's retry and F15's pinning already wired.
+/// One server's API, typed, with the 401 retry and certificate pinning already
+/// wired.
 ///
 /// **Two constructors, and the split is what makes the tests possible without
 /// a test-only hook.** The primary one takes its `Dio`s, so a suite can put a
@@ -32,10 +33,10 @@ part 'client_watch_state.dart';
 /// that only exists to be looked at. [FileFinClient.forServer] is what an app
 /// calls.
 ///
-/// Every endpoint takes a `CancelToken` (NF5) and every failure arrives as a
+/// Every endpoint takes a `CancelToken` and every failure arrives as a
 /// `FileFinApiException`; nothing here lets a `DioException` escape.
 class FileFinClient {
-  /// Wires [dio] with the cookie jar and F3, in that order.
+  /// Wires [dio] with the cookie jar and the 401 retry, in that order.
   ///
   /// **Interceptor order is owned here rather than by the caller**, because it
   /// is load-bearing: `CookieManager` must sit in front of `AuthInterceptor`
@@ -44,7 +45,7 @@ class FileFinClient {
   /// already added runs after them.
   ///
   /// **`LogInterceptor` is never added, here or anywhere.** dio's own prints
-  /// `RequestOptions.data`, which on `/api/login` is the password (§9, NF4).
+  /// `RequestOptions.data`, which on `/api/login` is the password.
   FileFinClient({
     required this.server,
     required Dio dio,
@@ -61,7 +62,7 @@ class FileFinClient {
 
   /// Builds a client for one saved server, with everything wired.
   ///
-  /// [pin] is the fingerprint the user accepted earlier (F15). It is resolved
+  /// [pin] is the fingerprint the user accepted earlier. It is resolved
   /// into memory *here* because TLS's callbacks are synchronous and cannot
   /// await a store read — so accepting a new certificate means writing the pin
   /// and building a new client, which is what keeps acceptance a deliberate
@@ -111,10 +112,10 @@ class FileFinClient {
   /// Which saved server this client talks to.
   final ServerId server;
 
-  /// The client `/api/login`, `/api/logout` and the probe use — no F3 on it.
+  /// The client `/api/login`, `/api/logout` and the probe use — no retry on it.
   final Dio authDio;
 
-  /// The cookie jar both clients share, in memory only (§9).
+  /// The cookie jar both clients share, in memory only.
   final CookieJar jar;
 
   /// Session state and renewal.
@@ -128,14 +129,14 @@ class FileFinClient {
 
   final Dio _dio;
 
-  /// Is there a FileFin server at this address (F1)?
+  /// Is there a FileFin server at this address?
   ///
   /// Runs on [authDio], which carries no `AuthInterceptor`: the probe is
   /// unauthenticated and must never be able to provoke a re-auth.
   Future<ProbeResult> probeServer({CancelToken? cancelToken}) =>
       probe(dio: authDio, urls: urls, pinner: pinner, cancelToken: cancelToken);
 
-  /// `POST /api/login` — stores the session and the password (F2).
+  /// `POST /api/login` — stores the session and the password.
   Future<AuthResult> login(Credentials credentials) =>
       sessions.login(credentials);
 
@@ -151,7 +152,7 @@ class FileFinClient {
 
   /// Refuses an HTML body on a route that does not serve JSON.
   ///
-  /// Same mechanism as F1 (D21): catch-all HTML handed to an `ImageProvider`
+  /// Same mechanism: catch-all HTML handed to an `ImageProvider`
   /// becomes a broken image with no explanation, and handed to libmpv as a
   /// subtitle becomes a track with no cues. Named here it becomes a sentence.
   static void _refuseHtml(Headers headers, Uri url) => refuseHtml(headers, url);
@@ -176,11 +177,11 @@ class FileFinClient {
   /// Builds a URL, turning a rejected identifier into one of our errors.
   ///
   /// `ApiPaths` refuses `''`, `'.'` and `'..'` with an `ArgumentError`, and the
-  /// bad value comes from **server data** (§8's defaults), so letting it escape
-  /// would mean one null id crashes the UI — the opposite of G5.
+  /// bad value comes from **server data**, so letting it escape
+  /// would mean one null id crashes the UI — the opposite of degrading visibly.
   ///
   /// What this deliberately does **not** do is filter bad items out of a list.
-  /// That IS the silent failure G5 forbids: the list is returned exactly as
+  /// That IS a silent failure: the list is returned exactly as
   /// decoded, and opening the bad item fails loudly, naming the value.
   Uri _uri(Uri Function() build, String field) {
     try {
@@ -225,9 +226,10 @@ class FileFinClient {
   /// **It checks the media type even though these routes answer `204` with no
   /// body**, which is the case the check exists for rather than an oversight:
   /// an unmatched path answers `200 text/html`, and a helper reading only the
-  /// status took that as a successful write, so every F10 write reported
+  /// status took that as a successful write, so every watch-state write
+  /// reported
   /// success to a screen that had already drawn the change. A genuine `204`
-  /// carries no `Content-Type` at all and passes untouched (D21).
+  /// carries no `Content-Type` at all and passes untouched.
   Future<void> _sendJson(
     Uri url,
     Map<String, Object?> body, {
@@ -253,7 +255,7 @@ class FileFinClient {
   /// It exists at all because **the verb distinguishes the two un-watch
   /// operations** (`docs/field-notes.md`): a `DELETE` carrying a body would be
   /// the other operation wearing the wrong verb. It needs its own media-type
-  /// check (D21) — fixing the POST helper alone would have left the un-watch
+  /// check — fixing the POST helper alone would have left the un-watch
   /// that drops the resume pointer reading the catch-all as success.
   Future<void> _sendDelete(Uri url, {CancelToken? cancelToken}) async {
     try {

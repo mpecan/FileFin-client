@@ -47,7 +47,8 @@ final class MediaKitPlaybackHost extends PlaybackHost {
   /// `tls-verify` is set **before** the open, being a property of the
   /// connection mpv is about to make. libmpv verifies nothing by default
   /// (`docs/field-notes.md`), so this is the only thing between an OS-trusted
-  /// server and an unverified peer; D10 covers what it cannot help with.
+  /// server and an unverified peer; the per-server allowance covers
+  /// what it cannot help with.
   ///
   /// `Media`'s `start:` rather than open-then-seek: mpv applies it as `start=`
   /// on load, so playback begins at the resume position rather than showing a
@@ -93,7 +94,7 @@ final class MediaKitPlaybackHost extends PlaybackHost {
   /// Switches to [track] by the id libmpv itself reported.
   ///
   /// `AudioTrack`'s positional arguments are `(id, title, language)` — read off
-  /// `media_kit`'s own `track.dart:152`, and not the order the names suggest.
+  /// `media_kit`'s own `track.dart`, and not the order the names suggest.
   /// Passing them the other way round put the label in `language`, which the
   /// tests caught only because they assert the fields rather than the count.
   @override
@@ -104,8 +105,8 @@ final class MediaKitPlaybackHost extends PlaybackHost {
   ///
   /// `SubtitleTrack.data`, deliberately not `SubtitleTrack.uri`. The sidecar
   /// route is authenticated, so fetching it through `LibraryApi` gets the
-  /// cookie jar, F3's retry and F15's pin; a `sub-add` would use libmpv's own
-  /// unverified HTTP with none of the three. Measured working at M4.0/E4: the
+  /// cookie jar, the 401 retry and the certificate pin; a `sub-add` would use
+  /// libmpv's own unverified HTTP with none of the three. Measured working: the
   /// server's `text/vtt` body handed straight to `SubtitleTrack.data` produced
   /// a rendered cue.
   @override

@@ -11,11 +11,11 @@ enum UnwatchChoice {
   /// `POST {"watched": false}` — the flag goes, the position stays.
   keepPosition,
 
-  /// `DELETE .../watched` — the flag and the position both go.
+  /// `DELETE.../watched` — the flag and the position both go.
   forgetEverything,
 }
 
-/// F10 on the detail screen, as four pieces the redesign places separately.
+/// The watch-state controls, as four pieces the redesign places separately.
 ///
 /// **The watched control is where this screen stops hiding the server's
 /// asymmetry and starts explaining it**: un-watching is two different
@@ -23,7 +23,7 @@ enum UnwatchChoice {
 /// So an unwatched item gets one button and a watched one gets a menu whose
 /// two entries each say what happens to the position.
 ///
-/// **Nothing is disabled while a write is in flight** (D17): a control that
+/// **Nothing is disabled while a write is in flight**: a control that
 /// greys out has no way to say why, so they stay tappable, a second tap is
 /// refused with a sentence, and `busy` draws only a progress bar. One class
 /// became four at the redesign; the behaviour of each is unchanged.
@@ -169,8 +169,9 @@ class _SquareButton extends StatelessWidget {
 
 /// What a write that failed has to say, and whether one is in flight.
 ///
-/// Drawn once, under the action row, rather than beside each control: F10
-/// allows exactly one write at a time, so there is only ever one thing to say.
+/// Drawn once, under the action row, rather than beside each control: the
+/// writes allows exactly one write at a time, so there is only ever one thing
+/// to say.
 class WatchStateNotice extends StatelessWidget {
   /// Reports on [actions].
   const WatchStateNotice({required this.actions, super.key});
@@ -227,7 +228,7 @@ class _Consequence extends StatelessWidget {
 ///
 /// **A value outside 0-10 is reachable and this branch is correctness, not
 /// polish.** The server validates a rating on write and not on read — measured
-/// at M6.0/E-6, where a hand-edited `meta.json` served `rating: 99` — and a
+/// at, where a hand-edited `meta.json` served `rating: 99` — and a
 /// `DropdownButton` whose `value` is not among its items asserts rather than
 /// rendering. So an out-of-range rating is shown as itself, with no item
 /// selected and a line saying what picking one will do.
@@ -260,7 +261,7 @@ class RatingField extends StatelessWidget {
                 // `value != rating` as well as non-null: a `DropdownButton`
                 // calls this for the entry that is already selected, and every
                 // write re-stamps `updated`, which is the ordering key of all
-                // three home rows (M6.0/E-3). So re-picking the 7 an item
+                // three home rows. So re-picking the 7 an item
                 // already has would shuffle somebody's *Continue watching* for
                 // nothing. `rating` rather than `detail.rating` is deliberate:
                 // an out-of-range value is not selected, so every entry

@@ -4,14 +4,14 @@ import 'package:filefin_mobile/src/browse/file_list.dart';
 import 'package:filefin_mobile/src/playback/player_controller.dart';
 import 'package:flutter/widgets.dart';
 
-/// What the lock screen shows while an item plays (F14).
+/// What the lock screen shows while an item plays.
 ///
 /// Deliberately three fields and no artwork. The poster is behind
 /// `s.auth` and every media-session artwork API takes a **URI the OS
 /// fetches for itself**, unauthenticated — so publishing one would either show
 /// nothing or leak the session cookie into a request we do not control.
 /// `browse/poster_image_provider.dart` carries the same reasoning for the
-/// poster cache. It said `docs/architecture.md` until M7.R, and M7.9 had
+/// poster cache. It said `docs/architecture.md` once, and had
 /// deleted that paragraph in the same audit that corrected the diagram.
 @immutable
 class NowPlayingItem {
@@ -45,7 +45,7 @@ class NowPlayingItem {
   String toString() => 'NowPlayingItem($title, $subtitle, $duration)';
 }
 
-/// Where the transport is, for the lock screen's scrubber and button (F14).
+/// Where the transport is, for the lock screen's scrubber and button.
 @immutable
 class NowPlayingTransport {
   /// Playing or not, at [position], of [duration].
@@ -82,7 +82,7 @@ class NowPlayingTransport {
 ///
 /// Three, because three is what [NowPlayingBinder] can honour: the platform
 /// vocabulary is far wider (skip, rate, queue) and a command with no consumer
-/// is a dead branch (§1, §5).
+/// is a dead branch.
 sealed class TransportCommand {
   const TransportCommand();
 }
@@ -117,7 +117,7 @@ final class SeekCommand extends TransportCommand {
   String toString() => 'SeekCommand($to)';
 }
 
-/// The OS's media session, as a port (F14).
+/// The OS's media session, as a port.
 ///
 /// The same shape as `PlaybackHost` and for the same reason: Android's
 /// `MediaSession` plus a foreground service and iOS's `MPNowPlayingInfoCenter`
@@ -139,13 +139,13 @@ abstract class NowPlayingHost {
   Future<void> clear();
 }
 
-/// Keeps a [NowPlayingHost] in step with one [PlayerController] (F14).
+/// Keeps a [NowPlayingHost] in step with one [PlayerController].
 ///
 /// **Why the controller does not do this itself.** A media session is a second
 /// consumer of the same state the screen draws, and `PlayerController` is
 /// already the file-size gate's largest warning. More importantly it would put
-/// a platform concern inside the state machine that F9's progress reports are
-/// keyed on — and every one of M4.R's data-corruption defects lived in exactly
+/// a platform concern inside the state machine the progress reports are keyed
+/// on — and every data-corruption defect this player has had lived in exactly
 /// that sequencing. This observes and publishes; it decides nothing.
 class NowPlayingBinder {
   /// Binds [session] to [controller] and publishes the first metadata at once.
@@ -194,7 +194,7 @@ class NowPlayingBinder {
   }
 
   void _onChange() {
-    // Covers F7's Next — a lock screen naming the wrong episode is backlog
+    // Covers Next — a lock screen naming the wrong episode is backlog
     // row N's device check — and the duration arriving after the open.
     _publish();
     final now = NowPlayingTransport(

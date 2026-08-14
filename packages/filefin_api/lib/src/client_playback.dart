@@ -10,7 +10,7 @@ part of 'client.dart';
 /// readable, which is what `errors.dart` and `errors_certificates.dart`
 /// already do for the same reason.
 extension FileFinClientPlayback on FileFinClient {
-  /// `POST /api/media/{id}/progress` — one playback report (F9), `204`.
+  /// `POST /api/media/{id}/progress` — one playback report, `204`.
   ///
   /// `async` for the same reason as [categoryMedia]: a rejected identifier
   /// arrives as a failed Future rather than as a synchronous throw, and this
@@ -18,7 +18,7 @@ extension FileFinClientPlayback on FileFinClient {
   /// into the player's own stream handler.
   ///
   /// A `400` is [BadRequest] and means the file list changed under us
-  /// (`bad file index`, `media.go:511`). It is deliberately **not** retryable:
+  /// (`bad file index`, `media.go`). It is deliberately **not** retryable:
   /// the same body would be rejected on every subsequent tick.
   Future<void> postProgress(
     MediaId id,
@@ -28,7 +28,7 @@ extension FileFinClientPlayback on FileFinClient {
     _uri(() => urls.progress(id), 'media id'),
     // Written out rather than generated. `ProgressReport` has no `toJson` —
     // it is a client-side type the engine folds, not a wire model — and the
-    // four field names are the server's (`media.go:503`), so spelling them
+    // four field names are the server's, so spelling them
     // here is what keeps `just it` able to catch a rename.
     {
       'file': report.file.value,
@@ -39,11 +39,11 @@ extension FileFinClientPlayback on FileFinClient {
     cancelToken: cancelToken,
   );
 
-  /// `GET .../file/{n}/sub/{k}` — the k-th sidecar, converted SRT→WebVTT.
+  /// `GET.../file/{n}/sub/{k}` — the k-th sidecar, converted SRT→WebVTT.
   ///
   /// **Fetched through this client on purpose, rather than handed to libmpv as
   /// a URL.** The route sits behind `s.auth`, so a `sub-add` from libmpv would
-  /// use its own unverified HTTP with no cookie jar, no F3 retry and no pin.
+  /// use its own unverified HTTP with no cookie jar, no 401 retry and no pin.
   /// Reading the text here and passing it to `SubtitleTrack.data` keeps the
   /// authenticated path for the one part of playback that can use it.
   ///
@@ -70,7 +70,7 @@ extension FileFinClientPlayback on FileFinClient {
     }
   }
 
-  /// `HEAD .../file/{n}` — F12's pre-flight, run **before** the engine opens.
+  /// `HEAD.../file/{n}` — the pre-flight, run **before** the engine opens.
   ///
   /// **libmpv surfaces no status code**, so a `415` reaches the player as
   /// `Failed to open <url>.` over a black surface. So ask the layer that *can*
@@ -80,8 +80,8 @@ extension FileFinClientPlayback on FileFinClient {
   /// `docs/field-notes.md`.
   ///
   /// `validateStatus` accepts everything under 400 so a `3xx` **returns**
-  /// rather than throwing, and `followRedirects` stays off (D13). The HTML
-  /// guard is 2xx-only (D21), because the `307` carries `text/html` too.
+  /// rather than throwing, and `followRedirects` stays off. The HTML
+  /// guard is 2xx-only, because the `307` carries `text/html` too.
   Future<void> requirePlayable(
     MediaId id,
     FileIndex file, {
@@ -120,7 +120,8 @@ extension FileFinClientPlayback on FileFinClient {
   /// see a status code: a 401 arrives as "failed to open" and nothing else, so
   /// a dead session would look exactly like a missing file. Making one
   /// authenticated call through this package immediately before the open means
-  /// F3 has already renewed and the cookie handed over is the renewed one.
+  /// the session has already been renewed and the cookie handed over is the
+  /// renewed one.
   ///
   /// A `200` with no cookie in the jar is [SessionExpired] rather than an empty
   /// header: handing libmpv `Cookie: filefin_session=` produces a 401 inside
@@ -138,10 +139,10 @@ extension FileFinClientPlayback on FileFinClient {
 
   /// What libmpv's own connection to this server would be able to verify.
   ///
-  /// It reads this client's own configuration and asks nothing: the scheme
-  /// says whether TLS is in play at all, and a pin's existence says whether
-  /// the certificate is one only *we* trust. `decide()` turns that into D10's
-  /// refusal.
+  /// It reads this client's own configuration and asks nothing: the scheme says
+  /// whether TLS is in play at all, and a pin's existence says whether the
+  /// certificate is one only *we* trust. `decide()` turns that into the
+  /// refusal of unverified playback.
   ///
   /// A pin over plain `http://` is still [PlaybackTransport.plainHttp] —
   /// there is no handshake to pin, so reporting otherwise would refuse

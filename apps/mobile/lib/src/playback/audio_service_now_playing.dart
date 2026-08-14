@@ -5,14 +5,14 @@ import 'package:filefin_mobile/src/playback/now_playing.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:meta/meta.dart';
 
-/// F14's platform half, behind [NowPlayingHost].
+/// the media session's platform half, behind [NowPlayingHost].
 ///
 /// **The only file in this package that may import `audio_service`**, exactly
 /// as `media_kit_playback_host.dart` is the only one that may import
 /// `media_kit`. Nothing above it knows a `MediaItem` from a `PlaybackState`.
 ///
 /// What this arrangement was measured doing on each platform is in
-/// `docs/field-notes.md`; `docs/risks.md` R3 has the negative controls.
+/// `docs/field-notes.md`, which also carries the negative controls.
 final class AudioServiceNowPlaying implements NowPlayingHost {
   /// Wraps the handler [openNowPlaying] built.
   AudioServiceNowPlaying(this._handler);
@@ -61,7 +61,7 @@ final class AudioServiceNowPlaying implements NowPlayingHost {
       //
       // Publishing `idle` is ALSO what takes the Android foreground
       // notification down: `_observePlaybackState` calls `stopService` on the
-      // transition into it (`audio_service.dart:1131-1134`). Doing it that way
+      // transition into it. Doing it that way
       // rather than reaching for a stop method is what keeps the command
       // stream open for the next player screen — the session is per PROCESS,
       // not per screen.
@@ -74,7 +74,7 @@ final class AudioServiceNowPlaying implements NowPlayingHost {
 /// make; the three overridden here are the three [NowPlayingBinder] can
 /// honour. The rest keep its no-op bodies, which is the point of extending it
 /// rather than implementing `AudioHandlerCallbacks` — thirty empty methods
-/// would be thirty dead branches (§5).
+/// would be thirty dead branches.
 final class FileFinAudioHandler extends BaseAudioHandler {
   final _commands = StreamController<TransportCommand>.broadcast();
 
@@ -101,7 +101,7 @@ final class FileFinAudioHandler extends BaseAudioHandler {
   Future<void> stop() async => _commands.add(const PauseCommand());
 }
 
-/// Starts the OS session and returns the port bound to it (F14).
+/// Starts the OS session and returns the port bound to it.
 ///
 /// A top-level function rather than a constructor because `AudioService.init`
 /// is a one-shot global — it `assert`s on a second call — so `main()` hands
@@ -141,7 +141,7 @@ Future<NowPlayingHost> _openSession() async => AudioServiceNowPlaying(
   ),
 );
 
-/// The artwork cache F14 declines to have (§1).
+/// The artwork cache the media session declines to have.
 ///
 /// `AudioService.init` builds a `DefaultCacheManager()` when handed none, which
 /// opens a sqflite database and an `HttpClient` to fetch `MediaItem.artUri`.

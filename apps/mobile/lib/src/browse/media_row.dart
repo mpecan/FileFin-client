@@ -15,7 +15,7 @@ import 'package:flutter/rendering.dart';
 /// than something absent. One rule in one place, so the three call sites
 /// cannot drift.
 ///
-/// Virtualised for the reason `MediaGrid` is (D14): a heavy user's *Watched*
+/// Virtualised for the reason `MediaGrid` is: a heavy user's *Watched*
 /// row is as long as their library.
 class MediaRow extends StatelessWidget {
   /// Draws [items] under [label], fetching posters through [api].
@@ -39,7 +39,7 @@ class MediaRow extends StatelessWidget {
   ///
   /// **Never re-sorted here.** Every bucket arrives `ORDER BY us.updated DESC`
   /// and `updated` is re-stamped by *every* write, including a rating
-  /// (M6.0/E-3), so the server's order carries information no client can
+  ///, so the server's order carries information no client can
   /// reconstruct.
   final List<MediaSummary> items;
 

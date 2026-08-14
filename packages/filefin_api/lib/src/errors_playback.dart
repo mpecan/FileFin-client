@@ -2,10 +2,10 @@ part of 'errors.dart';
 
 /// A `415`: this file needs transcoding and the server has it turned off.
 ///
-/// **F12's variant, and the wording is the whole reason it exists.** F12 asks
+/// **The wording is the whole reason this variant exists.** It asks
 /// that a 415 be explained as "transcoding is disabled on the server and this
 /// file needs it", never as "playback failed" — so it cannot be
-/// `ServerFailure`, whose message is exactly the sentence F12 forbids.
+/// `ServerFailure`, whose message is exactly the sentence to avoid.
 ///
 /// It is **not retryable**, only one of upstream's two 415s can reach a client,
 /// and a `HEAD` 415 arrives with an empty body — which is why there is no

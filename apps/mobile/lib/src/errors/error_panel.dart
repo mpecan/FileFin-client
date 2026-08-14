@@ -25,7 +25,7 @@ class ErrorPanel extends StatelessWidget {
   /// mashing it against a limiter that locks the account for fifteen minutes.
   final VoidCallback? onRetry;
 
-  /// Called when the user asks to sign in again (F3's last resort).
+  /// Called when the user asks to sign in again.
   final VoidCallback? onSignIn;
 
   @override

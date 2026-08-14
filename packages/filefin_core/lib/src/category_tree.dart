@@ -4,7 +4,7 @@ import 'package:meta/meta.dart';
 /// One category and the categories beneath it.
 ///
 /// The server has no tree endpoint: `GET /api/categories` returns a flat list
-/// with a `parentId` on each row (SPEC.md §3.2, `library.go:27-42`), and the
+/// with a `parentId` on each row, and the
 /// assembly is the client's job. Doing it here rather than in a widget is what
 /// puts it in front of `dart test`, the mutation gate and `kiri_check`.
 @immutable
@@ -26,7 +26,7 @@ class CategoryNode {
   ///
   /// Carried on the node rather than recomputed by the UI: a `ListView` over a
   /// flattened, expansion-aware list has no parent to ask, and nested `Column`s
-  /// — which would have one — defeat virtualisation (SPEC.md L2).
+  /// — which would have one — defeat virtualisation.
   final int depth;
 
   @override
@@ -35,14 +35,14 @@ class CategoryNode {
       '${children.length} child(ren))';
 }
 
-/// `parentId == 0` means **top level**, not "absent" (`library.go:29`).
+/// `parentId == 0` means **top level**, not "absent".
 const _topLevel = 0;
 
 /// Assembles [flat] into a forest, losing nothing and terminating always.
 ///
 /// Four inputs a naive `parentId` lookup gets wrong, and the rule for each:
 /// **`parentId == 0`** is the top-level sentinel; an **orphan** surfaces at top
-/// level rather than being dropped (G5); a **cycle** loses no row — the first
+/// level rather than being dropped; a **cycle** loses no row — the first
 /// index in input order lying on one is cut loose and becomes a root, breaking
 /// exactly one link per cycle; a **duplicate id** attaches children to the
 /// first row only, so both rows appear and only one parents anything.
@@ -109,8 +109,7 @@ List<CategoryNode> buildCategoryTree(List<Category> flat) {
 
   // Deepest first, so every child exists before its parent asks for it.
   // Iterative rather than recursive: a server sending a 5000-link chain would
-  // otherwise overflow the stack, and a category list has no documented bound
-  // (SPEC.md L2 — nothing on this server paginates).
+  // otherwise overflow the stack, and a category list has no documented bound.
   final byDepth = [for (var i = 0; i < count; i++) i]
     ..sort((a, b) => depths[b].compareTo(depths[a]));
   final built = List<CategoryNode?>.filled(count, null);
@@ -147,7 +146,7 @@ bool _liesOnACycle(int index, List<int?> parentIndex) {
 /// already been cut by the time this runs, so the walk reaches a root on its
 /// own — and the bound is what keeps that true from three functions away
 /// rather than by trust. It deliberately has no "gave up" return value,
-/// because a value nothing can produce is a line no test can cover (§1) and
+/// because a value nothing can produce is a line no test can cover and
 /// coverage said so.
 int _depthOf(int index, List<int?> parentIndex) {
   var depth = 0;

@@ -7,9 +7,9 @@ import 'package:filefin_mobile/src/browse/media_grid.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/material.dart';
 
-/// F4's poster grid: one category's direct children, drawn by [MediaGrid].
+/// The poster grid: one category's direct children, drawn by [MediaGrid].
 ///
-/// The virtualisation and its reasoning moved to [MediaGrid] at M6.5, because
+/// The virtualisation and its reasoning moved to [MediaGrid], because
 /// search draws the same shape. What is left here is what is genuinely about a
 /// *category*: which listing to fetch, the leaf in the app bar, and the empty
 /// state — which is a different sentence from search's and so cannot be shared.

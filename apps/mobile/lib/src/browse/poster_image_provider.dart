@@ -10,7 +10,7 @@ import 'package:flutter/painting.dart';
 ///
 /// **`ServerId` is in the key and that is not decoration.** Two saved servers
 /// can hand out the same `MediaId` — it is `sha1(category + "/" + folder)[:12]`
-/// (`import.go:354`), which says nothing about which machine produced it — so a
+///, which says nothing about which machine produced it — so a
 /// key of `(MediaId, PosterSize)` alone would show one server's artwork on the
 /// other's item, silently and only for people with two servers.
 @immutable
@@ -44,14 +44,14 @@ class PosterKey {
 /// Fetches a poster **through `FileFinClient`**, never through `Image.network`.
 ///
 /// The poster route sits behind `s.auth`, so `Image.network` cannot work: it
-/// builds its own `HttpClient` with no cookie jar, no F3 retry and no F15
+/// builds its own `HttpClient` with no cookie jar, no 401 retry and no pin
 /// pinning, and the request would simply 401. `just constitution`'s
 /// `app_no_raw_http` check refuses the shortcut for exactly that reason.
 ///
 /// Being an `ImageProvider` rather than a bare fetch is what puts posters in
 /// Flutter's `ImageCache` — 1000 entries / 100 MB by default — which is what
-/// bounds memory over a 5000-item category. SPEC.md §7's `cache/posters/` disk
-/// cache is deliberately NOT here: NF2 needs posters lazy, not durable, and a
+/// bounds memory over a 5000-item category. 's `cache/posters/` disk cache is
+/// deliberately NOT here: large libraries need posters lazy, not durable, and a
 /// disk cache arrives with a milestone that measures a need for one.
 class PosterImageProvider extends ImageProvider<PosterKey> {
   /// Fetches [media]'s poster through [api], cancelling with [cancelToken].
@@ -68,10 +68,10 @@ class PosterImageProvider extends ImageProvider<PosterKey> {
   /// Which item's poster.
   final MediaId media;
 
-  /// The `?size=` hint. A hint, not a contract (`media.go:351`).
+  /// The `?size=` hint. A hint, not a contract.
   final PosterSize? size;
 
-  /// The owning tile's token, so a scrolled-away request stops (NF5).
+  /// The owning tile's token, so a scrolled-away request stops.
   final CancelToken? cancelToken;
 
   @override

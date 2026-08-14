@@ -1,8 +1,8 @@
-/// What `GET /api/state` told us about an address the user typed (F1).
+/// What `GET /api/state` told us about an address the user typed.
 ///
 /// A separate file from `server_probe.dart`, which builds these, for the same
 /// reason `errors.dart` is separate from `error_mapper.dart`: `dead_types`
-/// (§5) asks that every sealed variant be constructed **outside** its
+/// asks that every sealed variant be constructed **outside** its
 /// declaring file, so a variant nothing can produce fails the gate instead of
 /// sitting in the tree looking finished.
 sealed class ProbeResult {
@@ -25,7 +25,7 @@ final class FileFinServer extends ProbeResult {
 /// A FileFin server with no admin account yet.
 ///
 /// A dead end for this client rather than a step in a flow: the setup token is
-/// deliberately not exposed by `GET /api/state` (`install.go:22-23`) and
+/// deliberately not exposed by `GET /api/state` and
 /// reaches a browser only through the URL the CLI prints. So the right thing
 /// to show is "finish setup in a browser first", never a setup form.
 final class FileFinServerNeedsSetup extends ProbeResult {

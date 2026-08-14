@@ -1,6 +1,6 @@
 part of 'errors.dart';
 
-/// The server's certificate is not trusted and nothing is pinned (F15).
+/// The server's certificate is not trusted and nothing is pinned.
 ///
 /// **The trust-on-first-use prompt, not a failure to report.** Self-signed and
 /// private-CA certificates are the common case for a self-hosted server, so
@@ -43,15 +43,15 @@ final class CertificateNotTrusted extends FileFinApiException {
       '${validTo.toIso8601String()}). SHA-256 $fingerprint';
 }
 
-/// A pinned server presented a **different** certificate (F15).
+/// A pinned server presented a **different** certificate.
 ///
-/// The loud, blocking half of F15, and the one that must never soften into a
-/// prompt: no path in this package updates a stored pin, because a changed
+/// The loud, blocking half of pinning, and the one that must never soften into
+/// a prompt: no path in this package updates a stored pin, because a changed
 /// fingerprint is the exact event pinning exists to make visible.
 ///
 /// **The message says "refused", never "nothing was sent"** — on a pooled
 /// connection the request did reach the server, and the variant cannot tell
-/// which case it is (D19). It once claimed the first while 106 bytes had gone
+/// which case it is. It once claimed the first while 106 bytes had gone
 /// out. It also fires innocently: pinning a CA-signed server means every
 /// renewal changes the fingerprint, so both values are named for comparison.
 final class CertificatePinMismatch extends FileFinApiException {

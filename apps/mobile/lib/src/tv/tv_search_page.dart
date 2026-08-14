@@ -13,7 +13,7 @@ import 'package:filefin_mobile/src/tv/tv_keyboard.dart';
 import 'package:filefin_mobile/src/tv/tv_row.dart';
 import 'package:flutter/material.dart';
 
-/// F5 on a television: an on-screen keyboard, and the results beside it.
+/// On a television: an on-screen keyboard, and the results beside it.
 ///
 /// **The keyboard is on screen because there is no other one.** Android TV's
 /// system IME covers the results while it is up, so the design draws the keys
@@ -35,7 +35,7 @@ class TvSearchPage extends StatefulWidget {
   /// Opens one result's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   /// How long typing is coalesced for. Injected so a test need not wait.

@@ -22,7 +22,7 @@ part 'player_panels.dart';
 /// Which file, what container, and **how it is being served** — the last of
 /// which is the one thing a user cannot see anywhere else and the one that
 /// explains a slow start. `transcode` is the server's own verdict
-/// (`internal/server/playback.go:78`), not a guess from the extension.
+///, not a guess from the extension.
 ///
 @visibleForTesting
 String playerFacts(PlayerController controller) {
@@ -34,11 +34,11 @@ String playerFacts(PlayerController controller) {
   ].join(' · ');
 }
 
-/// The player screen (F7, F8, F9, F13, NF6).
+/// The player screen.
 ///
 /// The video surface comes from [PlaybackHost.buildSurface] and carries no
 /// controls at all; [PlayerControls] is stacked over it and is the whole of
-/// F7's transport, both on a phone and on a television.
+/// the transport, both on a phone and on a television.
 class PlayerPage extends StatefulWidget {
   /// Plays [detail]'s [initialFile], starting [startAt] seconds in.
   const PlayerPage({
@@ -63,11 +63,11 @@ class PlayerPage extends StatefulWidget {
   /// two screens sharing an mpv context would share a position.
   final PlaybackHost Function() hostFactory;
 
-  /// Opens F14's media session. Per process rather than per screen — see
+  /// Opens the media session. Per process rather than per screen — see
   /// `AppDependencies.nowPlayingFactory`.
   final Future<NowPlayingHost> Function() nowPlayingFactory;
 
-  /// F13's sample.
+  /// The connection sample.
   final NetworkStatus network;
 
   /// The item being played.

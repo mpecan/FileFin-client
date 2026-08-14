@@ -5,9 +5,9 @@ import 'package:filefin_api/src/errors.dart';
 
 /// The media type this server writes for every JSON route.
 ///
-/// `writeJSON` (`server/server.go:463`) sets exactly `application/json`, and
+/// `writeJSON` sets exactly `application/json`, and
 /// `X-Content-Type-Options: nosniff` is set on every response
-/// (`server.go:367-377`) — so the server always declares a type and means it,
+/// — so the server always declares a type and means it,
 /// which is what makes checking it worth anything. Anything else on a route we
 /// expect JSON from is a transport failure, not a payload.
 const _jsonMediaType = 'application/json';
@@ -16,8 +16,8 @@ const _jsonMediaType = 'application/json';
 ///
 /// `text/html` specifically rather than "must be JSON", and **2xx only** — a
 /// boundary that is measured rather than reasoned, because the `307` to HLS
-/// carries `text/html` too. D21 has both arguments and what each one costs if
-/// generalised.
+/// carries `text/html` too. Insisting on JSON would refuse the `204`s, the
+/// poster and the subtitle route; applying it to errors would hide every 401.
 void refuseHtml(Headers headers, Uri requested) {
   final contentType = headers[Headers.contentTypeHeader]?.firstOrNull;
   if (contentType != null &&
@@ -47,9 +47,9 @@ Map<String, Object?> jsonObject(
 /// Reads a **2xx** response as a JSON array of objects.
 ///
 /// Every listing endpoint answers an array and none of them paginates
-/// (SPEC.md L2), so this is the shape half the client's calls return. A
+///, so this is the shape half the client's calls return. A
 /// non-object element fails the whole response rather than being skipped:
-/// silently dropping a row is the failure G5 forbids, and the blast radius is
+/// silently dropping a row is a silent failure, and the blast radius is
 /// recorded in STATE.md rather than hidden.
 List<Map<String, Object?>> jsonObjects(
   Response<dynamic> response, {
@@ -77,14 +77,14 @@ List<Map<String, Object?>> jsonObjects(
 
 /// Runs [fromJson] over server data, turning any decode failure into ours.
 ///
-/// The values come from a server we do not control (§8), so a mismatched type
+/// The values come from a server we do not control, so a mismatched type
 /// is a fact about the payload rather than a bug in the caller.
 ///
 /// **`TypeError` and nothing else**, deliberately: it is what a wrong wire type
-/// produces (measured M1.10 — 124 of 208 fixture mutations do exactly that),
+/// produces (measured — 124 of 208 fixture mutations do exactly that),
 /// and catching `Object` would swallow a real bug in one of our own converters
 /// and report it as the server's fault. There is no `FormatException` arm
-/// because no model here parses a date or number from a string (§1).
+/// because no model here parses a date or number from a string.
 T decodeModel<T>(
   Map<String, Object?> json,
   T Function(Map<String, Object?>) fromJson, {
@@ -105,7 +105,7 @@ T decodeModel<T>(
 
 /// Checks the media type, then decodes the raw body.
 ///
-/// **The check is applied here and nowhere else, which is the point** — D21.
+/// **The check is applied here and nowhere else, which is the point.**
 /// dio throws on a non-2xx before this is reached, and `error_mapper.dart`
 /// handles those without ever looking at a content type.
 ///

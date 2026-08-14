@@ -10,7 +10,7 @@ import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:filefin_mobile/src/theme/theme.dart';
 import 'package:flutter/material.dart';
 
-/// F4's first screen: the category tree, assembled client-side.
+/// The category tree: the category tree, assembled client-side.
 class CategoryTreePage extends StatefulWidget {
   /// Browses [api]'s categories; [onOpen] opens one.
   const CategoryTreePage({
@@ -34,13 +34,13 @@ class CategoryTreePage extends StatefulWidget {
   /// Opens a category as a poster grid.
   final void Function(Category category) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   /// Selects the Search destination.
   final VoidCallback? onSearch;
 
-  /// Opens F11's server picker.
+  /// Opens the server picker.
   final VoidCallback? onServers;
 
   /// Opens the playback settings sheet.
@@ -48,10 +48,10 @@ class CategoryTreePage extends StatefulWidget {
   /// This screen is the only one signed in to a server and above every other,
   /// which is what makes it the place `wifiOnly` and `allowUnverifiedPlayback`
   /// become reachable — both are refusals `decide()` can return and neither had
-  /// a way in before M4.8.
+  /// a way in before.
   final VoidCallback? onSettings;
 
-  /// Ends the session and forgets this account (F2, §9).
+  /// Ends the session and forgets this account.
   final VoidCallback? onSignOut;
 
   @override
@@ -116,7 +116,7 @@ class _CategoryTreePageState extends State<CategoryTreePage> {
                   // ListView.builder over a FLATTENED list. A nested tree of
                   // Columns builds every descendant on every frame whether or
                   // not it is on screen, and a category list has no documented
-                  // bound either (SPEC.md L2 — nothing here paginates).
+                  // bound either.
                   : ListView.builder(
                       itemCount: rows.length,
                       itemBuilder: (context, index) => CategoryRow(
@@ -342,7 +342,7 @@ class CategoryRow extends StatelessWidget {
               // `leaf`, never `name`. `name` is the FULL PATH — a nested
               // category reads "Films/Documentaries" — which would print the
               // whole path on a row already sitting under its parent. Captured
-              // at M3.2 against the real server rather than taken from the doc.
+              // at against the real server rather than taken from the doc.
               child: Text(
                 category.leaf,
                 maxLines: 1,
@@ -363,7 +363,7 @@ class CategoryRow extends StatelessWidget {
 
   /// The counts, worded so 0 does not read as "empty".
   ///
-  /// `library.go:73-81` returns `media` and `files` as **0 when the cache is
+  /// `library.go` returns `media` and `files` as **0 when the cache is
   /// unavailable**, exactly as it does for a genuinely empty category. A client
   /// cannot tell them apart from these numbers, so a row that said "0 items"
   /// would state as a fact something it does not know. Saying nothing about

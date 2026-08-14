@@ -11,13 +11,13 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 /// up a binding and a fake channel. `main()` makes it once and hands the
 /// result in.
 ///
-/// **Nothing secret is written here** (§9): this is plain JSON any app on a
+/// **Nothing secret is written here**: this is plain JSON any app on a
 /// rooted device can read.
 class SettingsStore {
   /// Stores `settings.json` under [directory].
   const SettingsStore(this.directory);
 
-  /// Where the file lives. SPEC.md §7 says the application support directory.
+  /// Where the file lives. says the application support directory.
   final Directory directory;
 
   /// The file itself, exposed so a test can corrupt it deliberately.
@@ -25,7 +25,7 @@ class SettingsStore {
 
   /// Reads the settings, or [AppSettings.empty] when there is nothing usable.
   ///
-  /// **A corrupt file is empty settings, not a crash** — §13 rather than
+  /// **A corrupt file is empty settings, not a crash** rather than
   /// leniency: a file an older build wrote is something to replace, not to
   /// migrate. Starting over costs a user their server list; refusing to launch
   /// costs them the app.
@@ -51,7 +51,7 @@ class SettingsStore {
   /// Writes the settings, creating the directory if it is not there.
   ///
   /// **This one throws, and the asymmetry with [read] is the point.** A file we
-  /// cannot read is answerable — start over with nothing (§13). A file we
+  /// cannot read is answerable — start over with nothing. A file we
   /// cannot write has no answer: the server just added is gone at the next
   /// launch, with nothing on screen to look at.
   ///

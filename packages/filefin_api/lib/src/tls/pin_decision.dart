@@ -1,6 +1,6 @@
 import 'package:filefin_api/src/tls/fingerprint.dart';
 
-/// What to do about one certificate (F15).
+/// What to do about one certificate.
 sealed class PinDecision {
   /// Allows the variants below to be `const`.
   const PinDecision();
@@ -29,10 +29,10 @@ final class RejectUntrusted extends PinDecision {
 
 /// Refuse: a pin exists and this certificate is not it.
 ///
-/// The loud, blocking half of F15. It never updates the stored pin — a
+/// The loud, blocking half. It never updates the stored pin — a
 /// changed fingerprint on a pinned server is exactly the event pinning exists
 /// to make visible, and silently re-accepting it would be the "silent
-/// re-accept" F15 forbids, implemented by us.
+/// re-accept" pinning forbids, implemented by us.
 final class RejectChanged extends PinDecision {
   /// [expected] was pinned; [actual] arrived instead.
   const RejectChanged({required this.expected, required this.actual});
@@ -44,15 +44,15 @@ final class RejectChanged extends PinDecision {
   final CertificateFingerprint actual;
 }
 
-/// The whole of F15's policy, as one pure total function.
+/// The whole pinning policy, as one pure total function.
 ///
 /// Everything routes through here — both TLS hooks, both call sites — because
 /// this is the only part of pinning provable without a device: three values in,
 /// one out, so all twelve combinations are table-tested.
 ///
-/// The rules in order, and the order is the argument (D19): **no certificate
+/// The rules in order, and the order is the argument: **no certificate
 /// means no TLS**, so a null one is accepted rather than breaking the
-/// plain-http LAN servers F15 permits; **a pin outranks OS trust both ways**,
+/// plain-http LAN servers we permit; **a pin outranks OS trust both ways**,
 /// which is why a pinned CA-signed server needs re-accepting on renewal;
 /// **with no pin, OS trust decides**, and a failure is a prompt rather than an
 /// error ([RejectUntrusted]). [trustedByOs] is derived, never guessed.

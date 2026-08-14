@@ -16,8 +16,8 @@ import 'package:filefin_mobile/src/playback/player_controller.dart'
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
-/// F4's third screen: everything the server says about one item, and where
-/// playback starts (F8).
+/// Everything the server says about one item, and where
+/// playback starts.
 ///
 /// **The redesign's order is resume, then episodes, then everything else.** The
 /// old screen led with a poster and eleven metadata blocks and put the episode
@@ -46,7 +46,7 @@ class MediaDetailPage extends StatefulWidget {
   /// The route lives in `app.dart`; this screen decides only **which file and
   /// from where**, which is `startSecondsFor`'s answer rather than its own.
   ///
-  /// **It answers with what playback left behind**, which is what F9's second
+  /// **It answers with what playback left behind**, which is what the second
   /// clause needs a consumer for — see `_MediaDetailPageState._afterPlaying`.
   final Future<PlaybackOutcome?> Function(
     MediaDetail detail,
@@ -78,9 +78,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   /// Whether a playback session on this screen wrote progress to the server.
   ///
   /// Kept here rather than folded into [WatchActions] because it is not one of
-  /// F10's writes: it is F9's, made by the player route this screen pushed. It
+  /// the watch-state writes: it is progress reporting's, made by the player
+  /// route this screen pushed. It
   /// has the same consequence — the server re-stamped `updated`, and `updated`
-  /// orders all three home rows (M6.0/E-3) — so it has to reach the same pop.
+  /// orders all three home rows — so it has to reach the same pop.
   bool _playbackWrote = false;
 
   @override
@@ -97,12 +98,12 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     super.dispose();
   }
 
-  /// F9's "reflect resulting watched/continue changes locally **without a full
+  /// Reflects the watched and continue changes locally **without a full
   /// refetch**", applied to the screen the player was opened from.
   ///
   /// `applyProgress` is the server's own engine, validated against 601 captured
   /// vectors, so what the player hands back IS what the server holds — for
-  /// every input but [PlaybackOutcome.needsDetailRefetch] (D15). There, and
+  /// every input but [PlaybackOutcome.needsDetailRefetch]. There, and
   /// only there, this pays for a round trip.
   ///
   /// Without both branches the screen shows what `initState` loaded, so after
@@ -118,7 +119,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     // home rows need reloading either way. Watching past 90% moves an item from
     // `continue` to `completed` on the server; without this Home kept showing
     // it under *Continue watching*, in its pre-playback position, for the rest
-    // of the session (M6.R/P1.2).
+    // of the session.
     _playbackWrote = _playbackWrote || outcome.wrote;
     if (outcome.needsDetailRefetch) {
       await _controller.load();
@@ -148,11 +149,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
       if (didPop) return;
       // `wroteOrWriting`, not `wrote`: this is read the instant the screen
       // closes, so a write still on the wire would otherwise pop `false` and
-      // leave the rows stale for the rest of the session (M6.R/P1.3).
+      // leave the rows stale for the rest of the session.
       //
-      // `_playbackWrote` is the other half. F10's four writes are not the only
-      // things that re-stamp `updated` — a progress report does too, and F9's
-      // are the ones a user makes without touching a control.
+      // `_playbackWrote` is the other half. The four watch-state writes are not
+      // the only things that re-stamp `updated` — a progress report does too,
+      // and playback's are the ones a user makes without touching a control.
       Navigator.of(context).pop(_watch.wroteOrWriting || _playbackWrote);
     },
     child: Scaffold(
@@ -205,7 +206,8 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   );
 }
 
-/// F8's action row: resume where the pointer is, start over, mark watched.
+/// the resume action row: resume where the pointer is, start over, mark
+/// watched.
 ///
 /// The resume label comes from `offerResume`, which is **upstream's own rule
 /// observed rather than invented** — `!watched && (continueIndex > 0 ||
@@ -306,7 +308,7 @@ String resumeLabel(MediaDetail detail, ResumeAvailable choice) {
 
 String _clock(int seconds) {
   // One constant for both, and the reason is the mutation gate's rather than
-  // style's: Dart defines `a % b` to land in `[0, b.abs())`, so `% 60` and
+  // style's: Dart defines `a % b` to land in `[0, b.abs)`, so `% 60` and
   // `% -60` are the same function and a bare literal produces a mutant no
   // assertion can kill. Shared with the `~/` below, the same mutation turns
   // `Resume 2:05` into `Resume -2:05`, which a test does object to.

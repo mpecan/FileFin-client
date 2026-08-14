@@ -3,14 +3,14 @@ import 'package:filefin_core/src/resume/watch_state.dart';
 import 'package:meta/meta.dart';
 
 /// The fraction of a file that must be played for it to count as watched —
-/// upstream's `WatchedThreshold` (`state/engine.go:7`).
+/// upstream's `WatchedThreshold`.
 ///
 /// The comparison is `>=`, so exactly 0.90 crosses.
 const watchedThreshold = 0.90;
 
 /// Resolves a pointer to an index into a file list of [fileCount] files, or -1.
 ///
-/// This is the index-space `indexOf` (`state/engine.go:34-41`), and it is the
+/// This is the index-space `indexOf`, and it is the
 /// single place the "stale pointer" rule lives. Upstream answers -1 for a ref
 /// that is not in `refs`; here that is an index outside the list, which is what
 /// a file list that shrank or was renumbered between sessions leaves behind.
@@ -28,7 +28,7 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
   return index;
 }
 
-/// Go's `round` (`state/engine.go:43-48`): `int(x + 0.5)`, clamped at 0.
+/// Go's `round`: `int(x + 0.5)`, clamped at 0.
 ///
 /// **Public because the progress policy has to dedupe in exactly this
 /// arithmetic.** `decideReport` compares a new position against the seconds the
@@ -36,7 +36,7 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
 /// up to half a second per report, and `round(29.5) == 30` versus `29.5 < 30`
 /// is the boundary where the two disagree. One rounding, one place.
 ///
-/// Deliberately not Dart's `.round()`, and the non-finite guard has no upstream
+/// Deliberately not Dart's `.round`, and the non-finite guard has no upstream
 /// counterpart — `docs/field-notes.md` has both measurements.
 int roundReportedSeconds(double x) {
   if (!x.isFinite) return 0;
@@ -45,7 +45,7 @@ int roundReportedSeconds(double x) {
 }
 
 /// Folds one playback report into [state] — upstream's `Apply`,
-/// `state/engine.go:56-85`.
+/// `state/engine.go`.
 ///
 /// [fileCount] is the length of the item's file list — the server's `refs`.
 ///
@@ -97,7 +97,7 @@ WatchState applyProgress(
 }
 
 /// Derives what a detail view renders — upstream's `View`,
-/// `state/engine.go:98-112`.
+/// `state/engine.go`.
 ///
 /// The pointer is resolved once and every row reads the resolved index. A
 /// pointer that does not resolve therefore reads **identically to no pointer**:
@@ -120,7 +120,7 @@ WatchView deriveView(WatchState state, {required int fileCount}) {
 }
 
 /// `POST /api/media/{id}/watched` — sets or clears the flag and **keeps the
-/// pointer** (`media.go:463-483`).
+/// pointer**.
 ///
 /// Keeping it is the point: the home `continue` bucket already excludes a
 /// watched item, so clearing the flag returns the item to *continue where you
@@ -130,8 +130,7 @@ WatchView deriveView(WatchState state, {required int fileCount}) {
 WatchState setWatched(WatchState state, {required bool watched}) =>
     state.copyWith(watched: watched);
 
-/// `DELETE /api/media/{id}/watched` — clears the flag **and** nils the pointer
-/// (`media.go:485-499`).
+/// `DELETE /api/media/{id}/watched` — clears the flag **and** nils the pointer.
 ///
 /// This is the home page's "remove from completed". A leftover pointer would
 /// bounce the item straight back into `continue`, which is why the pointer goes
@@ -139,20 +138,20 @@ WatchState setWatched(WatchState state, {required bool watched}) =>
 WatchState clearWatched(WatchState state) =>
     state.copyWith(watched: false, pointer: null);
 
-/// `POST /api/media/{id}/favorite` (`media.go:394`).
+/// `POST /api/media/{id}/favorite`.
 WatchState setFavorite(WatchState state, {required bool favorite}) =>
     state.copyWith(favorite: favorite);
 
-/// `POST /api/media/{id}/rating` (`media.go:417`) — 1-10 valid, **0 clears**.
+/// `POST /api/media/{id}/rating` — 1-10 valid, **0 clears**.
 ///
 /// Anything outside `0..10` throws rather than being clamped: the server
 /// answers
-/// it with `400 rating out of range` (`media.go:425`), so producing one is a
+/// it with `400 rating out of range`, so producing one is a
 /// bug at the call site, and clamping would silently send a rating the user did
 /// not choose.
 ///
 /// The rating is independent of the resume engine — `applyProgress` never
-/// touches it and [clearWatched] never clears it (`state/state.go:25-28`).
+/// touches it and [clearWatched] never clears it.
 WatchState setRating(WatchState state, {required int rating}) {
   if (rating < 0 || rating > 10) {
     throw RangeError.range(rating, 0, 10, 'rating');

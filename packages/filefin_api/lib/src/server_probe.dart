@@ -6,7 +6,7 @@ import 'package:filefin_api/src/probe_result.dart';
 import 'package:filefin_api/src/tls/certificate_pinner.dart';
 import 'package:filefin_core/filefin_core.dart';
 
-/// The two keys `GET /api/state` is documented to carry (`install.go:24`).
+/// The two keys `GET /api/state` is documented to carry.
 ///
 /// Both are required, and requiring both is the whole check. `application/json`
 /// alone is answered by every JSON API in the world, and a `version` key is
@@ -15,17 +15,17 @@ import 'package:filefin_core/filefin_core.dart';
 const _needsSetupKey = 'needsSetup';
 const _versionKey = 'version';
 
-/// Asks an address whether it is a FileFin server (F1).
+/// Asks an address whether it is a FileFin server.
 ///
 /// **A status check would be worthless**: every unmatched path answers
 /// `200 text/html` from the SPA catch-all (`docs/field-notes.md`). An address
 /// is accepted only when the response is `application/json` **and** the body
 /// decodes to an object carrying both documented keys.
 ///
-/// Every message names the **redacted** address (§9) — this is F1's dialog
+/// Every message names the **redacted** address — this is the add-server dialog
 /// text, and a saved-server URL is typed by the user. Every outcome is
 /// **returned** except two, which are questions rather than verdicts about the
-/// address: `RequestCancelled` (NF5) and a certificate problem ([pinner]).
+/// address: `RequestCancelled` and a certificate problem ([pinner]).
 Future<ProbeResult> probe({
   required Dio dio,
   required FileFinUrls urls,
@@ -61,14 +61,14 @@ Future<ProbeResult> probe({
   } on DioException catch (e) {
     final mapped = mapDioException(e, requested: url, pinner: pinner);
     if (mapped is RequestCancelled) throw mapped;
-    // F15. Neither of these says anything about whether FileFin is here — the
+    // Neither of these says anything about whether FileFin is here — the
     // handshake never got far enough to ask — and both are things only a
     // person can answer.
     if (mapped is CertificateNotTrusted || mapped is CertificatePinMismatch) {
       throw mapped;
     }
     // A 401, 404 or 5xx here is still "not FileFin": `GET /api/state` is
-    // unauthenticated and always answers 200 (`install.go:24`), so anything
+    // unauthenticated and always answers 200, so anything
     // else proves the thing at this URL is not FileFin's state route.
     // Reaching the network but getting the wrong answer is a different
     // problem from not reaching it, and the two must not be merged.

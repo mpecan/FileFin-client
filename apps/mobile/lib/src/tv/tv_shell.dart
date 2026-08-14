@@ -29,7 +29,7 @@ enum TvTab {
 /// What a signed-in server looks like on a television: a rail, and one pane.
 ///
 /// **The same build-on-first-selection rule as the phone shell, for the same
-/// reason (NF1).** A cold start must issue one request, not four. Nothing here
+/// reason.** A cold start must issue one request, not four. Nothing here
 /// is an `IndexedStack`: a selected tab stays built so returning to it does not
 /// refetch, and a tab never opened has never asked the server anything.
 class TvShell extends StatefulWidget {
@@ -58,10 +58,10 @@ class TvShell extends StatefulWidget {
   )?
   onPlay;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
-  /// Opens F11's server picker.
+  /// Opens the server picker.
   final VoidCallback? onServers;
 
   /// Opens the playback settings sheet.
@@ -101,7 +101,7 @@ class _TvShellState extends State<TvShell> {
   /// **`settings` is absent from this switch and that is deliberate.** It is a
   /// sheet rather than a pane — `_select` opens it and leaves the rail where it
   /// was — so an arm for it would be a line no test could enter and no user
-  /// could reach, which is what §1 asks not to be written. Naming the other
+  /// could reach, which is code nothing can reach. Naming the other
   /// three explicitly keeps the compile error a fifth destination should
   /// produce; `_paneFor` returning null is what the caller draws nothing for.
   Widget? _build(TvTab tab) => switch (tab) {
@@ -128,7 +128,7 @@ class _TvShellState extends State<TvShell> {
   ///
   /// The `push<bool>` result and `MediaDetailPage`'s explicit pop are a pair,
   /// exactly as they are on the phone: a write anywhere re-stamps `updated`,
-  /// which orders all three home buckets (M6.0/E-3).
+  /// which orders all three home buckets.
   Future<void> _openDetail(MediaSummary item) async {
     final wrote = await Navigator.of(context).push<bool>(
       MaterialPageRoute(

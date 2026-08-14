@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 /// The words the search screen puts on screen for one [SearchField].
 ///
 /// **Every switch here is exhaustive with no default arm, and that is the
-/// point of the file.** `db/search.go:70` degrades an unrecognised `field` to
+/// point of the file.** `db/search.go` degrades an unrecognised `field` to
 /// `all` rather than erroring, so a scope the client can send but cannot
 /// describe produces plausible results under the wrong label — the worst
 /// failure a search box has. With no `_ =>` arm, a twelfth `SearchField` stops
@@ -51,7 +51,7 @@ String searchFieldNoun(SearchField field) => switch (field) {
 ///
 /// `year` runs `strconv.Atoi(TrimSpace(q))` and `decade` runs it after
 /// stripping one trailing `s`; either failing returns **no rows and no error**
-/// (`db/search.go:36-48`). The nine text scopes run any non-empty `q`, so they
+///. The nine text scopes run any non-empty `q`, so they
 /// have no unit to fail to parse.
 @visibleForTesting
 String? searchFieldNumericUnit(SearchField field) => switch (field) {

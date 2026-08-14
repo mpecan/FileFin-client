@@ -1,13 +1,13 @@
 /// The FileFin HTTP client.
 ///
-/// Everything that touches a socket lives here (§6), and this is the only
-/// layer that knows what a `401` means (SPEC.md §5.1). **Pure Dart —
+/// Everything that touches a socket lives here, and this is the only
+/// layer that knows what a `401` means. **Pure Dart —
 /// Flutter-free**, structurally so; `docs/architecture.md` has the argument.
 /// This barrel is the entire public surface: a symbol not exported here is
-/// dead by §5.
+/// dead code.
 ///
 /// **`CancelToken` is dio's, re-exported so `apps/mobile` never imports dio.**
-/// NF5 puts one on every endpoint while `app_no_raw_http` refuses
+/// A cancel token is on every endpoint while `app_no_raw_http` refuses
 /// `package:dio/` under `apps/*/lib`; re-exporting the one type the app
 /// legitimately needs is what makes that refusal live-able.
 library;

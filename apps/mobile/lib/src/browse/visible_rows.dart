@@ -48,7 +48,7 @@ enum CategorySort {
   /// because it is a `CategoryNode.children` the caller does not own.
   ///
   /// Private: `visibleRows` below is the only caller, and it is the function
-  /// the screens and their tests actually go through (§5).
+  /// the screens and their tests actually go through.
   List<CategoryNode> _sorted(List<CategoryNode> nodes) => switch (this) {
     folder => nodes,
     alphabetical =>
@@ -67,7 +67,7 @@ enum CategorySort {
 /// Flattens a forest into the rows a `ListView.builder` should draw.
 ///
 /// **Flattened rather than nested, which is what makes the list virtualised**
-/// (D14), and iterative rather than recursive: the depth is the server's.
+///, and iterative rather than recursive: the depth is the server's.
 ///
 /// **A `for` over a list that grows as it is walked, not a `while` over a
 /// stack**: `mutation_rules.xml` excludes a `while` body, so the only branch

@@ -6,9 +6,9 @@ part 'watch_state.freezed.dart';
 
 /// Where playback of an item left off: a file and a whole-second offset.
 ///
-/// The client works in indices; the server stores a ref string (D15). They
+/// The client works in indices; the server stores a ref string. They
 /// agree for as long as the file list is stable — that is, for as long as one
-/// detail response describes. A [file] outside `0 ..< fileCount` is a pointer
+/// detail response describes. A [file] outside `0..< fileCount` is a pointer
 /// that no longer resolves, and `resolveIndex` treats it as absent, which is
 /// what upstream's `indexOf` does with a ref it cannot find.
 @freezed
@@ -22,7 +22,7 @@ abstract class ResumePointer with _$ResumePointer {
 
 /// One user's state for one media item, as `filefin_core` models it.
 ///
-/// Mirrors upstream's `UserState` (`state/state.go:20-38`) minus `Updated`,
+/// Mirrors upstream's `UserState` minus `Updated`,
 /// which is stamped by the writer and is the server's ordering key rather than
 /// anything a client decides.
 @freezed
@@ -41,11 +41,12 @@ abstract class WatchState with _$WatchState {
   ///
   /// The payload carries the **derived view** (`continueIndex`,
   /// `continueSeconds`), never the stored pointer, so `0`/`0` is ambiguous and
-  /// is read here as no pointer — see D15, which also names the one class of
-  /// input where that leaves the client ahead of the server.
+  /// is read here as no pointer. On a single-file item whose pointer genuinely
+  /// sits at zero, that leaves the client ahead of the server until the detail
+  /// is re-read.
   ///
   /// [MediaDetail.rating] is copied through exactly as reported, including a
-  /// value outside `0..10` (D16).
+  /// value outside `0..10`.
   factory WatchState.fromDetail(MediaDetail detail) => WatchState(
     pointer: detail.continueIndex == 0 && detail.continueSeconds == 0
         ? null
@@ -63,7 +64,7 @@ abstract class WatchState with _$WatchState {
 ///
 /// **Four of the five are upstream's own strings**, read off its player:
 /// `checkpoint`, `pause`, `ended` and `stop`
-/// (`web/src/views/library/Player.svelte`). `seek` is ours, and adding it is
+///. `seek` is ours, and adding it is
 /// safe in the strongest sense available — `state.Apply` never reads `event` at
 /// all, so no value of it can change what the server stores. It is sent because
 /// a server log that says which trigger fired is worth more than one that says
@@ -72,7 +73,7 @@ enum ProgressEvent {
   /// Playback simply advanced past the reporting interval.
   checkpoint,
 
-  /// The user paused, or the OS backgrounded the app (NF6).
+  /// The user paused, or the OS backgrounded the app.
   pause,
 
   /// A seek completed. **Ours, not upstream's.**
@@ -92,7 +93,7 @@ enum ProgressEvent {
   /// The interval exists to stop a *continuous* position from reporting on
   /// every tick. Every other trigger is a discrete thing that just happened and
   /// may be the last chance to record it — a `pause` that the OS turns into a
-  /// kill is the whole reason NF6's pointer survives.
+  /// kill is the whole reason the pointer survives.
   bool get isTerminal => this != ProgressEvent.checkpoint;
 }
 
@@ -114,7 +115,7 @@ abstract class ProgressReport with _$ProgressReport {
 }
 
 /// The watch state a detail view renders — upstream's `WatchView`,
-/// `state/engine.go:88-93`.
+/// `state/engine.go`.
 @freezed
 abstract class WatchView with _$WatchView {
   /// The derived view over a file list of a known length.

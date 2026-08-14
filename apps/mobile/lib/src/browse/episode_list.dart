@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 /// play glyph on the right.
 ///
 /// **A season tab appears only when the files actually carry seasons.**
-/// `season` and `episode` are **0 for a single-file item** (SPEC.md §3.3), not
+/// `season` and `episode` are **0 for a single-file item**, not
 /// absent, so a film would otherwise get a tab called "Season 0".
 class EpisodeList extends StatefulWidget {
   /// Lists [files]; [onPlay] starts one, or null when playback is unavailable.
@@ -111,7 +111,7 @@ class _SeasonTabs extends StatelessWidget {
     // it to `index == seasons.length` and nothing could tell the difference:
     // `indexOf` is at most `length - 1` and `delta` is 1, so the index can
     // reach `length` and never pass it. An equivalent mutant with no
-    // comparison left to rewrite beats one excluded by name (§3). The lower
+    // comparison left to rewrite beats one excluded by name. The lower
     // bound stays a comparison because `elementAtOrNull` THROWS on a negative
     // index rather than answering null.
     final next = index < 0 ? null : seasons.elementAtOrNull(index);
@@ -281,8 +281,9 @@ class _EpisodeRow extends StatelessWidget {
 ///
 /// **`transcode` is on it, and it is the most useful thing there.** It is the
 /// server's own verdict on whether this file will be remuxed to HLS before it
-/// reaches the player (`internal/server/playback.go:78`), which is what decides
-/// whether playback starts instantly or after a transcode — and F12 exists
+/// reaches the player, which is what decides
+/// whether playback starts instantly or after a transcode, and a refusal needs
+/// a reason
 /// because a user can have that path turned off entirely.
 ///
 @visibleForTesting

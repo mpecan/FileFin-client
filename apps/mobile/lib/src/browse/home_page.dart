@@ -10,7 +10,7 @@ import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
-/// F6: the three rows `GET /api/home` returns, in the order it returns them.
+/// The three rows `GET /api/home` returns, in the order it returns them.
 ///
 /// **Refetched after a write, never predicted**, because every write re-stamps
 /// the key all three buckets are ordered by (`docs/field-notes.md`) and none of
@@ -42,7 +42,7 @@ class HomePage extends StatefulWidget {
   /// Opens one item's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   /// Selects the Search destination.
@@ -53,7 +53,7 @@ class HomePage extends StatefulWidget {
   /// screen.
   final VoidCallback? onSearch;
 
-  /// Opens F11's server picker.
+  /// Opens the server picker.
   final VoidCallback? onServers;
 
   /// Opens the playback settings sheet.
@@ -63,7 +63,7 @@ class HomePage extends StatefulWidget {
   /// tab you have to know to visit is a setting nobody finds.
   final VoidCallback? onSettings;
 
-  /// Ends the session and forgets this account (F2, §9).
+  /// Ends the session and forgets this account.
   final VoidCallback? onSignOut;
 
   @override

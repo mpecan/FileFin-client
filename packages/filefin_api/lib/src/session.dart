@@ -8,7 +8,7 @@ import 'package:filefin_api/src/secret_store.dart';
 import 'package:filefin_api/src/tls/certificate_pinner.dart';
 import 'package:filefin_core/filefin_core.dart';
 
-/// The session cookie's name (`auth.go:18`, set at `auth.go:177`).
+/// The session cookie's name (`auth.go`, set at `auth.go`).
 const sessionCookieName = 'filefin_session';
 
 /// Owns one server's session: logging in, restoring, and silently renewing.
@@ -16,7 +16,7 @@ const sessionCookieName = 'filefin_session';
 /// **It runs on its own `Dio`.** `authDio` shares the cookie jar and the pinned
 /// adapter with the main client but carries **no `AuthInterceptor`**, which is
 /// what makes recursion through login structurally impossible rather than
-/// merely guarded (D20).
+/// merely guarded.
 ///
 /// `now` is injected so the rate-limit block is testable without sleeping — the
 /// alternative is a test that waits fifteen minutes or one that proves nothing.
@@ -24,7 +24,7 @@ class SessionManager {
   /// Builds a manager for one server.
   ///
   /// [username] is the account name a cold start already knows, from
-  /// `settings.json`'s `servers[].lastUser` (SPEC.md §7). It is not a secret
+  /// `settings.json`'s `servers[].lastUser`. It is not a secret
   /// and does not belong in the secure store, but re-authenticating needs it,
   /// so a manager constructed without one can restore a stored session and
   /// cannot silently renew it.
@@ -50,13 +50,13 @@ class SessionManager {
   /// requests without anything copying it across.
   final CookieJar jar;
 
-  /// Where the password and session live (§9).
+  /// Where the password and session live.
   final SecretStore secrets;
 
   /// Which saved server this is.
   final ServerId server;
 
-  /// The pinner, so a TLS refusal during login names the fingerprint (F15).
+  /// The pinner, so a TLS refusal during login names the fingerprint.
   final CertificatePinner? pinner;
 
   final DateTime Function() _now;
@@ -77,7 +77,7 @@ class SessionManager {
   /// attempt is not cosmetic.
   int get generation => _generation;
 
-  /// Logs in and stores both the password and the session (F2).
+  /// Logs in and stores both the password and the session.
   ///
   /// A `401` here is **bad credentials, not a session loss** — this is the one
   /// route where that is true, and it is why the mapping is done here rather
@@ -125,9 +125,9 @@ class SessionManager {
   /// Validates a stored session without sending a password.
   ///
   /// Seeds the jar from the secure store and asks `GET /api/me`. A 401 here is
-  /// the ordinary L1 path — the server restarted and forgot the session — and
-  /// arrives as `SessionExpired` for the caller to answer with [login] or
-  /// [reauthenticate].
+  /// the ordinary a lost session path — the server restarted and forgot the
+  /// session — and arrives as `SessionExpired` for the caller to answer with
+  /// [login] or [reauthenticate].
   Future<AuthResult> restore() async {
     final stored = await secrets.read(server, SecretKind.session);
     if (stored == null) throw SessionExpired(urls.me);
@@ -146,11 +146,11 @@ class SessionManager {
       final mapped = mapDioException(e, requested: url, pinner: pinner);
       if (mapped is SessionExpired) {
         // The server has told us this cookie is dead, so keeping it is keeping
-        // a value that can only ever be wrong (§13: our own format, no
+        // a value that can only ever be wrong (our own format, so no
         // migration, no fallback). It also stops `restore()` from looking
         // recoverable on the next cold start — without this, an app that
-        // retried `restore` would re-seed the jar with the same dead cookie
-        // forever. The PASSWORD stays: F3's silent renewal is what it is for,
+        // retried `restore()` would re-seed the jar with the same dead cookie
+        // forever. The PASSWORD stays: silent renewal is what it is for,
         // and this is the moment it is needed.
         await secrets.delete(server, SecretKind.session);
         await jar.delete(urls.base);
@@ -159,7 +159,7 @@ class SessionManager {
     }
   }
 
-  /// Renews the session silently, at most once per generation (F3).
+  /// Renews the session silently, at most once per generation.
   ///
   /// [seenGeneration] is what the failing request was stamped with. **Two
   /// guards, both needed**, answering different questions: the generation
@@ -178,8 +178,8 @@ class SessionManager {
   /// The certificate pin is deliberately kept: it is about the *server's*
   /// identity rather than the user's, and clearing it would re-prompt for
   /// trust-on-first-use on every sign-out — which trains a user to click
-  /// through the one dialog F15 exists for.
-  /// It refuses an HTML body for the reason the F10 writes do (M7.8): this
+  /// through the one dialog that exists for it.
+  /// It refuses an HTML body for the reason the watch-state writes do: this
   /// route reads nothing, so without the check a `POST` that reached the SPA
   /// catch-all instead of the handler would report a server session ended that
   /// is still alive. The local half below happens either way.
@@ -195,7 +195,7 @@ class SessionManager {
       // keeping the password because a request failed would mean the app
       // silently signs itself back in at the next 401.
       //
-      // `auth.go:195` writes Go's `MaxAge: -1`, which reaches the wire as
+      // `auth.go` writes Go's `MaxAge: -1`, which reaches the wire as
       // `Max-Age=0`, and cookie_jar 4.0.9 does honour that — measured, not
       // assumed. This clears the jar anyway, because the failure path above
       // never receives that header at all.
@@ -214,8 +214,9 @@ class SessionManager {
     final username = _username;
     final password = await secrets.read(server, SecretKind.password);
     if (username == null || password == null) {
-      // F2's promise is silent re-auth; without the password there is nothing
-      // silent to do, and guessing is not an option. The caller prompts.
+      // the silent-renewal promise is silent re-auth; without the password
+      // there is nothing silent to do, and guessing is not an option. The
+      // caller prompts.
       throw SessionExpired(urls.login);
     }
     await login(Credentials(username: username, password: password));
@@ -234,8 +235,8 @@ class SessionManager {
   ///
   /// **The generation guard and the in-flight future bound concurrency;
   /// nothing bounded repetition.** The server locks an account after five
-  /// failures in fifteen minutes (`loginlimit.go:15-27`), and without this
-  /// latch ten sequential calls sent ten logins and locked it — measured at M2.
+  /// failures in fifteen minutes, and without this
+  /// latch ten sequential calls sent ten logins and locked it — measured.
   /// The benign cause is a password changed server-side while this client still
   /// holds the old one.
   ///
@@ -275,7 +276,7 @@ class SessionManager {
     return null;
   }
 
-  /// Prints no password, no session value and no username (§9, NF4).
+  /// Prints no password, no session value and no username.
   ///
   /// `secret_tostring` flags this class because its name matches `Session`,
   /// and an explicit non-leaking override is the right answer to that rather

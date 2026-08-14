@@ -142,6 +142,50 @@ left behind. The prose was the asset; its location was the bug.
 
 ---
 
+### The follow-up pass: no references at all
+
+The first pass moved the essays out and left a citation behind — `/// See D12.`
+— and recorded "no gate checks that a citation resolves" as debt. The follow-up
+removed the citations instead of gating them, on the principle that **a
+reference can rot and no reference cannot**, and that a comment exists to
+explain the current state rather than to point at where it is explained.
+
+Removed from `lib` comments entirely: **600 references** — constitutional
+sections, F/NF/G/L/C numbers, D-numbers, milestone tags and upstream
+`file:line` citations — and every "used to", "until M5.1" and "the first
+draft". Where a comment pointed, it now says the thing: not "§9 forbids it" but
+"this must never be logged"; not "the silent failure G5 forbids" but "a silent
+failure".
+
+Two of those references were in **user-facing strings** rather than comments,
+which is the same defect at its most visible: the settings sheet told a user
+"Only on a metered connection (F13)", and a decode failure said "written by a
+build that no longer exists (CLAUDE.md §13)". Both are gone.
+
+**Four bugs in the sweep's own tooling, all caught before commit**, and each is
+the kind a regex pass produces:
+
+- collapsing runs of whitespace ate the **leading indentation** of every comment
+  line in 104 files. Reverted; the fix was to substitute inside the comment
+  *body* only, never the marker or the indent;
+- a paragraph reflow dropped the blank `///` **separator lines** between
+  paragraphs, silently merging them. Reverted and rewritten to treat an empty
+  body as a paragraph boundary to be preserved verbatim;
+- stripping now-empty parentheses `()` also stripped them from **code
+  identifiers** in prose — `` `.round()` `` became `` `.round` `` in 52 places.
+  Restored by name;
+- removing `(SPEC.md §7)` left stray possessives (``/// 's `playback` block``).
+
+The lesson is the one the mutation-gate hazard already taught this repo in a
+different costume: a mechanical pass over source needs its output read, not
+just its exit code. Every one of the four was found by reading the diff or by
+`analyze`, none by the pass reporting failure.
+
+**Result: 0 references, 0 blocks over the cap, tree density 33%.** `analyze` is
+clean and all 1,986 tests pass.
+
+---
+
 ## M8 — the redesign, and the four things it found
 
 The design document is `FileFin Redesign.dc.html` in the `Multi-platform

@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 /// needs — the connection sample and the engine factory — come from that scope,
 /// and a widget test substitutes both by building it.
 ///
-/// **It returns the route's result**, which carries F9's local reflection back
+/// **It returns the route's result**, which carries the local reflection back
 /// to the detail screen: without it `MediaDetailPage` showed a resume offset
 /// from before playback started.
 ///

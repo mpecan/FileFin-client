@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 /// progress bar and an "N min left" pill. `GET /api/home` sends
 /// `{id, title, year, hasPoster, watched}` and nothing else — no position, no
 /// duration, no landscape artwork anywhere in the API — so the bar and the
-/// pill would have to be invented, and §8 says the contract is observed. What
+/// pill would have to be invented, and the contract is observed. What
 /// survives is the *rhythm* the design is built on: one wide row above two
 /// narrow ones, so resume reads as the first thing on the screen. The frame is
 /// filled with the poster, cropped from the top where the artwork lives.

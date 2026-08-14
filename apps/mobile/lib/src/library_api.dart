@@ -9,9 +9,9 @@ import 'package:filefin_core/filefin_core.dart';
 /// test that wants the error panel has to make a request fail; against
 /// `FileFinClient` that means a socket, a status code and `tester.runAsync`
 /// (`docs/field-notes.md`). Against this interface it is a two-line fake that
-/// throws. `abstract base class` for the reason D22 gives.
+/// throws. `abstract base class` for the reason
 ///
-/// Every method takes a `CancelToken` (NF5), none of them optional in practice:
+/// Every method takes a `CancelToken`, none of them optional in practice:
 /// a poster request that outlives its tile is the difference between a grid
 /// that scrolls and one that queues five thousand requests.
 abstract base class LibraryApi {
@@ -25,17 +25,17 @@ abstract base class LibraryApi {
   /// artwork on the other's item.
   ServerId get server;
 
-  /// `GET /api/state` — is there a FileFin server at this address (F1)?
+  /// `GET /api/state` — is there a FileFin server at this address?
   Future<ProbeResult> probeServer({CancelToken? cancelToken});
 
-  /// `POST /api/login` — signs in and stores the session and password (F2).
+  /// `POST /api/login` — signs in and stores the session and password.
   Future<AuthResult> login(Credentials credentials);
 
-  /// `POST /api/logout` — ends the session and forgets this account (F2).
+  /// `POST /api/logout` — ends the session and forgets this account.
   ///
   /// **Not the same thing as dropping this object**, and the difference is
-  /// what §9 turns on once the secret store persists: closing the client
-  /// leaves the session alive on the server and the password in the Keychain,
+  /// what matters once the secret store persists: closing the client leaves the
+  /// session alive on the server and the password in the Keychain,
   /// so the next launch signs the user straight back in to a session they
   /// asked to leave. This is the only call that forgets either.
   ///
@@ -45,18 +45,18 @@ abstract base class LibraryApi {
   /// in".
   Future<void> logout();
 
-  /// Signs in again with no password typed, on a cold start (F2, F3).
+  /// Signs in again with no password typed, on a cold start.
   ///
-  /// Two steps, and the second is what makes F2's promise true rather than
-  /// merely stored. The saved session cookie is seeded into the jar and proved
-  /// with `GET /api/me`; if the server has forgotten it — L1, which is routine
-  /// rather than exceptional — F3's renewal signs in again from the stored
-  /// password. Only when there is no password either does this throw
-  /// `SessionExpired`, and only then does a user see a sign-in screen.
+  /// Two steps, and the second is what makes the silent-renewal promise true
+  /// rather than merely stored. The saved session cookie is seeded into the jar
+  /// and proved with `GET /api/me`; if the server has forgotten it — a lost
+  /// session, which is routine rather than exceptional — the renewal signs in
+  /// again from the stored password. Only when there is no password either does
+  /// this throw `SessionExpired`, and only then does a user see a sign-in
+  /// screen.
   ///
-  /// The renewal lives here rather than in the app because the app has no
-  /// password to renew with and must never acquire one (§9): the whole point
-  /// of `SecretStore` is that `filefin_api` is the only layer that reads it.
+  /// The renewal lives here because the app has no password to renew with and
+  /// must never acquire one.
   Future<void> restore();
 
   /// `GET /api/categories` — the flat list, for `buildCategoryTree`.
@@ -71,31 +71,31 @@ abstract base class LibraryApi {
   /// `GET /api/media/{id}` — the full detail payload.
   Future<MediaDetail> mediaDetail(MediaId id, {CancelToken? cancelToken});
 
-  /// `GET /api/home` — the continue / favourites / completed rows (F6).
+  /// `GET /api/home` — the continue / favourites / completed rows.
   ///
   /// **Refetched after a write, never predicted.** The rows come from the
-  /// `user_state` mirror rather than from `meta.json` (`media.go:227`), the
+  /// `user_state` mirror rather than from `meta.json`, the
   /// mirror upsert is best-effort, and the bucket order is `updated DESC` where
   /// `updated` is re-stamped by *every* write — so setting a rating re-orders
-  /// the continue row (M6.0/E-3). None of that is derivable from what a client
+  /// the continue row. None of that is derivable from what a client
   /// holds.
   Future<HomeRows> home({CancelToken? cancelToken});
 
-  /// `GET /api/search?q=&field=` — the field selector's results (F5).
+  /// `GET /api/search?q=&field=` — the field selector's results.
   Future<List<MediaSummary>> search(
     String query, {
     SearchField field,
     CancelToken? cancelToken,
   });
 
-  /// `POST /api/media/{id}/favorite` (F10).
+  /// `POST /api/media/{id}/favorite`.
   Future<void> setFavorite(
     MediaId id, {
     required bool favorite,
     CancelToken? cancelToken,
   });
 
-  /// `POST /api/media/{id}/rating` — 1-10, 0 clears; anything else throws (F10).
+  /// `POST /api/media/{id}/rating` — 1-10, 0 clears; anything else throws.
   Future<void> setRating(
     MediaId id, {
     required int rating,
@@ -103,7 +103,7 @@ abstract base class LibraryApi {
   });
 
   /// `POST /api/media/{id}/watched` — sets or clears the flag and **keeps the
-  /// resume pointer** (F10).
+  /// resume pointer**.
   ///
   /// Four methods rather than one with a boolean, and this pair is why. See
   /// [clearWatched].
@@ -114,9 +114,9 @@ abstract base class LibraryApi {
   });
 
   /// `DELETE /api/media/{id}/watched` — clears the flag **and nils the
-  /// pointer** (F10).
+  /// pointer**.
   ///
-  /// Measured against v0.20.3 at M6.0/E-5: after `setWatched(watched: false)`
+  /// Measured against v0.20.3: after `setWatched(watched: false)`
   /// the item is back in `continue` with its position intact; after this it is
   /// in no home row at all and the position is gone. Collapsing the two into
   /// one boolean would erase a resume position every time a user un-watches
@@ -137,14 +137,14 @@ abstract base class LibraryApi {
   /// layer that can.
   Future<AuthResult> me({CancelToken? cancelToken});
 
-  /// `POST /api/media/{id}/progress` — one playback report (F9).
+  /// `POST /api/media/{id}/progress` — one playback report.
   Future<void> postProgress(
     MediaId id,
     ProgressReport report, {
     CancelToken? cancelToken,
   });
 
-  /// `GET .../file/{n}/sub/{k}` — one sidecar, as WebVTT text.
+  /// `GET.../file/{n}/sub/{k}` — one sidecar, as WebVTT text.
   Future<String> subtitleText(
     MediaId id,
     FileIndex file,
@@ -155,7 +155,7 @@ abstract base class LibraryApi {
   /// The headers libmpv must carry, after proving the session is alive.
   Future<PlaybackSessionHeaders> playbackHeaders({CancelToken? cancelToken});
 
-  /// `HEAD .../file/{n}` — refuses before the engine opens, or returns (F12).
+  /// `HEAD.../file/{n}` — refuses before the engine opens, or returns.
   ///
   /// Throws `TranscodingDisabled` for the `415` libmpv could only report as
   /// "failed to open". Returns for `2xx` and for the `307` to HLS alike.
@@ -171,7 +171,7 @@ abstract base class LibraryApi {
   /// The absolute URL of one sidecar subtitle.
   Uri subtitleUrl(MediaId id, FileIndex file, SubtitleIndex subtitle);
 
-  /// What libmpv's own connection to this server would be able to verify (D10).
+  /// What libmpv's own connection to this server would be able to verify.
   PlaybackTransport playbackTransport();
 
   /// Releases the sockets behind this API.
@@ -209,8 +209,8 @@ final class FileFinLibraryApi extends LibraryApi {
     try {
       await _client.sessions.restore();
     } on SessionExpired {
-      // `restore` has already deleted the dead cookie and KEPT the password
-      // (`session.dart:159`), so this is F3 doing exactly what it does for a
+      // `restore()` has already deleted the dead cookie and KEPT the password
+      //, so this is the retry doing exactly what it does for a
       // 401 mid-browse. The generation is read rather than assumed: passing a
       // stale one makes `reauthenticate` return without doing anything, which
       // would look like a successful restore and land the user on an empty

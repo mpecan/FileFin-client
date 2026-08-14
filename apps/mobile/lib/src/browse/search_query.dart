@@ -7,12 +7,11 @@ import 'package:meta/meta.dart';
 /// a request is made of and splitting it is how a screen ends up sending last
 /// keystroke with this scope.
 ///
-/// **No `==`, no `hashCode`, no `toString`, and their absence is §1 rather than
-/// an oversight.** Nothing compares two queries or puts one in a set, and
-/// `just mutants` said so: swapping `Object.hash`'s arguments survived the
-/// suite, because a hash consistent with an equality nobody calls cannot be
-/// told from any other. Asserting one would pin an SDK detail to quiet a
-/// gate.
+/// **No `==`, no `hashCode`, no `toString()`, and their absence is deliberate
+/// rather than an oversight.** Nothing compares two queries or puts one in a
+/// set, and the mutation gate said so: swapping `Object.hash`'s arguments
+/// survived the whole suite, because a hash consistent with an equality nobody
+/// calls cannot be told from any other.
 @immutable
 class SearchQuery {
   /// A query over [field] for [text]. The default is an empty search of
@@ -28,18 +27,18 @@ class SearchQuery {
   /// What actually goes on the wire.
   ///
   /// Trimmed, because the two numeric scopes `TrimSpace` before parsing
-  /// (`db/search.go:36,43`) while the nine text scopes do **not** — `likePattern`
+  /// (`db/search.go,43`) while the nine text scopes do **not** — `likePattern`
   /// only lowercases — so `" ada "` unqueried would search titles for a string
   /// with spaces in it and find nothing, on a query the user would swear they
   /// typed correctly.
   String get wireText => text.trim();
 
   /// Nothing has been typed. The server short-circuits an empty `q` to
-  /// `200 []` (`db/search.go:17-19`), so this client does not ask at all.
+  /// `200 []`, so this client does not ask at all.
   bool get isBlank => wireText.isEmpty;
 
   /// Whether the server will actually **run** this query, as opposed to
-  /// answering `200 []` because it could not read the input (M6.0/E-4).
+  /// answering `200 []` because it could not read the input.
   bool get isRunnable => searchIsRunnable(text, field: field);
 
   /// The same query with different text.

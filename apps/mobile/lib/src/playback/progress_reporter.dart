@@ -14,14 +14,14 @@ enum ReportStop {
   rejected,
 }
 
-/// F9, with no timer and no clock anywhere.
+/// Progress reporting, with no timer and no clock anywhere.
 ///
 /// **Every decision is `decideReport`'s**, a pure function over **media**
 /// seconds, which is what makes this deterministic: a test pushes positions and
 /// asserts requests, with no `fake_async` and nothing to flake.
 ///
 /// [lastSent] advances **only after a successful POST**, so a failed report is
-/// retried by the next trigger with no queue and no backoff (§1). The cost is
+/// retried by the next trigger with no queue and no backoff. The cost is
 /// stated rather than hidden: a report lost to a flaky network is lost, and the
 /// next checkpoint carries the newer position anyway.
 class ProgressReporter {
@@ -49,10 +49,10 @@ class ProgressReporter {
   /// The optimistic local state, folded through the **same engine the server
   /// runs**.
   ///
-  /// This is F9's "reflect resulting watched/continue changes locally without a
-  /// full refetch": `applyProgress` is validated against 601 vectors captured
-  /// from upstream's own `state.Apply`, so what this holds after a successful
-  /// report is what the server holds.
+  /// This is the reporter’s "reflect resulting watched/continue changes locally
+  /// without a full refetch": `applyProgress` is validated against 601 vectors
+  /// captured from upstream's own `state.Apply`, so what this holds after a
+  /// successful report is what the server holds.
   WatchState state;
 
   /// Whether the prediction above is known to have diverged.
@@ -61,7 +61,7 @@ class ProgressReporter {
   /// class where `applyProgress` cannot match the server — a report crossing
   /// 90% of a **single-file** item, where `(0, 0)` is ambiguous on the wire.
   /// The screen re-reads the detail rather than trusting the prediction, which
-  /// is what discharges M1's known limitation.
+  /// is what discharges the earlier known limitation.
   bool needsDetailRefetch = false;
 
   /// Why reporting stopped, or null while it is running.

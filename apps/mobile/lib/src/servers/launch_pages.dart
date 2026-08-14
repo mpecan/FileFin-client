@@ -1,6 +1,6 @@
 /// The two screens a launch can land on before a library does.
 ///
-/// Split out of `app.dart` at M7.3 when the resuming placeholder pushed it
+/// Split out of `app.dart` when the resuming placeholder pushed it
 /// past `just file-size`'s soft limit. They belong together: each is what the
 /// user sees when `HomeRoute` has no `LibraryApi` to show, for two different
 /// reasons.
@@ -35,23 +35,24 @@ class NoServerPage extends StatelessWidget {
   /// `CertificatePinMismatch` — the one event pinning exists to make visible —
   /// rendered as an invitation to retype a password, and "your server is off"
   /// read as "you have been signed out". `SessionExpired` keeps the wording
-  /// below because that IS what it means and F2's promise is that it is the
-  /// rare one; everything else says what actually happened.
+  /// below because that IS what it means, and a session that can be renewed is
+  /// renewed silently — so getting here is the rare case. Everything else says
+  /// what actually happened.
   final ErrorMessage? problem;
 
-  /// Starts F1's add-a-server flow.
+  /// Starts the add-a-server flow.
   final VoidCallback onAddServer;
 
   /// Signs in to the saved server, when there is one.
   ///
   /// `HomeRoute` withholds it on a `CertificatePinMismatch`, and that is the
-  /// point of [problem] rather than a side effect: F15 calls a changed
+  /// point of [problem] rather than a side effect: a changed
   /// certificate a rejection rather than another prompt, so the one thing this
   /// screen must not do is invite a password at a server whose identity has
   /// just failed. [onServers] and [onAddServer] are how a user acts on it.
   final VoidCallback? onSignIn;
 
-  /// Opens F11's picker. Offered from here as well as from the signed-in
+  /// Opens the server picker. Offered from here as well as from the signed-in
   /// shell, because otherwise a user signed out of their second server could
   /// only ever reach their first: [onSignIn] goes to one server, and this is
   /// the only screen with none of them open.
@@ -59,15 +60,15 @@ class NoServerPage extends StatelessWidget {
 
   /// The wording for the two launches that are not a failure at all.
   ///
-  /// NOT *"a server restart signs everyone out"*: F3 renews and replays that
+  /// NOT *"a server restart signs everyone out"*: a renewal and replays that
   /// transparently and the user never sees this screen for it. What lands here
   /// is having no password to renew with — after a sign-out, or after one that
   /// no longer works.
   ///
-  /// **It said the opposite until M7.4**, and had done since M7.2 made the
+  /// **It said the opposite once**, and had done since we added the
   /// store persistent: *"your password is kept only while this app is running,
-  /// so a fresh launch starts signed out"* was true at M3 and became a false
-  /// statement about where a credential lives (§9) the moment
+  /// so a fresh launch starts signed out"* was true and became a false
+  /// statement about where a credential lives the moment
   /// `PlatformSecretStore` landed.
   String get _ordinaryDetail => savedCount == 0
       ? 'Add the address of your FileFin server to browse its library.'
@@ -123,7 +124,7 @@ class NoServerPage extends StatelessWidget {
   );
 }
 
-/// What a launch shows while F2's stored session is being proved.
+/// What a launch shows while the stored session is being proved.
 ///
 /// A spinner here and an empty state on a first launch, deliberately: this is
 /// the one moment work really is happening and the user has something to wait

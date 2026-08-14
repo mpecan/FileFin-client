@@ -175,7 +175,7 @@ String headerFacts(MediaDetail detail) {
 /// as `if (n == 1) '1 x' else if (n > 1) '$n xs'`, the second arm is
 /// unreachable for `n == 1` — so rewriting `> 1` to `>= 1` produces a mutant
 /// no assertion can kill, because no input separates them. Turning an
-/// equivalent mutant into no mutant beats excluding it (§3).
+/// equivalent mutant into no mutant beats excluding it.
 String? _plural(int n, String noun) => switch (n) {
   0 => null,
   1 => '1 $noun',

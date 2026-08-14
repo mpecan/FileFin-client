@@ -11,12 +11,12 @@ import 'package:flutter/material.dart';
 String formatPosition(Duration d) {
   // ONE named constant for both minute divisions rather than two literal 60s,
   // and it is the mutation gate that asks for it. Dart defines `a % b` to land
-  // in `[0, b.abs())`, so `% 60` and `% -60` are the same function for every
+  // in `[0, b.abs)`, so `% 60` and `% -60` are the same function for every
   // input — two literals therefore produce two mutants that NO assertion can
   // kill, because no behaviour separates them. Routed through a constant, the
   // same mutation also rewrites the `~/` below, where the sign very much is
   // observable: `187 ~/ -60` is -3, and `3:07` becomes `57:07`. An equivalent
-  // mutant turned into a killable one beats an exclusion (§3).
+  // mutant turned into a killable one beats an exclusion.
   const perMinute = 60;
   final seconds = d.inSeconds.clamp(0, 1 << 31);
   final s = (seconds % perMinute).toString().padLeft(2, '0');
@@ -254,10 +254,10 @@ class PlayerScrubber extends StatelessWidget {
     const palette = FileFinPalette.dark;
     final duration = controller.duration;
     // ONE guard, read twice, rather than `max <= 0` written out three times.
-    // The three copies were not a style problem: `.clamp(0, max.toInt())` ran
+    // The three copies were not a style problem: `.clamp(0, max.toInt)` ran
     // BEFORE any of them, so a negative duration — which mpv can report for a
     // stream it has not finished reading — threw `ArgumentError: 0` out of
-    // `build` and took the whole screen with it. Found by writing the
+    // `build()` and took the whole screen with it. Found by writing the
     // assertion the mutation gate asked for.
     final lengthMs = duration.inMilliseconds;
     final scrubbable = lengthMs > 0;
@@ -401,7 +401,7 @@ class _Volume extends StatelessWidget {
                 // The controller's value, never a literal: `value: 1` made the
                 // thumb snap back to full on the next rebuild while mpv held
                 // the dragged value, and mutating the literal to 0 left all
-                // 149 playback tests green (M4.R/P6).
+                // 149 playback tests green.
                 value: controller.volume,
                 onChanged: _setVolume,
               ),

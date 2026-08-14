@@ -10,7 +10,7 @@ import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
-/// F5: a box, a scope, and the same poster grid the library uses.
+/// A box, a scope, and the same poster grid the library uses.
 ///
 /// **The scope selector is not decoration**: an unrecognised `field` degrades
 /// to `all` rather than erroring (`docs/field-notes.md`), so a screen that
@@ -36,7 +36,7 @@ class SearchPage extends StatefulWidget {
   /// Opens one result's detail view.
   final void Function(MediaSummary item) onOpen;
 
-  /// Where a `SessionExpired` sends the user (F3's last resort).
+  /// Where a `SessionExpired` sends the user.
   final VoidCallback? onSignIn;
 
   /// How long typing is coalesced for. Injected so a test need not wait.
@@ -166,7 +166,7 @@ class _SearchPageState extends State<SearchPage> {
 /// The eleven scopes, behind one pill.
 ///
 /// **A menu rather than the row of pills the TV screen draws**, because there
-/// are eleven of them: `db/search.go:70` degrades an unrecognised `field` to
+/// are eleven of them: `db/search.go` degrades an unrecognised `field` to
 /// `all` without erroring, so every scope the client can send has to be
 /// nameable, and eleven pills do not fit across a phone at a legible size.
 class _ScopeButton extends StatelessWidget {

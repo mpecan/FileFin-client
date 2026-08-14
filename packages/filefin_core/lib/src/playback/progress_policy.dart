@@ -61,12 +61,12 @@ final class SkipProgress extends ProgressDecision {
   final SkipReason reason;
 }
 
-/// F9's entire reporting policy, as one pure function.
+/// The whole progress-reporting policy, as one pure function.
 ///
 /// **The interval is MEDIA seconds, never wall clock** — upstream's design
 /// (`docs/field-notes.md`), so nothing reports while paused and the whole rule
 /// is testable with no clock. [lastSent] advances **only on a successful
-/// POST**, so a failed report is retried by the next trigger (§1).
+/// POST**, so a failed report is retried by the next trigger.
 ///
 /// The rules in order: a non-finite or non-positive duration, or non-finite
 /// position, is [SkipReason.notStarted]; a [ProgressEvent.checkpoint] sends
@@ -110,7 +110,7 @@ ProgressDecision decideReport({
 /// Whether the detail payload must be re-read rather than predicted.
 ///
 /// `applyProgress` reproduces the server exactly except on one class of input,
-/// and this is that exception made callable — D15 has the case and its cost.
+/// and this is that exception made callable —
 ///
 /// Scoped to `fileCount == 1` deliberately: with more than one file a crossing
 /// advances the pointer to `(file + 1, 0)`, which is exactly predictable and

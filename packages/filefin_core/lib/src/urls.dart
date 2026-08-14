@@ -8,7 +8,7 @@ import 'package:meta/meta.dart';
 /// would otherwise merge into the template and split back out as two segments,
 /// addressing a different route and failing as a 404 from somewhere else.
 ///
-/// The repetition below is deliberate and load-bearing — see D18.
+/// The repetition below is deliberate and load-bearing.
 abstract final class ApiPaths {
   /// Percent-encodes one interpolated path parameter, and **throws** for the
   /// three values no encoding can make safe: `''`, `'.'` and `'..'`.
@@ -17,7 +17,7 @@ abstract final class ApiPaths {
   /// them even when escaped (`docs/field-notes.md`), so each silently addresses
   /// a *shorter route* — which this server answers with the SPA catch-all
   /// rather than a 404. Reachable today: `MediaId('')` is the models' declared
-  /// default (§8). Throwing turns a request against the wrong route into a
+  /// default. Throwing turns a request against the wrong route into a
   /// stack trace naming the value.
   static String _seg(Object value) {
     final segment = '$value';
@@ -92,7 +92,7 @@ abstract final class ApiPaths {
 /// The `?size=` hint on a poster request.
 ///
 /// The server serves the pre-built variant **when it exists** and otherwise
-/// silently falls back to the base poster (`media.go:351`), so this is a
+/// silently falls back to the base poster, so this is a
 /// preference and the client must not assume the dimensions it gets back.
 enum PosterSize {
   /// The larger variant, for a detail page.

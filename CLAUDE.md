@@ -30,19 +30,23 @@ running path. Delete dead code immediately — git remembers.
 
 **§2 — Comments describe interfaces. Everything longer lives in a document.**
 
-A comment says what a reader of the declaration needs and cannot get from the
-code: why a non-obvious choice was made, what invariant holds, which server
-quirk a workaround exists for. It does not say what the code already says, and
-it does not carry the argument for a decision or the record of a measurement.
-Those have homes:
+A comment explains the **current state** where the code and the signature are
+not enough: why a non-obvious choice was made, what invariant holds, which
+server quirk a workaround exists for. In the present tense, about what is there
+now.
 
-- **`docs/decisions/`** — a choice *we* made, with the alternative that was
-  rejected. Indexed by `SPEC.md` §13, which keeps the D-numbering.
-- **`docs/field-notes.md`** — how the server, a dependency or the framework was
-  *observed* to behave. Not our choice, so not a decision.
+It does **not** explain history — no "used to", no "until M5.1", no record of
+which milestone found what. And it carries **no references**: no `§9`, no `F13`,
+no `D12`, no `media.go:227`. A reference is a thing that can rot, and no
+reference cannot. Where a comment would have pointed, it says the thing instead:
+not "§9 forbids it" but "this must never be logged".
 
-The comment then cites it: `/// See D12.` The prose is the asset; its location
-was the bug.
+The long-form argument for a decision, and the record of a measurement, have
+homes of their own — [`docs/decisions/`](docs/decisions/) for a choice we made
+and what it rejected, [`docs/field-notes.md`](docs/field-notes.md) for how
+something we do not control was observed to behave. They are found by reading
+them, not by a pointer from the code. The prose is the asset; the pointer was
+never the asset.
 
 **Two checks, and the first one is the rule.** No single comment block may
 exceed **12 lines** — a comment describing an interface is bounded by that

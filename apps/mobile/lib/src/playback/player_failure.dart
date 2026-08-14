@@ -5,14 +5,12 @@ part of 'player_controller.dart';
 
 /// What one playback session leaves behind for the screen that opened it.
 ///
-/// **This is F9's second clause made into a value someone receives** — "reflect
-/// resulting watched/continue changes locally without a full refetch". Until
-/// M4.R/P3 `ProgressReporter.state` and `needsDetailRefetch` had no production
-/// reader at all: the fold was computed, validated against 601 captured vectors
-/// and thrown away, `MediaDetailPage` loaded once in `initState` and never
-/// again, and the detail screen behind the player showed a resume offset from
-/// before playback started. M1's divergence latch discharged nothing because
-/// nothing read it.
+/// **What the screen that pushed the player has to know on the way out**, so it
+/// can reflect the watched and continue changes without a full refetch.
+///
+/// Without a reader, the fold is computed, validated against 601 captured
+/// vectors and thrown away — and the detail screen behind the player shows a
+/// resume offset from before playback started.
 @immutable
 class PlaybackOutcome {
   /// The session ended with [state], needing a refetch or not.
@@ -30,7 +28,7 @@ class PlaybackOutcome {
   /// True only for the one input class `applyProgress` provably cannot match —
   /// a report crossing 90% of a single-file item, where `(0, 0)` is ambiguous
   /// on the wire. Everywhere else the prediction IS the server's answer, which
-  /// is what makes the no-refetch half of F9 honest rather than optimistic.
+  /// is what makes the no-refetch path honest rather than optimistic.
   final bool needsDetailRefetch;
 
   /// Whether the SERVER accepted at least one progress report this session.
@@ -41,7 +39,7 @@ class PlaybackOutcome {
   /// three home rows (`docs/field-notes.md`). The detail route pops it, and it
   /// is why watching something moves it out of *Continue watching*.
   ///
-  /// Defaulted rather than required: a test exercising F9's fold is not making
+  /// Defaulted rather than required: a test exercising the fold is not making
   /// a claim about the home rows.
   final bool wrote;
 }
@@ -53,10 +51,10 @@ class PlaybackOutcome {
 /// button, and the two surfaces want different things from the same error.
 ///
 /// **There is no `_` arm, and its absence is the point.** It had one until
-/// M5.1, and it was the hole in an alarm three other switches sounded
+/// once, and it was the hole in an alarm three other switches sounded
 /// correctly when `TranscodingDisabled` landed: this one kept compiling, and
 /// would have put `Playback could not start: TranscodingDisabled: …` on the
-/// banner F12 is actually about. The generic sentence is a **grouped arm**
+/// banner this is actually about. The generic sentence is a **grouped arm**
 /// rather than a default, so a new variant stays a compile error here.
 (String, bool) describeApiFailure(FileFinApiException error) => switch (error) {
   SessionExpired() => (

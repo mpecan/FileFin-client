@@ -1,19 +1,19 @@
 import 'package:filefin_core/filefin_core.dart';
 
 /// The three things this client keeps per server that must never be logged,
-/// written to a settings file, or held in unencrypted storage (§9, NF4).
+/// written to a settings file, or held in unencrypted storage.
 enum SecretKind {
   /// The `filefin_session` cookie value.
   session('session'),
 
-  /// The account password, kept so F3 can re-authenticate silently (F2).
+  /// The account password, kept so the client can re-authenticate silently.
   ///
-  /// Storing a password is a real decision and SPEC.md D5 records it: server
-  /// sessions die with the process (L1), so re-typing a password on a phone
+  /// Storing a password is a real decision and records it: server
+  /// sessions die with the process, so re-typing a password on a phone
   /// every time the server restarts is not something a person will tolerate.
   password('password'),
 
-  /// The SHA-256 certificate fingerprint the user accepted (F15).
+  /// The SHA-256 certificate fingerprint the user accepted.
   ///
   /// **It is integrity data, not a secret**, and it is here for the same
   /// reason a public key would be: it is worthless to an attacker who reads it
@@ -28,7 +28,7 @@ enum SecretKind {
   final String key;
 }
 
-/// SPEC.md §7's secure-store key layout, in exactly one place.
+/// The secure-store key layout, in exactly one place.
 ///
 /// `filefin/{serverId}/session|password|certpin`. One function rather than a
 /// format string at each call site, because a layout written twice is a layout
@@ -41,11 +41,11 @@ String secretKeyFor(ServerId server, SecretKind kind) =>
 ///
 /// **A port rather than a `flutter_secure_storage` call**, because this package
 /// is Flutter-free: the plugin throws `MissingPluginException` under
-/// `dart test`, so depending on it would make every F3 unit test mock precisely
+/// `dart test`, so depending on it would make every renewal test mock precisely
 /// the layer that matters. `apps/mobile` supplies the Keychain/Keystore side.
 ///
-/// `abstract base class` rather than an interface (D22) is what makes the
-/// redacting [toString] below *inherited* rather than merely recommended (§9).
+/// `abstract base class` rather than an interface is what makes the
+/// redacting [toString] below *inherited* rather than merely recommended.
 abstract base class SecretStore {
   /// Allows implementations to be `const`.
   const SecretStore();
@@ -59,11 +59,11 @@ abstract base class SecretStore {
   /// Removes the value. Removing something absent is not an error.
   Future<void> delete(ServerId server, SecretKind kind);
 
-  /// Never prints a stored value (§9).
+  /// Never prints a stored value.
   ///
   /// Concrete on the base so no implementation can leak by forgetting. It is
   /// also what `secret_tostring` asks for, and the gate is right to ask: a
-  /// store whose `toString` printed its contents would put every password in
+  /// store whose `toString()` printed its contents would put every password in
   /// the first log line that interpolated it.
   @override
   String toString() => '$runtimeType(<redacted>)';
@@ -71,14 +71,13 @@ abstract base class SecretStore {
 
 /// The process-lifetime credential cache.
 ///
-/// **Not a stub, and not a test double.** F3 needs the password in memory for
-/// the life of the process whatever the persistence story is — a re-auth
-/// cannot await a Keychain prompt in the middle of a 401 retry — so this is
-/// the production cache, and M7's platform store is a persistence decorator
-/// around it. It is constructed by every unit test and by every `just it`
-/// suite, so §5's "has a consumer" holds today rather than eventually.
+/// **Not a stub, and not a test double.** The password has to be in memory for
+/// the life of the process whatever the persistence story is — a re-auth cannot
+/// await a Keychain prompt in the middle of a 401 retry — so this is the
+/// production cache, and the platform store is a persistence decorator around
+/// it. Every unit test and every integration suite constructs it.
 ///
-/// **What it does not do is survive an app restart.** Nothing at M2 proves a
+/// **What it does not do is survive an app restart.** Nothing proves a
 /// password does; STATE.md says so rather than letting the port's existence
 /// imply it.
 final class InMemorySecretStore extends SecretStore {

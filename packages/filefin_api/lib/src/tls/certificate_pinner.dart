@@ -4,8 +4,7 @@ import 'package:filefin_api/src/tls/fingerprint.dart';
 import 'package:filefin_api/src/tls/pin_decision.dart';
 import 'package:meta/meta.dart';
 
-/// Holds one server's pin and answers both of TLS's synchronous questions
-/// (F15, D19).
+/// Holds one server's pin and answers both of TLS's synchronous questions.
 ///
 /// **It never writes a pin**, and a mismatch never updates one: the TLS hooks
 /// are synchronous, so accepting an unknown certificate is a separate,
@@ -26,7 +25,7 @@ class CertificatePinner {
   /// **`withTrustedRoots: false` whenever a pin exists**, which is what makes
   /// [connect]'s `trustedByOs` say something true; a null context (no pin)
   /// means `SecurityContext.defaultContext`, so ordinary public HTTPS keeps
-  /// working exactly as the OS says. See D19.
+  /// working exactly as the OS says.
   ///
   /// It is deliberately **not** the mechanism that blocks — [connect] is.
   @visibleForTesting
@@ -44,15 +43,15 @@ class CertificatePinner {
   /// `HttpClient.connectionFactory` — establishes the socket, pin first.
   ///
   /// **This exists because `badCertificateCallback` is handed the wrong
-  /// certificate** — the CA rather than the leaf, measured at M2 against a real
-  /// chain. D19 has the defect and what it cost.
+  /// certificate** — the CA rather than the leaf, measured against a real
+  /// chain.
   ///
   /// Owning the connection fixes it: `SecureSocket.startConnect` hands back a
   /// socket whose `peerCertificate` **is** the leaf, with no request byte
   /// written yet, so a refusal `destroy()`s it before the request — cookie
   /// included — reaches the wire.
   ///
-  /// The proxy arguments are unused: nothing sets `HttpClient.findProxy` (§5).
+  /// The proxy arguments are unused: nothing sets `HttpClient.findProxy`.
   Future<ConnectionTask<Socket>> connect(Uri url, String? _, int? _) async {
     if (!url.isScheme('https')) return Socket.startConnect(url.host, url.port);
     var trustedByOs = true;
@@ -75,8 +74,8 @@ class CertificatePinner {
     if (decision is AcceptCertificate) return task;
     socket.destroy();
     // Host and port rather than the URL: a saved-server URL can carry
-    // `user:password@` (§9), and this string travels inside a `DioException`
-    // whose own `toString` prints it.
+    // `user:password@`, and this string travels inside a `DioException`
+    // whose own `toString()` prints it.
     throw HandshakeException(
       '${url.host}:${url.port} presented a certificate this client refused',
     );

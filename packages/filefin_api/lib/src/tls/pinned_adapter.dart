@@ -11,7 +11,7 @@ import 'package:filefin_api/src/tls/certificate_pinner.dart';
 /// has reached the server. Both route through the same pure `decidePin`.
 ///
 /// **`badCertificateCallback` is deliberately left null** — dart:io's
-/// fail-closed default. D19 has the reasoning for all three.
+/// fail-closed default.
 ///
 /// This is the only place `dart:io` and `HttpClient` appear in the request
 /// path, which is what keeps the rest of the package testable without a socket.

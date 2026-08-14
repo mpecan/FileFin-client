@@ -51,7 +51,7 @@ class DetailSections extends StatelessWidget {
           ],
         ),
         // Absent, not empty, when the server sent neither: a disclosure row
-        // reading "Files & technical  0" invites a tap that opens nothing, and
+        // reading "Files & technical 0" invites a tap that opens nothing, and
         // an un-enriched item with no file list is the ordinary case rather
         // than a fault.
         if (detail.files.isNotEmpty || detail.technical.isNotEmpty)
@@ -169,7 +169,7 @@ class _Chips extends StatelessWidget {
 ///
 /// `MetaPair.key` is a DISPLAY LABEL, not an identifier. The server renders
 /// `metadata` and `ratings` through `metadataLabels`/`ratingLabels`
-/// (`media.go:80,93`): a listed key gets a friendly label and everything else
+/// (`media.go,93`): a listed key gets a friendly label and everything else
 /// falls through sorted under its raw name. The captured fixture carries
 /// `customKey` precisely to keep that honest — a client that switched on the
 /// key would silently drop every field the server's label table does not know.

@@ -12,7 +12,7 @@ import 'package:flutter/services.dart';
 /// so new enterprise CAs are picked up. iOS and desktop need no bundle.
 ///
 /// `abstract final` rather than a private constructor, which would be a line
-/// nothing could ever run (§1).
+/// nothing could ever run.
 abstract final class CaBundle {
   /// The channel `MainActivity` answers `exportCaBundle` on.
   ///
@@ -41,7 +41,7 @@ abstract final class CaBundle {
   ///
   /// The cache is `static` because there is one trust store per process and
   /// re-exporting it on every open would write a file per playback. That makes
-  /// it state a test has to be able to reset (§3).
+  /// it state a test has to be able to reset.
   @visibleForTesting
   static void reset() {
     _path = null;

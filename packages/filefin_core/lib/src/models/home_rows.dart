@@ -4,7 +4,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'home_rows.freezed.dart';
 part 'home_rows.g.dart';
 
-/// `GET /api/home` — three `MediaSummary[]` rows in one call (`media.go:227`,
+/// `GET /api/home` — three `MediaSummary[]` rows in one call (`media.go`,
 /// anonymous struct at `:237-241`), newest first by the per-user `updated`
 /// stamp.
 ///
@@ -23,7 +23,7 @@ abstract class HomeRows with _$HomeRows {
     @Default(<MediaSummary>[]) List<MediaSummary> completed,
   }) = _HomeRows;
 
-  /// Decodes a payload from the server, tolerating unknown keys (§8).
+  /// Decodes a payload from the server, tolerating unknown keys.
   factory HomeRows.fromJson(Map<String, Object?> json) =>
       _$HomeRowsFromJson(json);
 }

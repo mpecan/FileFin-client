@@ -2,14 +2,14 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/errors/error_presentation.dart';
 import 'package:flutter/material.dart';
 
-/// F15's trust-on-first-use prompt: the fingerprint, and a deliberate accept.
+/// The trust-on-first-use prompt: the fingerprint, and a deliberate accept.
 ///
 /// **Returns false unless the user actually said yes.** A dismissed dialog is
 /// a `null` result and must not be read as acceptance — trust-on-first-use is
 /// only defensible when the first use is a decision somebody took.
 ///
-/// There is deliberately **no equivalent for a CHANGED certificate** (D19):
-/// offering an accept button there would be the silent re-accept F15 forbids,
+/// There is deliberately **no equivalent for a CHANGED certificate**: offering
+/// an accept button there would be the silent re-accept pinning forbids,
 /// implemented by hand.
 Future<bool> promptToTrust(
   BuildContext context,

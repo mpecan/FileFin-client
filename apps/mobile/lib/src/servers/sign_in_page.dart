@@ -10,11 +10,11 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
 
-/// F2: sign in to one saved server.
+/// Sign in to one saved server.
 ///
 /// **This screen is reached deliberately, never by a 401.** A 401 on any call
-/// is routine (SPEC.md L1) and `filefin_api` already re-authenticates and
-/// retries once (F3); only a `SessionExpired` — which means that retry also
+/// is routine and `filefin_api` already re-authenticates and
+/// retries once; only a `SessionExpired` — which means that retry also
 /// failed — routes here. A UI-level 401 handler is the tempting bug, and it
 /// would prompt for a password every time a server restarted mid-scroll.
 class SignInPage extends StatefulWidget {
@@ -50,7 +50,7 @@ class _SignInPageState extends State<SignInPage> {
     super.dispose();
   }
 
-  /// F2's sign-in, with F15's accept-and-pin loop around it.
+  /// Sign-in, with the accept-and-pin loop around it.
   ///
   /// **Exactly two attempts, written out.** A retry expressed as recursion —
   /// or as a loop whose bound is a condition — is the shape CLAUDE.md names as
@@ -69,7 +69,7 @@ class _SignInPageState extends State<SignInPage> {
     if (!mounted) return;
     // The pin is integrity data and belongs in the secure store rather than in
     // `settings.json`, which is a plain file any app on a rooted device can
-    // edit (`secret_store.dart:16-22`). Writing it is what makes the NEXT
+    // edit. Writing it is what makes the NEXT
     // client — built by `apiForServer` below — carry it.
     await FileFinScope.of(context).secrets.write(
       widget.server.id,
@@ -101,11 +101,11 @@ class _SignInPageState extends State<SignInPage> {
         Credentials(username: _user.text.trim(), password: _password.text),
       );
       // The username is not a secret and a cold start needs it to renew a
-      // session silently (F2). The password never comes near this file's
+      // session silently. The password never comes near this file's
       // storage — `filefin_api` puts it in the SecretStore.
       //
       // The SELECTION is written here too, and this is the only place that
-      // writes it until M7.4's picker: signing in is what makes a server the
+      // writes it once's picker: signing in is what makes a server the
       // one a launch should open, and a saved server nobody ever signed in to
       // is not it.
       deps.settings.write(
@@ -120,7 +120,7 @@ class _SignInPageState extends State<SignInPage> {
       }
       widget.onSignedIn(widget.server, api);
       return null;
-      // F15's prompt, and the ONLY exception this screen hands back rather
+      // the trust prompt, and the ONLY exception this screen hands back rather
       // than renders: it is a question for the user, not a failure to report.
     } on CertificateNotTrusted catch (error) {
       api.close();

@@ -13,9 +13,9 @@ import 'package:flutter/widgets.dart';
 /// a locator is global mutable state that a widget test has to reset between
 /// cases, and forgetting to reset it makes one test's fake leak into the next.
 ///
-/// **`secrets` is here because F15's accept-and-pin loop reads it**, and not
-/// before: M3 removed the field precisely because nothing did (§5). The pin
-/// must be resolved into memory before a client is built (D19).
+/// **`secrets` is here because the accept-and-pin loop reads it**, and not
+/// before: removed the field precisely because nothing did. The pin
+/// must be resolved into memory before a client is built.
 @immutable
 class AppDependencies {
   /// Holds the settings store, the secret store, the API factory and
@@ -32,7 +32,7 @@ class AppDependencies {
   /// Where `settings.json` lives. Holds no secrets.
   final SettingsStore settings;
 
-  /// Where the session, the password and F15's pin live (§9).
+  /// Where the session, the password and the certificate pin live.
   ///
   /// Read to resolve a pin before a client is built, and written when a user
   /// accepts a certificate. Nothing else in `apps/mobile` may touch it: every
@@ -43,18 +43,18 @@ class AppDependencies {
   /// Builds the API for one saved server, at the certificate it was trusted
   /// with.
   ///
-  /// A factory rather than a single client because F11 is one client per
+  /// A factory rather than a single client because there is one client per
   /// `ServerId`, each with its own cookie jar, secret namespace and pin —
   /// sharing any of the three between servers is how one server's session
   /// cookie reaches another.
   ///
-  /// `pin` is F15's accepted fingerprint. `apiForServer` is what reads it out
+  /// `pin` is the accepted fingerprint. `apiForServer` is what reads it out
   /// of [secrets] and hands it over; callers should use it rather than this
   /// directly, so the read happens in one place.
   final LibraryApi Function(SavedServer server, {CertificateFingerprint? pin})
   apiFactory;
 
-  /// F13's connection sample, as a port so a widget test can set it.
+  /// The connection sample, as a port so a widget test can set it.
   final NetworkStatus network;
 
   /// Builds a playback engine.
@@ -65,7 +65,7 @@ class AppDependencies {
   /// with it.
   final PlaybackHost Function() playbackHostFactory;
 
-  /// Opens F14's media session — the lock-screen transport and, on Android,
+  /// Opens the media session — the lock-screen transport and, on Android,
   /// the foreground service that stops the OS muting a backgrounded player.
   ///
   /// **A factory returning a FUTURE, and per PROCESS rather than per screen** —
@@ -74,7 +74,7 @@ class AppDependencies {
   /// (`docs/field-notes.md`). `openNowPlaying` memoises.
   ///
   /// Deliberately not called from `main()`: nothing touches the media-session
-  /// channel until a player screen opens, which is what keeps NF1's cold start
+  /// channel until a player screen opens, which is what keeps the cold start
   /// at the one plugin call it has always had.
   final Future<NowPlayingHost> Function() nowPlayingFactory;
 }

@@ -5,18 +5,18 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'category.freezed.dart';
 part 'category.g.dart';
 
-/// One row of `GET /api/categories` — a flat list, DTO `library.go:27-42`.
+/// One row of `GET /api/categories` — a flat list, DTO `library.go`.
 ///
 /// The tree is assembled client-side from [parentId]. `parentId == 0` means
 /// **top level**, not "absent", which is why it is a `CategoryId` with a
 /// default rather than a nullable.
 ///
 /// [media] and [files] are cache annotations: when the cache is unavailable the
-/// listing still returns with both at 0 (`library.go:73-81`), so a client
+/// listing still returns with both at 0, so a client
 /// cannot tell "empty category" from "cache down" by these counts alone.
 @freezed
 abstract class Category with _$Category {
-  /// One category row, with every field defaulted (§8).
+  /// One category row, with every field defaulted.
   const factory Category({
     @CategoryIdConverter() @Default(CategoryId(0)) CategoryId id,
     @Default('') String name,
@@ -32,7 +32,7 @@ abstract class Category with _$Category {
     @Default(0) int learned,
   }) = _Category;
 
-  /// Decodes a payload from the server, tolerating unknown keys (§8).
+  /// Decodes a payload from the server, tolerating unknown keys.
   factory Category.fromJson(Map<String, Object?> json) =>
       _$CategoryFromJson(json);
 }

@@ -1,14 +1,15 @@
 part of 'player_page.dart';
 
 // The panels and banners the player screen draws, split out of
-// `player_page.dart` at M7.6 when F14's binder took that file over `just
+// `player_page.dart` when the media-session binder took that file over `just
 // file-size`'s 400-line soft limit — and a gate warning may fall or hold, never
 // rise. A `part` rather than a library for the reason `player_failure.dart` is
 // one: three of these five are private to the screen, and making them public to
 // move them would trade a size warning for five new public members with one
 // consumer each.
 
-/// The persistent banner D10 requires when unverified playback is on.
+/// The persistent banner unverified playback requires when
+/// unverified playback is on.
 ///
 /// **A banner rather than a one-time dialog, and the difference is the point:**
 /// what has been given up is ongoing, not a single act. It names exactly what
@@ -20,10 +21,10 @@ class UnverifiedTlsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The scheme read once. Two `Theme.of(context)` calls in one build is a
-    // small thing, and at M4 this hoist was load-bearing for a second reason:
+    // small thing, and this hoist was load-bearing for a second reason:
     // collapsing the `TextStyle(...)` onto one line also removed the only
     // mutant in this file that no assertion could kill. **That is no longer
-    // what protects it** — M4.R/G5 narrowed the three argument-swap rules so
+    // what protects it** — narrowed the three argument-swap rules so
     // they cannot match a run of closing parentheses at all, which is a fix in
     // `mutation_rules.xml` rather than one enforced by `dart format`. Measured:
     // un-hoisted, the file goes 33 → 36 mutants under the old rules and stays
@@ -43,7 +44,7 @@ class UnverifiedTlsBanner extends StatelessWidget {
   }
 }
 
-/// F13's confirmation, naming the real size.
+/// The size confirmation, naming the real size.
 class MeteredPrompt extends StatelessWidget {
   /// Asks about [bytes].
   const MeteredPrompt({
@@ -86,7 +87,7 @@ class MeteredPrompt extends StatelessWidget {
   );
 }
 
-/// F12's answer to a `415`: name the cause, name who can change it.
+/// The answer to a `415`: name the cause, name who can change it.
 ///
 /// It says what transcoding IS, because "transcoding is disabled" means
 /// nothing to most people looking at a film that will not play, and it says
@@ -114,7 +115,7 @@ class _UnplayablePanel extends StatelessWidget {
             // "The file you asked for", not "This file": after a refused
             // `next()` the panel is about the episode the user just asked for
             // and NOT about the one they were watching a second ago, and
-            // "this" cannot tell them apart (M5.R/C-F6).
+            // "this" cannot tell them apart.
             'The file you asked for needs transcoding, and "${server.name}" '
             'has it turned off.',
             textAlign: TextAlign.center,
@@ -228,7 +229,7 @@ class _ReportStoppedBanner extends StatelessWidget {
   );
 }
 
-/// F7's audio picker, as a sheet.
+/// The audio picker, as a sheet.
 ///
 /// **A sheet owned by the page rather than a menu owned by the controls**, and
 /// that is what makes one overlay serve a phone and a television: a
@@ -236,7 +237,7 @@ class _ReportStoppedBanner extends StatelessWidget {
 /// have, while a sheet is a focus scope the remote can walk.
 ///
 /// Public because `PlayerControls` only reports that its pill was pressed; the
-/// page is what has a `Navigator` to open a sheet on (§5).
+/// page is what has a `Navigator` to open a sheet on.
 Future<void> showAudioPicker(
   BuildContext context,
   PlayerController controller,
@@ -264,7 +265,7 @@ Future<void> showAudioPicker(
   ),
 );
 
-/// F7's subtitle picker: Off, and every sidecar the API listed.
+/// The subtitle picker: Off, and every sidecar the API listed.
 Future<void> showSubtitlePicker(
   BuildContext context,
   PlayerController controller,
@@ -305,7 +306,7 @@ Future<void> showSubtitlePicker(
 /// advance to the next
 /// episode — while the sheet is open leaves it offering rows that no
 /// longer exist. The old menu carried an INDEX and threw `RangeError` out of a
-/// callback (M4.R/T9); a sheet carries the object, which cannot throw but would
+/// callback; a sheet carries the object, which cannot throw but would
 /// quietly ask the engine for the previous file's sidecar. Off is the honest
 /// answer to "the thing you tapped is gone".
 ///

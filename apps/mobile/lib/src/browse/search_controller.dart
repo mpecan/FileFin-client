@@ -7,14 +7,14 @@ import 'package:filefin_mobile/src/browse/search_query.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:flutter/foundation.dart';
 
-/// F5's state: one query, one debounce timer, one [AsyncController].
+/// Search's state: one query, one debounce timer, one [AsyncController].
 ///
 /// **Named `MediaSearchController` because `package:flutter/material.dart`
 /// already exports a `SearchController`** — the one `SearchAnchor` drives.
 /// `search_page.dart` imports both, and two `SearchController`s in scope is an
 /// ambiguous-import error rather than a style question.
 ///
-/// **The same shape as the other four screens (D9)**: the fetch, the
+/// **The same shape as the other four screens**: the fetch, the
 /// cancellation and the three renderings are `AsyncController`'s already, and
 /// the only thing search adds is a `Timer`.
 ///
@@ -55,7 +55,7 @@ class MediaSearchController extends ChangeNotifier {
   /// The blank query goes through [AsyncController.load] like any other, so the
   /// screen starts on "Type to search…" rather than on a spinner it can never
   /// leave — and [_fetch] short-circuits before touching [_api], so selecting
-  /// the Search tab costs no request (NF1).
+  /// the Search tab costs no request.
   Future<void> start() => _results.load();
 
   /// A keystroke. **Debounced**, so a word is one request.
@@ -65,7 +65,7 @@ class MediaSearchController extends ChangeNotifier {
   /// network, so the debounce bought no round trip and cost the user 300 ms of
   /// the *previous* query's results sitting under an empty box — while
   /// [_fetch]'s own doc claimed clearing "abandons the request it was about"
-  /// (M6.R). It does now, at the keystroke rather than a third of a second
+  ///. It does now, at the keystroke rather than a third of a second
   /// later.
   void setText(String text) {
     _query = _query.withText(text);
@@ -95,7 +95,7 @@ class MediaSearchController extends ChangeNotifier {
   ///
   /// **A blank or unrunnable query never reaches the network.** Both would come
   /// back `200 []` — an empty `q` short-circuits and the two numeric scopes
-  /// fail closed (M6.0/E-4) — so the request buys nothing and costs a round
+  /// fail closed — so the request buys nothing and costs a round
   /// trip per keystroke on the way to a query that will run.
   ///
   /// It is refused *inside the fetch* rather than by skipping the load, and the
@@ -118,7 +118,7 @@ class MediaSearchController extends ChangeNotifier {
     );
   }
 
-  /// Cancels the pending keystroke **and** the request (NF5).
+  /// Cancels the pending keystroke **and** the request.
   ///
   /// Both halves are load-bearing and `flutter_test` gates the first for free:
   /// a test that ends with a timer still pending fails.

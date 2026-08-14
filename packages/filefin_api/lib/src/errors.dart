@@ -5,11 +5,11 @@
 /// vocabularies ends up catching `Object`, and a bug in the client becomes
 /// indistinguishable from a server the user typed wrong.
 ///
-/// **Exactly as large as the milestones need** (§1, §5): 403 is deliberately
-/// absent, being admin-only, and C4 forbids admin routes.
+/// **Exactly as large as the milestones need**: 403 is deliberately
+/// absent: it is admin-only, and this client calls no admin route.
 ///
-/// **Hand-written, not `@freezed`.** None needs `copyWith` or JSON, and §9
-/// forbids freezed's default `toString` on a secret-bearing type.
+/// **Hand-written, not `@freezed`.** None needs `copyWith` or JSON, and we
+/// forbids freezed's default `toString()` on a secret-bearing type.
 library;
 
 // The two certificate variants live in a part file rather than here. They are
@@ -24,14 +24,14 @@ part 'errors_playback.dart';
 /// Strips `user:password@` from a URL before it reaches a message.
 ///
 /// Every variant below echoes the URL it was requesting, and a message is a
-/// log line waiting to happen (§9, NF4). Nothing in this package puts
+/// log line waiting to happen. Nothing in this package puts
 /// credentials in a URL, but a *saved server* URL is typed by the user and
 /// `https://sam:hunter2@host/` is a thing people type. `Uri.removeFragment`
 /// has no sibling for userInfo, so the reconstruction is explicit.
 Uri redactUserInfo(Uri url) =>
     url.userInfo.isEmpty ? url : url.replace(userInfo: '');
 
-/// Which stage of a request ran out of time (NF5).
+/// Which stage of a request ran out of time.
 ///
 /// The three are worth distinguishing because they mean different things to a
 /// user: a connect timeout is "I cannot reach this server", a receive timeout
@@ -57,7 +57,7 @@ enum RequestPhase {
 
 /// The base of everything this package throws.
 ///
-/// It holds no fields: `MalformedIdentifier` (M2.6) is raised *before* a URL
+/// It holds no fields: `MalformedIdentifier` is raised *before* a URL
 /// exists, so a `requested` on the base would have to be nullable and every
 /// consumer would branch on it.
 sealed class FileFinApiException implements Exception {
@@ -65,7 +65,7 @@ sealed class FileFinApiException implements Exception {
   const FileFinApiException();
 }
 
-/// A request that ran out of time in [phase] (NF5).
+/// A request that ran out of time in [phase].
 final class RequestTimedOut extends FileFinApiException {
   /// The request to [requested] timed out while [phase].
   const RequestTimedOut(this.phase, this.requested);
@@ -82,7 +82,7 @@ final class RequestTimedOut extends FileFinApiException {
       '${redactUserInfo(requested)}';
 }
 
-/// A request the caller cancelled through its `CancelToken` (NF5).
+/// A request the caller cancelled through its `CancelToken`.
 ///
 /// Not a failure. It is separate from every other variant precisely so a UI
 /// can drop it silently instead of showing "something went wrong" when the
@@ -123,16 +123,15 @@ final class ConnectionFailed extends FileFinApiException {
 
 /// A `401` that re-authentication did not fix, or could not be attempted.
 ///
-/// **A 401 on its own is routine** (SPEC.md L1): sessions live in the server's
-/// memory and die with the process, so F3 re-authenticates and retries once.
-/// This variant is what is left when that has already happened — the retry
-/// also 401'd, or no stored password existed to retry with. It is the only
-/// shape of 401 a caller ever sees.
+/// **A 401 on its own is routine**: sessions live in the server's memory and
+/// die with the process, so the client re-authenticates and retries once. This
+/// variant is what is left when that has already happened — the retry also
+/// 401'd, or there was no stored password to retry with. It is the only shape
+/// of 401 a caller ever sees.
 ///
-/// The name matches `secret_tostring`'s watch list, and the explicit
-/// `toString` below is the right answer to that rather than a rename: this
-/// type genuinely sits next to session handling, and a future field on it
-/// would be exactly the kind that must not print.
+/// The explicit `toString()` below is deliberate: this type sits next to
+/// session handling, and a future field on it would be exactly the kind that
+/// must not print.
 final class SessionExpired extends FileFinApiException {
   /// The session used for [requested] is gone and could not be renewed.
   const SessionExpired(this.requested);
@@ -167,9 +166,9 @@ final class NotFound extends FileFinApiException {
 /// [ServerFailure] — the first thing to try really is trying again.
 ///
 /// **The message says "unavailable", not "rebuilding", and the distinction is
-/// upstream's rather than ours.** `media.go:192-198` writes `cache unavailable`
+/// upstream's rather than ours.** `media.go` writes `cache unavailable`
 /// whenever `ensureDB` fails, for **any** reason, and a rebuild is only one of
-/// them: provoked live at M2 with `chmod 000` on the cache directory, a
+/// them: provoked live with `chmod 000` on the cache directory, a
 /// permanently broken cache produced this exact 503. A message promising a
 /// rebuild would tell a user to wait for something that is never going to
 /// finish, so it names what is known and suggests rather than promises.
@@ -186,7 +185,7 @@ final class CacheUnavailable extends FileFinApiException {
       '(${redactUserInfo(requested)})';
 }
 
-/// A `429` from the login rate limiter (`loginlimit.go:15-27`).
+/// A `429` from the login rate limiter.
 ///
 /// Five failures against one account in fifteen minutes lock that account for
 /// fifteen minutes; twenty against one IP in five minutes lock the IP. The
@@ -198,8 +197,8 @@ final class RateLimited extends FileFinApiException {
   /// How long to wait, or [Duration.zero] when the header did not parse.
   ///
   /// **Zero means "we do not know", not "retry immediately".** The server
-  /// sends whole seconds and only whole seconds (`auth.go:149` is
-  /// `int(retry.Seconds()) + 1`), so anything else is a proxy in the middle or
+  /// sends whole seconds and only whole seconds (`auth.go` is
+  /// `int(retry.Seconds) + 1`), so anything else is a proxy in the middle or
   /// a server we did not verify against — and inventing a duration from a
   /// value we failed to parse would be a guess presented as a fact.
   /// [rawRetryAfter] survives so a human can read what actually arrived.
@@ -224,9 +223,9 @@ final class RateLimited extends FileFinApiException {
 /// silently address a shorter route.
 ///
 /// The value is **not a caller's mistake**: both id fields default to
-/// `MediaId('')` under §8's tolerant decoding, so any payload with a missing
+/// `MediaId('')` under tolerant decoding, so any payload with a missing
 /// `id` produces one. Letting the raw `ArgumentError` escape would mean one
-/// null id crashes the UI — the opposite of G5.
+/// null id crashes the UI — the opposite of degrading visibly.
 final class MalformedIdentifier extends FileFinApiException {
   /// [value] is not usable as [field] in a URL.
   const MalformedIdentifier(this.value, this.field);
@@ -245,15 +244,15 @@ final class MalformedIdentifier extends FileFinApiException {
 
 /// `POST /api/login` said no: wrong password, unknown account, or locked.
 ///
-/// **The three are indistinguishable by design** (`auth.go:157-169`): the
+/// **The three are indistinguishable by design**: the
 /// server always runs exactly one bcrypt compare, against a dummy hash when the
 /// account does not exist, so neither the body nor the timing tells them apart.
 /// A client that guessed between them would be inventing information.
 ///
 /// It is deliberately not `SessionExpired`. A 401 from `/api/login` is the one
-/// place where a 401 does **not** mean L1, and re-authenticating in response to
-/// it is an infinite loop against a limiter that locks the account after five
-/// tries.
+/// place where a 401 does **not** mean a lost session, and re-authenticating in
+/// response to it is an infinite loop against a limiter that locks the account
+/// after five tries.
 final class InvalidCredentials extends FileFinApiException {
   /// [requested] rejected the username and password it was given.
   const InvalidCredentials(this.requested);
@@ -267,14 +266,15 @@ final class InvalidCredentials extends FileFinApiException {
       'and password';
 }
 
-/// A 2xx whose `Content-Type` is not `application/json` — F1's mechanism.
+/// A 2xx whose `Content-Type` is not `application/json`.
 ///
 /// An unmatched `/api/*` path — a typo, a trailing slash, a method mismatch,
 /// an endpoint upstream removed — answers `200 text/html` from the SPA
 /// catch-all rather than a 404 (`docs/field-notes.md`). So a `200` proves
 /// nothing, the content type is the only thing separating a FileFin server
-/// from any SPA host, and that is why F1 is a content-type-and-payload check
-/// (D21) and why this variant exists instead of a decode error surfacing
+/// from any SPA host, and that is why identifying a server is a
+/// content-type-and-payload check
+/// and why this variant exists instead of a decode error surfacing
 /// somewhere else entirely.
 final class NotAFileFinServerResponse extends FileFinApiException {
   /// [requested] answered 2xx with [contentType], which is not JSON.
@@ -297,7 +297,7 @@ final class NotAFileFinServerResponse extends FileFinApiException {
 /// Separate from `NotAFileFinServerResponse` because the two mean opposite
 /// things: that one says "this is not the server you think it is", this one
 /// says "this IS the server and it sent something we cannot read" — a version
-/// skew, or a field whose type changed. §8 makes us tolerant of *added*
+/// skew, or a field whose type changed. We are tolerant of *added*
 /// fields; it cannot make us tolerant of a `String` where an `int` belongs.
 final class MalformedResponse extends FileFinApiException {
   /// [requested] answered JSON that [problem] describes the trouble with.

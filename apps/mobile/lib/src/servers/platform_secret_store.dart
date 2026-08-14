@@ -2,14 +2,14 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// SPEC.md §7's secure store, backed by the Keychain and the Keystore (F2, §9).
+/// The secure store, backed by the Keychain and the Keystore.
 ///
 /// **A persistence decorator around [InMemorySecretStore], not a replacement
 /// for it.** Reads hit memory first and fall through to the platform on a miss,
 /// populating memory on the way back; writes and deletes go to both.
 ///
 /// **Memory-first is a correctness requirement rather than an optimisation**:
-/// F3 renews mid-401-retry, and an iOS Keychain read can block on the device
+/// a renewal mid-401-retry, and an iOS Keychain read can block on the device
 /// being unlocked, so a re-auth awaiting the platform store can stall a request
 /// indefinitely. `secretKeyFor` is the only place the key layout exists.
 final class PlatformSecretStore extends SecretStore {
@@ -48,7 +48,7 @@ final class PlatformSecretStore extends SecretStore {
     await _platform.delete(key: secretKeyFor(server, kind));
   }
 
-  /// Prints nothing it holds (§9, NF4).
+  /// Prints nothing it holds.
   ///
   /// Explicit rather than inherited from [SecretStore], because
   /// `just constitution`'s `secret_tostring` reads the class body it is looking

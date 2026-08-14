@@ -37,7 +37,7 @@ Future<void> main() async {
 /// [PlatformSecretStore] gives. The second plugin call in this package lives
 /// behind it and is not made at launch: nothing touches the Keychain until
 /// something asks for a secret, which is why `main()` still has exactly one
-/// plugin call on its critical path (NF1).
+/// plugin call on its critical path.
 @visibleForTesting
 Widget buildApp(Directory support, {required FormFactor formFactor}) {
   final secrets = PlatformSecretStore();
@@ -50,10 +50,10 @@ Widget buildApp(Directory support, {required FormFactor formFactor}) {
       // file, so two screens sharing one context would fight over both.
       playbackHostFactory: () => MediaKitPlaybackHost(RealMpvPlayer()),
       nowPlayingFactory: openNowPlaying,
-      // `pin` is F15's accepted fingerprint, resolved by `apiForServer` before
+      // `pin` is the accepted fingerprint, resolved by `apiForServer` before
       // this is called: TLS's callbacks are synchronous and cannot await a
       // store read, so a client is built for one pin and a NEW one is built
-      // when that pin changes. Until M7.5 nothing passed it and every shipped
+      // when that pin changes. Until nothing passed it and every shipped
       // client ran `CertificatePinner(pin: null)`.
       apiFactory: (server, {pin}) => FileFinLibraryApi(
         FileFinClient.forServer(

@@ -1,7 +1,7 @@
 /// The `field` selector of `GET /api/search` — `searchWhere`,
-/// `db/search.go:34-86`.
+/// `db/search.go`.
 ///
-/// This vocabulary is **wider than SPEC.md §3.2 lists**; the full table is in
+/// This vocabulary is **wider than lists**; the full table is in
 /// `docs/server-api.md`.
 ///
 /// It is an enum rather than a `String` because an unrecognised `field`
@@ -16,7 +16,7 @@ enum SearchField {
   /// Exact `year =`. A non-numeric `q` yields no rows rather than an error.
   year,
 
-  /// `year BETWEEN d AND d+9`, `d` floored to the decade (`db/search.go:47`).
+  /// `year BETWEEN d AND d+9`, `d` floored to the decade.
   /// `q` may carry a trailing `s`, so `1990s` works.
   decade,
 
@@ -61,11 +61,11 @@ int? _atoi(String value) =>
     _atoiGrammar.hasMatch(value) ? int.tryParse(value) : null;
 
 /// [query] as the `decade` scope reads it —
-/// `TrimSuffix(ToLower(TrimSpace(q)), "s")` (`db/search.go:43`).
+/// `TrimSuffix(ToLower(TrimSpace(q)), "s")`.
 ///
 /// **One `s`, not every trailing `s`.** `TrimSuffix` removes a single
 /// occurrence, so `1990s` is a decade and `1990ss` is not — measured live at
-/// M6.0/E-4, where `q=2020ss&field=decade` returned no rows while
+///, where `q=2020ss&field=decade` returned no rows while
 /// `q=2020s` returned one.
 String _withoutDecadeSuffix(String query) {
   final lower = query.toLowerCase();
@@ -76,7 +76,7 @@ String _withoutDecadeSuffix(String query) {
 /// opposed to answering `200 []` because it could not read the input.
 ///
 /// Three ways a search returns nothing and only one is "nothing matched": an
-/// empty `q` short-circuits (`db/search.go:17-19`), and the two numeric scopes
+/// empty `q` short-circuits, and the two numeric scopes
 /// fail closed. On screen all three look like an empty library, so the client
 /// has to know the difference in order to say it. It mirrors `strconv.Atoi`'s
 /// grammar rather than `int.tryParse`, which differs on exactly one input

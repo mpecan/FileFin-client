@@ -154,15 +154,32 @@ fi
 # diff spanned three). A gate that expensive on a change that cannot fail it is
 # a gate people learn to skip.
 #
-# The decision lives in `changes_are_comment_only` in common.sh, which states
-# how it fails closed and which shapes it refuses to analyse. It is there rather
-# than here so it can be proven WITHOUT starting a mutation run — killing a live
-# `mutation_test` to test this is what leaves a mutant on disk.
-if printf '%s\n' "$changed" | changes_are_comment_only "$BASE"; then
-    n=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
-    echo "mutants: $n changed lib file(s) vs $BASE, and every change is a comment."
-    echo "         Code is byte-identical to the base, so the mutants would be the"
-    echo "         base's own — nothing to say about this diff. Skipped."
+# The decision lives in `file_is_comment_only` in common.sh, which states how it
+# fails closed and which shapes it refuses to analyse. It is there rather than
+# here so it can be proven WITHOUT starting a mutation run — killing a live
+# `mutation_test` to test this is what leaves a mutant on disk, and doing
+# exactly that is how a proof attempt corrupted `app.dart` mid-write.
+#
+# FILTERED PER FILE, NOT ALL OR NOTHING, and the difference is not academic: the
+# first version asked the question of the whole diff, so this same pass — a
+# documentation sweep that also corrected two user-facing strings — put 59 files
+# in front of `mutation_test` in order to learn something about two, with a
+# 68-hour whole-run cap. Dropping the comment-only files leaves exactly the ones
+# whose behaviour could have changed.
+total=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
+changed=$(
+    printf '%s\n' "$changed" | while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        file_is_comment_only "$BASE" "$f" || echo "$f"
+    done
+)
+skipped=$(( total - $(printf '%s\n' "$changed" | grep -c . || true) ))
+[ "$skipped" -gt 0 ] &&
+    echo "mutants: $skipped changed lib file(s) differ from $BASE only in comments —
+         code byte-identical, so their mutants would be the base's own. Dropped."
+
+if [ -z "$changed" ]; then
+    echo "mutants: nothing left to mutate; every changed lib source was comments."
     echo "         (Run a whole-tree baseline deliberately, not from here.)"
     exit 0
 fi

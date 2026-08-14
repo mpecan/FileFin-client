@@ -9,7 +9,7 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:flutter/material.dart';
 
-/// F1: add a server by URL and say clearly what is at that address.
+/// Add a server by URL and say clearly what is at that address.
 ///
 /// **The probe is a content-type and payload check, not a status check**, and
 /// that decision lives in `filefin_api`'s `probe`. This screen's job is to
@@ -77,7 +77,8 @@ class _AddServerPageState extends State<AddServerPage> {
     }
     // The origin-as-id rule and the `userInfo` strip both live on `SavedServer`
     // rather than here: they are properties of a saved server, and a screen
-    // that reimplemented either would be a second place to get §9 wrong.
+    // that reimplemented either would be a second place to get credential
+    // handling wrong.
     final candidate = SavedServer.fromTypedUrl(parsed);
     final untrusted = await _check(candidate);
     if (untrusted == null || !mounted) return;
@@ -113,7 +114,7 @@ class _AddServerPageState extends State<AddServerPage> {
   /// saved servers — can never reach.
   ///
   /// Worse than untidy: the id IS the origin, so adding that address later
-  /// loads the orphan and connects pinned without asking, which is F15's
+  /// loads the orphan and connects pinned without asking, which is the
   /// deliberate accept skipped entirely.
   Future<void> _forgetOrphanedPin(
     AppDependencies deps,
@@ -168,8 +169,8 @@ class _AddServerPageState extends State<AddServerPage> {
                 'on the same network as the server. ($cause)',
           );
       }
-      // F15's prompt: a question for the user rather than a verdict about
-      // what is at this address. Until M7.5 the probe swallowed it into
+      // the trust prompt: a question for the user rather than a verdict about
+      // what is at this address. Until the probe swallowed it into
       // `ServerUnreachable` and this screen said "Nothing answered at that
       // address" about a server that had answered.
     } on CertificateNotTrusted catch (error) {
@@ -228,7 +229,7 @@ class _AddServerPageState extends State<AddServerPage> {
   );
 }
 
-/// F15's visible flag on plain HTTP, worded for the iOS reality.
+/// The visible flag on plain HTTP, worded for the iOS reality.
 ///
 /// **iOS will not reach a plain-http server outside the local network.**
 /// `Info.plist` sets `NSAllowsLocalNetworking` and deliberately not

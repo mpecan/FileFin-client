@@ -8,7 +8,7 @@ import 'package:meta/meta.dart';
 ///
 /// **Lowercase colon-hex is a deliberate choice, not a formatting default.**
 /// It is what `openssl x509 -fingerprint -sha256` prints and what every
-/// browser's certificate viewer shows, so the string F15 puts on screen next
+/// browser's certificate viewer shows, so the string put on screen next
 /// to "does this match your server?" is the same string the user is looking at
 /// in the other window. A base64 digest, or a bare hex run, would be correct
 /// and useless for the one job this value has.
