@@ -279,4 +279,49 @@ void main() {
 
     expect(changes.single.$1.wifiOnly, isTrue);
   });
+
+  testWidgets('signing out from the sheet DISMISSES it, then signs out', (
+    tester,
+  ) async {
+    // The sheet is the television's only route to sign-out, and it is drawn
+    // over the shell. Leaving it up hands the user a settings sheet for a
+    // server they are no longer signed in to, with the controls behind it gone.
+    //
+    // Asserting only that the callback fired leaves the pop untested: removing
+    // `Navigator.pop(sheet)` from `showPlaybackSettings` survived the whole
+    // suite, which is what the mutation gate reported.
+    var signedOut = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showPlaybackSettings(
+                context,
+                server: server(),
+                prefs: const PlaybackPrefs(),
+                onChanged: (s, p) => changes.add((s, p)),
+                onSignOut: () => signedOut++,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaybackSettingsSheet), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('signOut')));
+    await tester.pumpAndSettle();
+
+    expect(signedOut, 1);
+    expect(
+      find.byType(PlaybackSettingsSheet),
+      findsNothing,
+      reason: 'the sheet must close, or it covers the signed-out screen',
+    );
+  });
 }
