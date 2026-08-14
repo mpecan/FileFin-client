@@ -34,11 +34,16 @@ cd "$(repo_root)"
 #   a comment describing an INTERFACE is bounded by the interface,
 #   and nothing with a bounded interface needs more than a dozen lines.
 #
-# Anything longer is a decision or a measurement, and both have somewhere to
-# live: docs/decisions/ for choices we made, docs/field-notes.md for how a
-# dependency or the server was observed to behave. The comment then cites it.
-# That is the whole point — the prose is not deleted, it is moved somewhere it
-# can be found by someone who is not already reading that declaration.
+# Anything longer is history, an argument or a measurement, and those have
+# somewhere to live: docs/decisions/ for choices we made, docs/field-notes.md
+# for how something we do not control behaves. The prose is not deleted, it is
+# moved somewhere it can be found by someone who is not already reading that
+# declaration.
+#
+# NO CITATION IS LEFT BEHIND, and that is deliberate rather than an oversight.
+# A `/// See D12.` is a reference, a reference can rot, and nothing checks that
+# the target still exists or still says what the comment claims. A comment says
+# the thing it needs to say instead of pointing at where it is said.
 #
 # BLOCK_MAX IS 12 AND THE NUMBER IS ARGUED, NOT GUESSED. Measured over
 # non-generated lib sources at M8.R: a cap of 20 caught 37 blocks, 15 caught
@@ -188,12 +193,12 @@ fi
 if [ "$long_blocks" -gt 0 ]; then
     echo
     echo "       ${long_blocks} comment block(s) exceed the ${BLOCK_MAX}-line cap. A comment"
-    echo "       describing an interface is bounded by that interface; anything"
-    echo "       longer is a decision or a measurement. Move it to"
-    echo "       docs/decisions/ (a choice we made) or docs/field-notes.md (how a"
-    echo "       dependency or the server was observed to behave), and leave a"
-    echo "       one-line citation behind. Do not delete it and do not reword it"
-    echo "       shorter in place — the prose is the asset, its location is the bug."
+    echo "       explains the CURRENT STATE where the code is not enough, in the"
+    echo "       present tense. Anything longer is history, an argument, or a"
+    echo "       measurement, and those live in docs/decisions/ (a choice we made)"
+    echo "       or docs/field-notes.md (how something we do not control behaves)."
+    echo "       Move it there. Leave NO citation behind: a reference can rot and"
+    echo "       no reference cannot, so say the thing instead of pointing at it."
 fi
 
 echo "comment budget: tree ${tree_pct}% (warn ${WARN_PCT} / error ${ERROR_PCT}), ${long_blocks} block(s) over the ${BLOCK_MAX}-line cap, $errors error(s)"

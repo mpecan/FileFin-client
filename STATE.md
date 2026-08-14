@@ -181,6 +181,27 @@ different costume: a mechanical pass over source needs its output read, not
 just its exit code. Every one of the four was found by reading the diff or by
 `analyze`, none by the pass reporting failure.
 
+### `dart analyze` cannot tell you whether a mutant is on disk
+
+Three mutation runs were interrupted during this work, and all three left a
+mutant behind — the hazard CLAUDE.md names, re-created three times by the
+tooling meant to fix it. Two were caught by `analyze`, because
+`if (!(pointer == null)` and `roundReportedSeconds(double x))` do not parse.
+
+**The third was `500 * 1000 * -1000` in `playback_settings_sheet.dart`, and
+`analyze` reported "No issues found".** A negated numeric literal is valid
+Dart. It was caught by the non-comment diff scan
+(`git diff -U0 … | grep -v '^[+-]\s*//'`), which is the check that actually
+answers the question, and it was on disk when the next `just check` started.
+
+So: **after any interrupted mutation run, diff the sources — do not analyse
+them.** `just check` passing is not evidence either; the mutant is in the tree
+the gates are measuring.
+
+The deeper fix is not to interrupt one. Every instance here came from running
+the serial gate under a `timeout` to sample its behaviour. Either let it finish
+detached, or do not start it.
+
 **Result: 0 references, 0 blocks over the cap, tree density 33%.** `analyze` is
 clean and all 1,986 tests pass.
 
