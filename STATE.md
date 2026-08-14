@@ -181,6 +181,46 @@ different costume: a mechanical pass over source needs its output read, not
 just its exit code. Every one of the four was found by reading the diff or by
 `analyze`, none by the pass reporting failure.
 
+### `mutants-parallel` now spans packages
+
+It refused a diff touching more than one package, which is what left the M8.R
+documentation sweep — 81 files across all three — with the serial gate and a
+ten-hour estimate as its only option.
+
+**What actually prevented it** was one scalar, `PKG`, threaded through six
+places. Three of those are genuinely per-package and stay that way: the test
+runner differs (`flutter test` under `apps/`, `dart test` under `packages/`),
+`mutation_test` takes paths relative to its working directory and runs from the
+package root, and **the per-mutant timeout is derived from that package's own
+clean-suite time**. The other three were consequences of the scalar.
+
+So a *shard* is still single-package — it has to be — but shards from different
+packages are just processes and now all run at once under one job budget.
+Looping the packages instead would have been simpler and wrong in its own way:
+it leaves most cores idle while `filefin_core`'s one-second suite works through
+its share.
+
+**The per-package timeout is the load-bearing part**, and the spread is not
+small. Measured on a synthetic three-package diff: `filefin_core` baseline 5s →
+60s floor, `filefin_api` 8s → 96s, `apps/mobile` 32s → 384s. One shared timeout
+would be wrong for one of them in the direction that hides a hang.
+
+Proven both directions, on a synthetic diff built for it — a trailing comment
+on a code line in each package, which is textually a non-comment change and
+semantically a no-op:
+
+- **three packages, 91 mutants, three concurrent shards, all killed → exit 0**;
+- an untested branch added to `roundReportedSeconds` → `1/70 not detected`,
+  reports copied to `.mutation-survivors`, **exit 1**.
+
+The second run's exit code was checked without a pipe. The first attempt read
+`$?` after `| tail -12` and got tail's status, which is the "gate that cannot
+fail" mistake in miniature.
+
+It also gained the gate's comment-only filter, because the two must compute
+`changed` identically — two drivers that disagree about which files to mutate
+answer different questions while claiming to answer one.
+
 ### `dart analyze` cannot tell you whether a mutant is on disk
 
 Three mutation runs were interrupted during this work, and all three left a

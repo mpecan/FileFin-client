@@ -89,7 +89,13 @@ deps:
 # stops being run at all. NOT in `check` and NOT the authority: `mutants` above
 # is both. It exists because the same 859-mutant sweep is four hours serially
 # and about one in parallel — and because it never writes to the working tree,
-# where an interrupted serial run leaves a mutant behind.
+# where an interrupted serial run leaves a mutant behind. Four such mutants were
+# left during M8.R alone, one of which `dart analyze` could not see.
+#
+# It spans packages as of M8.R: a shard is single-package (the test runner and
+# mutation_test's working directory both are), but shards from every package run
+# at once under one job budget, each with its own per-package timeout. It needs
+# a CLEAN tree — a worktree is made from a commit.
 mutants-parallel:
     @bash tool/run-mutants-parallel.sh
 
