@@ -233,7 +233,7 @@ class AppSettings {
     if (!json.containsKey('selectedServerId')) {
       throw const FormatException(
         'settings.json has no selectedServerId key, so it was written by a '
-        'build that no longer exists (CLAUDE.md §13)',
+        'build that no longer exists',
       );
     }
     final value = json['selectedServerId'];

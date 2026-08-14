@@ -125,7 +125,7 @@ class _PlaybackSettingsSheetState extends State<PlaybackSettingsSheet> {
           _ChoiceRow(
             fieldKey: const Key('meteredWarnBytes'),
             title: 'Ask before playing above',
-            subtitle: 'Only on a metered connection (F13).',
+            subtitle: 'Only on a metered connection.',
             value: _prefs.meteredWarnBytes,
             choices: meteredWarnChoices,
             label: humanSize,
