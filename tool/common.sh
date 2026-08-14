@@ -188,3 +188,46 @@ run() {
     fi
     rm -f "/tmp/filefin-hook-$$.log"
 }
+
+# --- comment-only diffs (used by check-mutants.sh) ---------------------------
+#
+# `mutation_test` rewrites operators, literals and conditions and never touches
+# a comment, so a file whose CODE is byte-identical to the base generates
+# exactly the base's mutants. Running them re-verifies the existing suite
+# against existing code and says nothing about the diff.
+#
+# Lives here rather than inline in the gate so it can be proven on its own,
+# WITHOUT starting a mutation run. That is not tidiness: proving it by killing a
+# live `mutation_test` is what leaves a mutant on disk, and doing exactly that
+# is how this function's first proof attempt corrupted engine.dart
+# (`if (!(pointer == null)`) — the hazard CLAUDE.md names, re-created by the
+# harness meant to test the fix for it.
+
+# Drop whole-line comments, trailing whitespace and blank lines from stdin.
+strip_comment_lines() {
+    sed -e 's/[[:space:]]*$//' -e '/^[[:space:]]*\/\//d' -e '/^[[:space:]]*$/d'
+}
+
+# True when every file on stdin differs from [base] only in whole-line comments.
+#
+# FAILS CLOSED. Anything that is not a whole-line comment — a trailing `// note`
+# on a statement, a line that stops being code, a brace that moved — survives
+# the strip and is a difference, so the answer is "no" and the caller runs. It
+# can only ever fail to skip; it cannot skip a real change.
+#
+# Two shapes are refused outright rather than analysed: a file that does not
+# exist in [base] (new code, nothing to compare), and a file containing `'''`
+# or `"""` (a multi-line string could hold a line beginning with `//`, which a
+# line-based strip would remove from both sides and hide a genuine edit).
+changes_are_comment_only() {
+    local base="$1" f
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        git cat-file -e "$base:$f" 2>/dev/null || return 1
+        case "$(cat "$f")" in *"'''"*|*'"""'*) return 1 ;; esac
+        diff -q \
+            <(git show "$base:$f" | strip_comment_lines) \
+            <(strip_comment_lines < "$f") >/dev/null || return 1
+    done
+    return 0
+}

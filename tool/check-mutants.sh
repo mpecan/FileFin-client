@@ -138,6 +138,35 @@ if [ -z "$changed" ]; then
     exit 0
 fi
 
+# A COMMENT-ONLY DIFF HAS NOTHING TO MUTATE, and skipping it is a correctness
+# statement rather than a shortcut.
+#
+# `mutation_test` rewrites operators, literals and conditions. It never touches
+# a comment, so the mutants generated for a file whose code is byte-identical to
+# the base are exactly the mutants the base would have generated — the run
+# re-verifies the existing suite against existing code and says nothing about
+# the diff. That is a whole-tree mutation baseline, which is a worthwhile thing
+# to run deliberately and a wasteful thing to run per commit.
+#
+# The cost of not having this was measured at M8.R: a documentation pass that
+# changed 81 lib files and ZERO lines of code faced a ~10-hour serial sweep,
+# and `mutants-parallel` could not take it either (it shards one package; that
+# diff spanned three). A gate that expensive on a change that cannot fail it is
+# a gate people learn to skip.
+#
+# The decision lives in `changes_are_comment_only` in common.sh, which states
+# how it fails closed and which shapes it refuses to analyse. It is there rather
+# than here so it can be proven WITHOUT starting a mutation run — killing a live
+# `mutation_test` to test this is what leaves a mutant on disk.
+if printf '%s\n' "$changed" | changes_are_comment_only "$BASE"; then
+    n=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
+    echo "mutants: $n changed lib file(s) vs $BASE, and every change is a comment."
+    echo "         Code is byte-identical to the base, so the mutants would be the"
+    echo "         base's own — nothing to say about this diff. Skipped."
+    echo "         (Run a whole-tree baseline deliberately, not from here.)"
+    exit 0
+fi
+
 # Group by owning package: mutation_test runs the test command from a working
 # directory, and `dart test` only means anything inside a package.
 packages=$(printf '%s\n' "$changed" | sed 's|/lib/.*||' | sort -u)
