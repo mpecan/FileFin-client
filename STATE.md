@@ -221,6 +221,51 @@ It also gained the gate's comment-only filter, because the two must compute
 `changed` identically — two drivers that disagree about which files to mutate
 answer different questions while claiming to answer one.
 
+### The entry point, the licence, and a gate that keeps them honest
+
+The M8.R review's cheapest finding was that there was **no README**: the entry
+point for a newcomer was CLAUDE.md at 507 lines, SPEC.md at 739 and STATE.md at
+5,000. Paid, along with two things that belong beside it.
+
+**`README.md`** — what this is, what it needs, how to build and run it, the
+layout, the gate table, and a map of every document. Every figure in it was
+checked against a real run rather than recalled: 1,987 tests, 100% of 4,440
+executable lines, Flutter 3.44 and Dart 3.8 floors read out of
+`check-toolchain.sh`.
+
+**`CONTRIBUTING.md`** — the working rules, stated as what a gate will tell you
+before a reviewer does. It carries the comment policy in full, because that is
+the rule most likely to be violated by someone writing in good faith, and the
+mutation gate's two non-obvious properties: it mutates a disposable worktree,
+and it skips comment-only diffs.
+
+**`LICENSE`** — **EUPL-1.2**, matching the FileFin server, taken verbatim from
+the SPDX canonical text rather than written from memory. A licence is a legal
+document and an approximated one is worse than none.
+
+The combination checks out: `media_kit` links prebuilt libmpv, which is
+LGPL-2.1-or-later, and **LGPL v2.1 is named in the EUPL's own Appendix** as a
+Compatible Licence. The distribution position is unchanged — direct APK and
+TestFlight/sideload, F-Droid explicitly not a commitment (`docs/risks.md` R4).
+
+**`just --list` was printing gibberish**, and it is the default recipe — the
+first thing anyone runs. `just` takes the comment line immediately above a
+recipe as its description, and this justfile's `# ===` banner blocks meant every
+recipe inherited the last line of the preceding prose: `check-all` was described
+as *"binary". STATE.md records the split.* All 30 now read as sentences.
+
+**A new gate, `doc-links`**, and it is the same argument §2 makes about comments
+turned on the files that are all reference. Comments answered "a pointer can
+rot" by removing pointers; a README cannot, so it checks them. Every relative
+markdown link in the five index documents must resolve. Deliberately not
+`http(s)://` — a network call makes a gate fail when the network does — and not
+bare anchors, whose failure mode is visibly harmless beside a dead path. Links
+inside fenced code blocks are illustration and are skipped.
+
+Proven three ways: the real tree passes at 20 links; an added
+`docs/does-not-exist.md` fails with exit 1; the same link inside a ```` ``` ````
+fence is ignored.
+
 ### The whole-tree mutation baseline: two packages clean, the third owed
 
 The number the M8.R review said did not exist. Scope is every non-generated

@@ -45,6 +45,7 @@ run pre-commit fmt           dart format --output=none --set-exit-if-changed .
 run pre-commit analyze       dart analyze --fatal-infos --fatal-warnings .
 run pre-commit file-size     bash tool/check-file-sizes.sh
 run pre-commit comments      bash tool/check-comment-budget.sh
+run pre-commit doc-links     bash tool/check-doc-links.sh
 run pre-commit constitution  bash tool/check-constitution.sh
 run pre-commit deps          bash tool/check-deps.sh
 

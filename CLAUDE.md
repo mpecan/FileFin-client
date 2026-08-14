@@ -7,6 +7,9 @@ filesystem-first self-hosted media server. Flutter + Dart, playback by
 The server is a third-party project we do not control. Its HTTP contract is an
 external boundary — observed, documented, and versioned, never assumed.
 
+- What this is, and how to build and run it → `README.md`
+- How to work in this repo, and the rules a gate will enforce →
+  `CONTRIBUTING.md`
 - Full technical specification → `SPEC.md`
 - Current state, milestone by milestone → `STATE.md`
 - Server API contract, cited to upstream source → `docs/server-api.md`

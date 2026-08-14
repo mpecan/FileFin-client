@@ -130,6 +130,7 @@ gates can never disagree about which files count:
 | `mutants` | changed files under a package's `lib/`, non-generated | diff-scoped; see below. Never runs over `integration_test/` or `test_live/`. |
 | `test` / `coverage` / `mutants` — the RUNNER | by **location**: `packages/*` → `dart test`, `apps/*` → `flutter test` | one rule, enforced in `run-tests.sh` and consulted by `check-mutants.sh`. Location is what a person decides deliberately; a pubspec is what drifts. `run-tests.sh` cross-checks the two and FAILS on a disagreement rather than picking silently — guessing from the pubspec would exempt a package the moment the pubspec is what changed, which is the defect `core_purity` had at M2. |
 | `fixtures-verify` | `test/fixtures/**` | reads committed files only, so it runs in CI without a server. |
+| `doc-links` | relative markdown links in `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `SPEC.md`, `docs/decisions/README.md` | the argument §2 makes about comments, applied to the files that are all reference. Comments answered "a pointer can rot" by removing pointers; a README cannot, so it checks them instead. Deliberately not `http(s)://` — a network call makes a gate fail when the network does — and not bare `#anchor`s, whose failure mode is visibly harmless next to a dead path. Links inside fenced code blocks are illustration, not links, and are skipped. |
 
 Generated files are exempt from every gate. The exemption lives in
 `dart_sources`, in one place, and was proven: a 700-line file fails `file-size`
