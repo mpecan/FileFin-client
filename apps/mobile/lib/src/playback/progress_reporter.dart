@@ -16,17 +16,14 @@ enum ReportStop {
 
 /// F9, with no timer and no clock anywhere.
 ///
-/// **Every decision is `decideReport`'s**, which is a pure function over
-/// **media** seconds: `PlayerController` calls [report] on every position tick
-/// and the policy decides whether that tick is worth a request. Upstream's own
-/// player works the same way (`Math.abs(el.currentTime - lastMark) >= 30`), and
-/// it is what makes this deterministic — a test pushes positions and asserts
-/// requests, with no `fake_async` and nothing to flake.
+/// **Every decision is `decideReport`'s**, a pure function over **media**
+/// seconds, which is what makes this deterministic: a test pushes positions and
+/// asserts requests, with no `fake_async` and nothing to flake.
 ///
 /// [lastSent] advances **only after a successful POST**, so a failed report is
 /// retried by the next trigger with no queue and no backoff (§1). The cost is
-/// stated rather than hidden: a report lost to a flaky network is simply lost,
-/// and the next checkpoint carries the newer position anyway.
+/// stated rather than hidden: a report lost to a flaky network is lost, and the
+/// next checkpoint carries the newer position anyway.
 class ProgressReporter {
   /// Reports [media]'s progress through [api], every [intervalSecs] of media.
   ProgressReporter({

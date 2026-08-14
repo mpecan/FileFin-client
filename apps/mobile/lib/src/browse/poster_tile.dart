@@ -216,8 +216,6 @@ class _PosterTileState extends State<PosterTile> {
 /// [wasSync] is true when the image was already in the `ImageCache` and was
 /// available on the very first build. In that case there is nothing to wait
 /// for even though [frame] is null on that first call.
-/// Public only so a test can reach it; nothing outside this library calls
-/// it (§5, `public_member_no_consumer`).
 @visibleForTesting
 bool posterStillLoading(int? frame, {required bool wasSync}) =>
     frame == null && !wasSync;

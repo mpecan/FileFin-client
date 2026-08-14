@@ -4,23 +4,13 @@ import 'package:flutter/material.dart';
 
 /// F15's trust-on-first-use prompt: the fingerprint, and a deliberate accept.
 ///
-/// **This is the half of F15 the app has never had.** Every pure piece — the
-/// decision (`tls/pin_decision.dart`), both TLS hooks, the error variants and
-/// the words below — landed at M2 and was table-tested, and nothing joined them
-/// to a user: `main.dart` never passed `pin:`, so every shipped client ran
-/// `CertificatePinner(pin: null)` and a self-signed server showed an
-/// unactionable error for ever. `SecretKind.certificatePin` had zero production
-/// reads and zero writes.
+/// **Returns false unless the user actually said yes.** A dismissed dialog is
+/// a `null` result and must not be read as acceptance — trust-on-first-use is
+/// only defensible when the first use is a decision somebody took.
 ///
-/// **Returns false unless the user actually said yes.** A dismissed dialog is a
-/// `null` result and must not be read as acceptance — trust-on-first-use is
-/// only defensible when the "first use" is a decision somebody took.
-///
-/// There is deliberately **no equivalent for a CHANGED certificate**.
-/// `decidePin` never updates a pin (`pin_decision.dart:36-44`) and neither may
-/// a screen: a changed fingerprint on a pinned server is the exact event
-/// pinning exists to make visible, and offering an accept button here would be
-/// the "silent re-accept" F15 forbids, implemented by hand.
+/// There is deliberately **no equivalent for a CHANGED certificate** (D19):
+/// offering an accept button there would be the silent re-accept F15 forbids,
+/// implemented by hand.
 Future<bool> promptToTrust(
   BuildContext context,
   CertificateNotTrusted error,

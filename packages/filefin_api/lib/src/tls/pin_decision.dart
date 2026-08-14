@@ -47,33 +47,15 @@ final class RejectChanged extends PinDecision {
 /// The whole of F15's policy, as one pure total function.
 ///
 /// Everything routes through here — both TLS hooks, both call sites — because
-/// this is the only part of certificate pinning that can be *proven* without a
-/// device: it takes three values and returns one, so all twelve combinations
-/// are table-tested. What cannot be proven on this machine is the wiring of
-/// the OS-trusted arm, which needs a CA-signed certificate for `127.0.0.1`.
-/// Keeping the policy pure is what confines that gap to wiring.
+/// this is the only part of pinning provable without a device: three values in,
+/// one out, so all twelve combinations are table-tested.
 ///
-/// The order of the rules is the argument:
-///
-/// 1. **No certificate means no TLS.** dio calls `validateCertificate` on
-///    every response including a plain-`http://` one, where the certificate is
-///    null — measured against dio 5.11.0. F15 permits plain http for LAN
-///    servers, so rejecting a null certificate would break every plain-http
-///    request the moment a pin was stored for some *other* server.
-/// 2. **A pin outranks OS trust, in both directions.** A pinned server whose
-///    certificate changes is refused even when the new one is perfectly valid;
-///    that is the point. A pinned self-signed certificate is accepted even
-///    though no OS trusts it; that is also the point. The consequence worth
-///    knowing: pinning a CA-signed server means its renewals need re-accepting.
-/// 3. **With no pin, OS trust decides**, and a failure is a prompt rather than
-///    an error — see [RejectUntrusted].
-///
-/// [trustedByOs] is not guessed at either call site. `badCertificateCallback`
-/// passes `false`, because dart:io calls it precisely when the chain did not
-/// validate — and when a pin exists the client is built with
-/// `withTrustedRoots: false` so *every* certificate arrives there.
-/// `validateCertificate` passes `true`, because it runs only after a handshake
-/// that already succeeded under whatever rules applied.
+/// The rules in order, and the order is the argument (D19): **no certificate
+/// means no TLS**, so a null one is accepted rather than breaking the
+/// plain-http LAN servers F15 permits; **a pin outranks OS trust both ways**,
+/// which is why a pinned CA-signed server needs re-accepting on renewal;
+/// **with no pin, OS trust decides**, and a failure is a prompt rather than an
+/// error ([RejectUntrusted]). [trustedByOs] is derived, never guessed.
 PinDecision decidePin({
   required CertificateFingerprint? pinned,
   required CertificateFingerprint? observed,

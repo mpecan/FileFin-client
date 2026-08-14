@@ -1,23 +1,15 @@
 /// Everything `filefin_api` throws, as one sealed hierarchy.
 ///
-/// The hierarchy is **total**: no request path may let a `DioException`, a
-/// `SocketException` or a `FormatException` escape this package. A caller that
-/// has to catch two vocabularies ends up catching `Object`, and then a bug in
-/// the client is indistinguishable from a server the user typed wrong.
+/// The hierarchy is **total**: no request path lets a `DioException`,
+/// `SocketException` or `FormatException` escape. A caller catching two
+/// vocabularies ends up catching `Object`, and a bug in the client becomes
+/// indistinguishable from a server the user typed wrong.
 ///
-/// It is also **exactly as large as the milestones need** (§1, §5).
-/// `dead_types` fails a `sealed` variant nobody constructs outside its
-/// declaring file, so a variant arrives in the commit that first produces it
-/// and not before. `TranscodingDisabled` (415) arrived at M5, where F12's
-/// wording is the whole point of the variant. What is still deliberately
-/// absent:
+/// **Exactly as large as the milestones need** (§1, §5): 403 is deliberately
+/// absent, being admin-only, and C4 forbids admin routes.
 ///
-/// - 403 — never. It is admin-only, and C4 forbids calling an admin route.
-///
-/// **Hand-written, not `@freezed`.** None of these needs `copyWith` or JSON,
-/// and §9 forbids a secret-bearing type carrying freezed's default `toString`
-/// — which prints every field. Writing the messages by hand is what lets each
-/// one say the thing a user or a log reader actually needs.
+/// **Hand-written, not `@freezed`.** None needs `copyWith` or JSON, and §9
+/// forbids freezed's default `toString` on a secret-bearing type.
 library;
 
 // The two certificate variants live in a part file rather than here. They are
@@ -228,16 +220,13 @@ final class RateLimited extends FileFinApiException {
 /// An identifier that cannot be put in a URL — and it came from the server.
 ///
 /// `ApiPaths` refuses `''`, `'.'` and `'..'` because `Uri` deletes those
-/// segments unconditionally, escaped or not, so the request would address a
-/// **shorter route** — which this server answers with the SPA catch-all's
-/// `200 text/html` rather than a 404. Curled live at v0.20.3: an empty media
-/// id on the detail route hit `/api/media` and got exactly that.
+/// segments whatever the escaping (`docs/field-notes.md`), so the request would
+/// silently address a shorter route.
 ///
-/// The value is not a caller's mistake. `MediaSummary.id` and `MediaDetail.id`
-/// both default to `MediaId('')` (§8's tolerant decoding), so any payload with
-/// a missing or null `id` produces one. Letting the raw `ArgumentError` escape
-/// would mean one null id crashes the UI — the opposite of G5's "degrade
-/// visibly rather than silently".
+/// The value is **not a caller's mistake**: both id fields default to
+/// `MediaId('')` under §8's tolerant decoding, so any payload with a missing
+/// `id` produces one. Letting the raw `ArgumentError` escape would mean one
+/// null id crashes the UI — the opposite of G5.
 final class MalformedIdentifier extends FileFinApiException {
   /// [value] is not usable as [field] in a URL.
   const MalformedIdentifier(this.value, this.field);
@@ -280,18 +269,13 @@ final class InvalidCredentials extends FileFinApiException {
 
 /// A 2xx whose `Content-Type` is not `application/json` — F1's mechanism.
 ///
-/// This server registers an SPA catch-all **outside** its route table
-/// (`server.go:352`), so an unmatched `/api/*` path — a typo, a trailing
-/// slash from a `Uri` join, a method mismatch, an endpoint upstream removed —
-/// answers `200 text/html` with `index.html`. Verified live at v0.20.3. **No
-/// path or method mismatch is ever answered with a 404 or a 405.**
-///
-/// So a `200` proves nothing: any SPA host, any reverse proxy with a fallback
-/// and any unrelated web server answers the same way. The content type is the
-/// only thing that separates them, which is why F1 is a
-/// content-type-and-payload check rather than a status check, and why this
-/// variant exists instead of a decode error arriving from somewhere else
-/// entirely.
+/// An unmatched `/api/*` path — a typo, a trailing slash, a method mismatch,
+/// an endpoint upstream removed — answers `200 text/html` from the SPA
+/// catch-all rather than a 404 (`docs/field-notes.md`). So a `200` proves
+/// nothing, the content type is the only thing separating a FileFin server
+/// from any SPA host, and that is why F1 is a content-type-and-payload check
+/// (D21) and why this variant exists instead of a decode error surfacing
+/// somewhere else entirely.
 final class NotAFileFinServerResponse extends FileFinApiException {
   /// [requested] answered 2xx with [contentType], which is not JSON.
   const NotAFileFinServerResponse(this.requested, this.contentType);
@@ -333,23 +317,16 @@ final class MalformedResponse extends FileFinApiException {
 
 /// A `400`: the request itself was wrong, and repeating it will not help.
 ///
-/// **The distinction from [ServerFailure] is retryability, and it is not
-/// cosmetic.** `ServerFailure` is the "we have no opinion" landing place and a
-/// caller may reasonably try again; a 400 is the server saying the arguments
-/// were unusable, so a progress reporter that retried one would post the same
-/// rejected body on every tick for as long as playback lasted.
+/// **The distinction from [ServerFailure] is retryability**, and it is not
+/// cosmetic: `ServerFailure` is the "no opinion" landing place a caller may
+/// retry, while a 400 means the arguments were unusable — so a progress
+/// reporter that retried one would post the same rejected body on every tick
+/// for as long as playback lasted.
 ///
-/// Two shapes exist, both captured live at v0.20.3 into
-/// `test/fixtures/error_shapes.txt`:
-///
-/// - `bad file index` — `POST .../progress` with a `file` outside `files[]`
-///   (`media.go:511`). It means the file list changed under us, so the right
-///   answer is to stop reporting and re-read the item, not to retry.
-/// - `rating out of range` — `POST .../rating` outside 1..10 (`media.go:425`).
-///   M6's, and named here because the variant is one type for both.
-///
-/// [body] is the server's own plain-text sentence, kept because it is the only
-/// thing that separates the two.
+/// Two shapes exist, both captured into `test/fixtures/error_shapes.txt`:
+/// `bad file index` (the file list changed under us — stop reporting and
+/// re-read) and `rating out of range`. [body] is the server's own sentence,
+/// kept because it is the only thing separating them.
 final class BadRequest extends FileFinApiException {
   /// [requested] rejected the arguments it was given, saying [body].
   const BadRequest(this.requested, this.body);

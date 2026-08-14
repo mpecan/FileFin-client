@@ -236,28 +236,11 @@ class PlayerController extends ChangeNotifier {
 
   /// Moves to [file], discarding everything that described the old one.
   ///
-  /// **`_position` and `_duration` are keyed on `_current`**, and leaving them
-  /// behind was user-visible data corruption (M4.R/P1): against real libmpv the
-  /// first event after a second `open()` is deterministically `playing=false`,
-  /// *before* any position or duration event, so the pause it triggers carried
-  /// the finished file's seconds under the new file's index. Tapping Next at
-  /// the end of an episode posted `{"file":1,"position":2.9,"duration":3}` and
-  /// marked the whole show watched.
-  ///
-  /// Zeroing them is necessary and not sufficient, so [_positionIsCurrent]
-  /// suppresses the report outright until the engine has said where the new
-  /// file is: a report of second 0 is still a claim about a file nothing has
-  /// measured, and it would overwrite a pointer the server already holds.
-  ///
-  /// Neither is sufficient **either**, and [_engineOwnsCurrent] is why: both
-  /// assume the open that follows reaches `host.open`. When it does not — a
-  /// refused pre-flight, a `playbackHeaders` throw — the engine keeps emitting
-  /// the *old* file's events, which re-arm exactly what was just disarmed. A
-  /// position tick sets `_positionIsCurrent`, a duration tick refills
-  /// `_duration`, and the pair posts the old file's seconds under the new
-  /// file's index: measured after M5, file 0 running to its end posted
-  /// `{"file":1,"position":100,"duration":100,"event":"ended"}` and marked an
-  /// episode nobody had opened fully watched.
+  /// `_position` and `_duration` are keyed on `_current`, and zeroing them here
+  /// is the first of the three mechanisms D23 describes — [_positionIsCurrent]
+  /// and [_engineOwnsCurrent] are the other two. Each is there because the one
+  /// before it turned out to be insufficient, and D23 names the data corruption
+  /// each was measured to allow.
   void _switchTo(FileIndex file) {
     _current = file;
     _position = Duration.zero;
@@ -309,23 +292,14 @@ class PlayerController extends ChangeNotifier {
 
   /// NF6 and F14: the OS is taking the app away.
   ///
-  /// **It reports and does NOT pause, and the change of mind is M7.6's.**
-  /// Reporting here is still the only thing that survives an OS kill — nothing
-  /// else runs afterwards — so the pointer written here is what the user comes
-  /// back to. The pause that used to accompany it was NF6 read as "playback
-  /// stops and resumes where it was", and F14 says the opposite: audio
-  /// continues, because that is what a lock-screen transport is *for*.
+  /// **It reports and does NOT pause.** Reporting is the only thing that
+  /// survives an OS kill, so the pointer written here is what the user comes
+  /// back to; the pause that used to accompany it read NF6 as "playback stops",
+  /// and F14 says the opposite. What makes that possible per platform is in
+  /// `docs/field-notes.md`, and `mpv_player.dart`'s
+  /// `pauseUponEnteringBackgroundMode: false` is the other half.
   ///
-  /// E-6 measured both halves of what makes that possible — libmpv keeps
-  /// decoding on both platforms, `UIBackgroundModes: audio` stops iOS
-  /// suspending the process, and Android's AppOps `CONTROL_AUDIO` mute is
-  /// lifted by the foreground service `NowPlayingHost` runs
-  /// (`docs/risks.md` R3). `mpv_player.dart`'s
-  /// `pauseUponEnteringBackgroundMode: false` is the other half of this edit;
-  /// either one alone leaves playback stopping on backgrounding.
-  ///
-  /// `resumed` deliberately does nothing: the engine never stopped, and a
-  /// report on the way back in would only repeat the one on the way out.
+  /// `resumed` deliberately does nothing: the engine never stopped.
   Future<void> handleLifecycle(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) return;
     if (state == AppLifecycleState.paused ||
@@ -356,31 +330,16 @@ class PlayerController extends ChangeNotifier {
 
   /// Opens the current file, refusing first if the server will not serve it.
   ///
-  /// **The pre-flight is the FIRST statement, and it is eager rather than a
-  /// classification of a failure that already happened.** libmpv surfaces no
-  /// status code, so a `415` arrives on [PlaybackHost.errors] as
-  /// `Failed to open <url>.` and nothing else — measured verbatim at
-  /// M5.0/E-I, over a black surface, which is the opposite of what F12 asks
-  /// for. A 415 is also deterministic and permanent, so there is nothing for
-  /// `_recover`'s retry to achieve; weaving a second question into that
-  /// three-line function is what M4.R had to fix three defects in.
+  /// **The pre-flight is the FIRST statement, and it is eager** rather than a
+  /// classification after the fact: libmpv surfaces no status code, so a `415`
+  /// arrives as `Failed to open <url>.` over a black surface.
   ///
-  /// **Guarded on `file.transcode`**, because SPEC §3.4 makes a 415 on the
-  /// file route reachable only for a file that needs transcoding — a
-  /// direct-play open would spend a round trip on a question with one possible
-  /// answer. The flag is the server's own verdict and it stays `true` when
-  /// transcoding is disabled (measured, M5.0/E-B), which is exactly what makes
-  /// the guard fire in the case it exists for. It can be stale — the detail
-  /// was fetched earlier — and that is accepted debt: a file that became
-  /// direct-playable meanwhile simply answers `200` and the pre-flight passes.
+  /// **Guarded on `file.transcode`**: a 415 is reachable only for a file that
+  /// needs transcoding, and the flag stays `true` when transcoding is off,
+  /// which makes the guard fire in the case it exists for. It can be stale.
   ///
-  /// [mayRetry] is what stops the retry below from being a RECURSION, and it
-  /// is there because of a measured hang rather than for tidiness: with the
-  /// bound expressed only as a condition, `mutation_test` rewriting that
-  /// condition's `||` to `&&` made every failure retry forever and the whole
-  /// gate ran into its 300 s per-command timeout, three runs out of three.
-  /// A gate that hangs reports nothing, so the second open is now structurally
-  /// incapable of asking for a third.
+  /// [mayRetry] bounds the retry **structurally** rather than as a condition —
+  /// D23 has the hang that taught us the difference.
   Future<void> _open({bool mayRetry = true}) async {
     _failure = null;
     _unplayable = null;
@@ -418,26 +377,14 @@ class PlayerController extends ChangeNotifier {
 
   /// An open that never reached the engine, and the two things it must do.
   ///
-  /// **Silence what is still playing.** Every failure here lands *before*
-  /// `host.open`, so the engine keeps decoding whatever it had — and after
-  /// [next] has moved `_current`, that is audio for a file the screen no
-  /// longer describes, behind a full-screen panel with no controls on it. The
-  /// pause is the user-visible half of the same defect [_switchTo] names.
+  /// **Silence what is still playing**, then **retry once unless the answer is
+  /// permanent** — D23 has both, and why the retry is bounded twice over.
   ///
-  /// **Then retry, once, unless the answer is permanent.** A `415` is
-  /// deterministic — re-asking spends a round trip to be told the same thing —
-  /// but a `ConnectionFailed` on the pre-flight is a blip, and before M5 the
-  /// blip went through `host.errors` to [_recover]'s retry. Without this the
-  /// player dead-ends on a banner with nothing behind it and no way back.
-  /// Bounded twice over: [_retrySpent], which is the same latch [_recover]
-  /// spends and which stops a second retry after a recovery has already used
-  /// one; and `mayRetry`, which bounds it structurally. See [_open].
-  ///
-  /// The review also asked for `_positionIsCurrent = false` here, and it is
-  /// deliberately absent: [_engineOwnsCurrent] already stops the old file's
-  /// ticks from setting it, so it would be dead on the [next] path — and live
-  /// and *wrong* on the other one, where [_recover] re-opens the file the
-  /// engine still holds and `_positionIsCurrent` preserves F8's offset.
+  /// `_positionIsCurrent = false` is deliberately absent here:
+  /// [_engineOwnsCurrent] already stops the old file's ticks from setting it,
+  /// so it would be dead on the [next] path — and live and *wrong* on the
+  /// other one, where [_recover] re-opens the file the engine still holds and
+  /// `_positionIsCurrent` preserves F8's offset.
   Future<void> _openFailed(
     FileFinApiException error, {
     required bool mayRetry,
@@ -541,14 +488,9 @@ class PlayerController extends ChangeNotifier {
   /// renewed it — so re-opening once is worth a try; if it fails the user has
   /// to sign in.
   ///
-  /// **The retry is spent until playback demonstrably resumes**, which is what
-  /// a position tick says and nothing else does. The guard used to latch for
-  /// the controller's whole life and [message] was never read, so two things
-  /// were wrong at once (M4.R/P2): a genuinely broken file gave a **black
-  /// player with no text on it**, which is the opposite of what F12 asks for;
-  /// and a session dying mid-film after any earlier transient error never
-  /// reached `api.me()` again, so it never routed to sign-in. Spending the
-  /// retry still stops the loop — a file that cannot play never ticks.
+  /// **The retry is spent until playback demonstrably resumes**, which a
+  /// position tick says and nothing else does (D23). Spending it still stops
+  /// the loop — a file that cannot play never ticks.
   Future<void> _recover(String message) async {
     if (_disposed) return;
     if (_retrySpent) {

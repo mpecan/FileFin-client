@@ -18,25 +18,15 @@ enum UnwatchChoice {
 /// F10 on the detail screen, as four pieces the redesign places separately.
 ///
 /// **The watched control is where this screen stops hiding the server's
-/// asymmetry and starts explaining it.** `POST {"watched": false}` and
-/// `DELETE .../watched` are different operations — measured against v0.20.3 at
-/// M6.0/E-5, where the first returned the item to *continue* still 45 seconds
-/// in and the second left it in no home row with the position gone — and no
-/// wording that treats un-watching as one thing can be true of both. So an
-/// unwatched item gets one button and a watched one gets a menu whose two
-/// entries each say what happens to the position.
+/// asymmetry and starts explaining it**: un-watching is two different
+/// operations (`docs/field-notes.md`), and no single wording is true of both.
+/// So an unwatched item gets one button and a watched one gets a menu whose
+/// two entries each say what happens to the position.
 ///
-/// **Nothing is disabled while a write is in flight, deliberately.** A control
-/// that greys out has no way to say why, and F10 allows exactly one write at a
-/// time; so the controls stay tappable, a second tap is refused with a sentence
-/// (G5), and the only thing `busy` draws is a progress bar saying a save is
-/// under way.
-///
-/// **One class became four at the redesign**, because the layout separated
-/// them: the heart sits over the backdrop, the check sits in the action row,
-/// the rating went behind a disclosure, and what a failed write has to say
-/// belongs under whichever of the three was tapped. The behaviour of each is
-/// unchanged; only where they are drawn is.
+/// **Nothing is disabled while a write is in flight** (D17): a control that
+/// greys out has no way to say why, so they stay tappable, a second tap is
+/// refused with a sentence, and `busy` draws only a progress bar. One class
+/// became four at the redesign; the behaviour of each is unchanged.
 class FavouriteButton extends StatelessWidget {
   /// Toggles [detail]'s favourite flag through [actions].
   const FavouriteButton({

@@ -153,8 +153,6 @@ class DetailHeader extends StatelessWidget {
 /// example line — `1975 · 2 seasons · 12 files · comedy` — is what a fully
 /// enriched show produces; a bare one produces just its file count.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String headerFacts(MediaDetail detail) {
   final seasons = detail.files

@@ -2,17 +2,13 @@ import 'package:meta/meta.dart';
 
 /// The HTTP headers libmpv must send to play this server's bytes.
 ///
-/// **One value type rather than a bare `Map<String, String>`, and the name is
-/// chosen so a gate watches it.** `secret_tostring`
-/// (`tool/check-constitution.sh`, §9) looks at every class whose name matches
-/// `Session`, so this type's redacting `toString` is enforced by a check rather
-/// than by a reviewer noticing — and what it holds is the session cookie, which
-/// is exactly the kind of value that ends up in a log line the day someone
-/// interpolates the request they were debugging.
+/// **One value type rather than a bare `Map`, and the name is chosen so a gate
+/// watches it**: `secret_tostring` (§9) matches every class named `*Session*`,
+/// so the redacting `toString` is enforced rather than remembered — and what
+/// this holds is the session cookie.
 ///
-/// SPEC.md §5.3 is the whole mechanism: `Media(url, httpHeaders: …)` hands
-/// these straight to libmpv, which preserves them across the 307 to HLS and
-/// onto every segment (R1, retired 2026-08-08).
+/// SPEC.md §5.3 is the mechanism: `Media(url, httpHeaders: …)` hands these to
+/// libmpv, which preserves them across the 307 and onto every segment.
 @immutable
 class PlaybackSessionHeaders {
   /// Wraps the headers a playback request must carry.

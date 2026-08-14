@@ -14,6 +14,7 @@ Where the project is, milestone by milestone, and what it knowingly owes.
 | **Done** | **M6.R** — remediated against three adversarial reviews: six product defects (one of them data loss), nine test holes that were surviving mutants, and six gate defects — including a mutation gate that reported seven survivors as a hang and a §7 clause enforced by nobody |
 | **Done** | **M7** — F11's picker over two real servers, `PlatformSecretStore`, a cold start that restores a session, F15's accept-and-pin loop reaching a user for the first time, F14's background audio and lock-screen transport, the inherited debt, and the **full-spec audit** below |
 | **Done** | **M8** — the `FileFin Redesign` design document, built for both form factors: the phone's `1a` screens, the television's `1b` rail-and-rows, one player overlay serving both, and a D-pad reachability harness that found three controls a remote could not reach |
+| **Done** | **M8.R** — §2 rewritten and re-enforced: a 12-line comment-block cap plus a tree-wide all-comment ratio, `docs/decisions/` and `docs/field-notes.md` created, and 121 oversized doc-comment blocks migrated out of `lib` 
 | **Exit criterion met** | `just check` exits 0 **and** `just it` exits 0 on a clean tree, on a machine with the binary. **NF2 is met BY PROXY** — see M3 below, and `docs/verification-backlog.md` row 1 |
 
 **Every milestone is done, and "done" is not the same as "verified".** What no
@@ -46,6 +47,98 @@ outright, and the first sign of it was `dart format` reporting the file
 "changed". `cp` to a temp file, not `git checkout --`, is the undo for a file
 that has never been committed.
 
+
+---
+
+## M8.R — the comment budget measured the wrong thing, and the prose moved
+
+A tech-debt review found §2 reporting `0 error(s), 0 warning(s)` over a tree
+that was **37.9% comments**. The numerator was `//` alone at 3.8%; `///` was
+34.0% and excluded from both sides of the ratio.
+
+**The exclusion was not a blind spot the gate had, it was most of what there
+was to measure** — and the documented remediation had exploited it. CLAUDE.md
+recorded that the three files breaching §2 at M3.R were paid "by moving the
+rationale into the `///` doc comment of the declaration it describes"; those
+files were still 44–59% comments at M8. The fix had been a change of comment
+syntax, and the gate reported success on them for five milestones.
+
+### What the gate is now
+
+Two checks, and the **block cap is the rule**:
+
+- **No comment block over 12 lines.** A comment describing an interface is
+  bounded by that interface; twelve lines is four sentences. The number is
+  argued rather than guessed — measured over `lib`, a cap of 20 caught 37
+  blocks, 15 caught 72, 12 caught 119, 10 caught 156, 8 caught 199. Twelve is
+  where the curve stops being about outliers.
+- **A tree-wide ratio**, 35% warn / 45% error, counting `//` and `///`.
+
+**The ratio went tree-wide on evidence, mid-remediation.** Per file it punishes
+the shape §2 exists to produce: after migration `ids.dart` scored **81%** (27
+of 33 lines) for being five one-line `extension type` declarations each with a
+sentence on them, and `server_state.dart` 47% and `auth_result.dart` 42% for
+the same reason. Per file, the number correlates with declaration density
+rather than with verbosity, so it fires hardest where the prose is already
+minimal. The per-file `MIN_LINES` exemption went with it: a tree-wide ratio has
+no small-file sensitivity, and a block is a count rather than a percentage, so
+it is exact at any size — which closes the blind spot the exemption existed to
+narrow.
+
+**Proven both directions.** A synthetic file at 19% comments carrying a
+30-line block: the ratio passes it, the cap catches it. That is the case the
+old gate could not see, and it is the gate's whole claim.
+
+**One gate defect was found and fixed during the work.** The first draft's
+offence message wrapped onto a second line, and the caller reads it with
+`while read` — so the summary reported **242** breaches over 119 blocks, half
+of them with no line number. A gate that cannot count is a gate whose ratchet
+means nothing.
+
+### Where the prose went
+
+Two new homes, and the split is the point: a **decision** is a choice we made
+and could reverse; a **field note** is how something we do not control was
+observed to behave.
+
+- **`docs/decisions/`** — twelve new records, D12–D23, extending the existing
+  D-numbering rather than starting a parallel ADR scheme. `SPEC.md` §13 stays
+  the index and each row links to its file. The register was also sorted into
+  numeric order as a scout fix; D9 and D10 had been transposed since M4.
+- **`docs/field-notes.md`** — 400 lines: the server behaviours the endpoint
+  documentation does not imply, libmpv and `media_kit`, dio, Flutter and
+  `audio_service`. It absorbed CLAUDE.md's *Playback truths that keep biting*
+  wholesale, which leaves CLAUDE.md carrying rules rather than observations.
+
+### What moved, and what was deleted
+
+**121 blocks** over the cap, in 74 files, reduced to **0**. Tree comment
+density 37.9% → 33%.
+
+**Twenty-three copies of one sentence were deleted rather than moved**:
+*"Public only so a test can reach it; nothing outside this library calls it
+(§5, `public_member_no_consumer`)."* Twenty-two of the twenty-three members
+already carried `@visibleForTesting`, which says the same thing to the
+compiler, the reader and the gate. The explanation now lives once, in
+`docs/architecture.md`'s gate-scope table, together with the placement rule
+one of those comments carried — the annotation must sit immediately above the
+declaration, because the check reads a single preceding line.
+
+**Nothing else was deleted.** Every measurement, every attack trace, every
+event ordering is in `docs/decisions/` or `docs/field-notes.md` with a citation
+left behind. The prose was the asset; its location was the bug.
+
+### Debt this milestone knowingly accepts
+
+- **The tree sits at 33% against a 35% warn line.** That is comfortable rather
+  than roomy, and it is comfortable *because* the ratio is now tree-wide. The
+  number may fall or hold, never rise.
+- **`just comments` still measures Dart only.** The shell under `tool/` would
+  breach both checks many times over and stays exempt, for the reason §2 gives.
+- **No gate checks that a citation resolves.** `/// See D12.` is prose like any
+  other, and a decision file deleted or renumbered leaves a dangling reference
+  nothing would catch. Cheap to add (grep the `D\d+` references against
+  `docs/decisions/`), not added here.
 
 ---
 

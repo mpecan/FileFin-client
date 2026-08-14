@@ -31,24 +31,15 @@ enum LibraryTab {
 /// What a signed-in server looks like: Home, Library and Search, and the one
 /// route that opens an item from any of them.
 ///
-/// **Tabs are built on first selection, never before, and NF1 is why.** A cold
-/// start must issue one request, not three: `IndexedStack` and a `TabBarView`
-/// both build every child immediately, so choosing either would have made a
-/// launch fetch the home rows, the category list and an empty search at once —
-/// on a phone, over someone's cellular connection, for two screens they may
-/// never open. A tab that has been selected stays built, so switching back does
-/// not refetch.
+/// **Tabs are built on first selection, never before, and NF1 is why**: a cold
+/// start must issue one request, not three, where `IndexedStack` and
+/// `TabBarView` build every child at once. A selected tab stays built.
 ///
-/// **One `_openDetail` for all three tabs.** The detail route pops `true` when
-/// it wrote watch state, and that is the only thing that reloads the home rows.
-/// The rows cannot be predicted — every write re-stamps `updated` and every
-/// bucket is ordered by it (M6.0/E-3) — so "something changed" is the most a
-/// screen can honestly say, and the refetch is the answer.
-///
-/// **The rejected alternative is worth naming**: a `WatchStateBus` shared by
-/// the three tabs, so a write anywhere updated everything. That is precisely
-/// the "a second state mechanism appears" condition `docs/architecture.md`
-/// gives for retiring D-Q1, and it is not built for one method call on one key.
+/// **One `_openDetail` for all three tabs**, popping `true` when it wrote watch
+/// state — the only thing that reloads the home rows (`docs/field-notes.md`).
+/// The rejected alternative is worth naming: a `WatchStateBus` across the three
+/// tabs, exactly the "second state mechanism" D9 names as its retirement
+/// condition.
 class LibraryShell extends StatefulWidget {
   /// Browses [api] under [title].
   const LibraryShell({
@@ -107,18 +98,14 @@ class _LibraryShellState extends State<LibraryShell> {
   ///
   /// **A set of tabs, never a map of widgets, and the difference was a
   /// data-loss bug.** Caching the built `Widget` froze every argument it was
-  /// built from: `widget.onSettings` is a closure `app.dart` rebuilds around
-  /// the current `SavedServer` on every build, so a Home tab holding the
-  /// instance from `initState` kept handing the settings sheet the server as it
-  /// was at sign-in. Wi-Fi only and D10's allowance both reverted to their
-  /// sign-in values on the second visit, and the next toggle wrote the stale
-  /// value back (M6.R/P1.1). `api`, `title` and `onSignIn` were frozen by the
-  /// same mechanism and happened to be stable.
+  /// built from, including the `onSettings` closure `app.dart` rebuilds around
+  /// the current `SavedServer` — so Wi-Fi only and D10's allowance reverted to
+  /// their sign-in values on a second visit and the next toggle wrote the stale
+  /// value back (M6.R/P1.1).
   ///
-  /// Rebuilding each selected tab on every build is what Flutter expects
-  /// anyway: the `Offstage`'s `ValueKey(tab)` is what carries each tab's
-  /// element — and so its state and its scroll position — across a rebuild that
-  /// inserts a tab ahead of it in the stack.
+  /// Rebuilding each selected tab is what Flutter expects anyway: the
+  /// `Offstage`'s `ValueKey(tab)` carries each tab's element, and so its state
+  /// and scroll position, across a rebuild.
   final _built = <LibraryTab>{LibraryTab.home};
 
   LibraryTab _tab = LibraryTab.home;

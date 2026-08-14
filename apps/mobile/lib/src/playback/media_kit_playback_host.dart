@@ -44,18 +44,14 @@ final class MediaKitPlaybackHost extends PlaybackHost {
 
   /// Loads [request], headers and start position included.
   ///
-  /// `tls-verify` is set **before** the open, because it is a property of the
+  /// `tls-verify` is set **before** the open, being a property of the
   /// connection mpv is about to make. libmpv verifies nothing by default
-  /// (measured at M4.0/E6: `--tls-verify=no` accepted this repository's own
-  /// self-signed certificate and the server logged the request;
-  /// `--tls-verify=yes` refused it with `error:0A000086` and the server logged
-  /// nothing) — so this is the only thing standing between an OS-trusted server
-  /// and an unverified peer, and D10 is what covers the case it cannot help
-  /// with.
+  /// (`docs/field-notes.md`), so this is the only thing between an OS-trusted
+  /// server and an unverified peer; D10 covers what it cannot help with.
   ///
-  /// `Media`'s `start:` rather than an open-then-seek: mpv applies it as
-  /// `start=` on load, so playback begins at the resume position instead of
-  /// showing a second of the beginning first.
+  /// `Media`'s `start:` rather than open-then-seek: mpv applies it as `start=`
+  /// on load, so playback begins at the resume position rather than showing a
+  /// second of the beginning first.
   @override
   Future<void> open(PlaybackRequest request) async {
     // On Android, mpv uses mbedTLS or GnuTLS, neither of which knows where

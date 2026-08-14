@@ -14,13 +14,9 @@ import 'package:flutter/foundation.dart';
 /// `search_page.dart` imports both, and two `SearchController`s in scope is an
 /// ambiguous-import error rather than a style question.
 ///
-/// **The same shape as the other four screens (D9).** No state-management
-/// package: the fetch, the cancellation and the three renderings are
-/// `AsyncController`'s already, and the only thing search adds is a `Timer`.
-/// A debounce package would pay rent of one timer and, less obviously, *shrink*
-/// what the mutation gate reaches — framework-internal branching is never in
-/// our diff, so no mutant is generated for it, while the branching below
-/// produces mutants the tests have to kill.
+/// **The same shape as the other four screens (D9)**: the fetch, the
+/// cancellation and the three renderings are `AsyncController`'s already, and
+/// the only thing search adds is a `Timer`.
 ///
 /// It imports no widget, so every case below is a plain `test()`.
 class MediaSearchController extends ChangeNotifier {

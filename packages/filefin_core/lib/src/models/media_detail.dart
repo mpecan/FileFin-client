@@ -28,15 +28,10 @@ abstract class SubtitleInfo with _$SubtitleInfo {
 /// One playable file inside a media folder — upstream `fileInfo`,
 /// `media.go:36-49`.
 ///
-/// Two fields matter disproportionately:
-///
-/// - [transcode] is **the server's verdict** that this file is not
-///   browser-native, computed by the same function that decides what
-///   `GET .../file/{n}` will answer. `decide()` uses it and must never
-///   reimplement `transcode.DirectPlayable`; a second copy would drift from a
-///   decision the server has already made and told us.
-/// - [size] is the only bandwidth signal the API gives us, and therefore the
-///   entire basis of the metered-connection guard (F13).
+/// [transcode] is **the server's verdict** that this file is not
+/// browser-native, from the same function that decides what
+/// `GET .../file/{n}` answers — never reimplement it. [size] is the only
+/// bandwidth signal the API gives, and so the whole basis of F13's guard.
 ///
 /// [season] and [episode] are **0** for a single-file item, not null.
 @freezed
@@ -84,26 +79,15 @@ abstract class MetaPair with _$MetaPair {
 /// `GET /api/media/{id}` — the detail payload, upstream `mediaDetail`,
 /// `media.go:56-75`.
 ///
-/// Every list is initialised to an empty slice upstream (`media.go:273-278`) so
-/// they arrive as `[]` and never `null`. They default here anyway: the
-/// guarantee is upstream's, not ours (§8).
+/// Every list arrives as `[]` and never `null` (`media.go:273-278`), and
+/// defaults here anyway: the guarantee is upstream's, not ours (§8). A missing
+/// `meta.json` is non-fatal (`media.go:282`), so an item with no metadata is
+/// normal rather than an error.
 ///
-/// A missing `meta.json` is non-fatal (`media.go:282`) — the cache row still
-/// supplies id, title, year, description, plot and files, and the rich blocks
-/// come back empty. So an item with no metadata is normal, not an error.
-///
-/// [continueIndex] and [continueSeconds] are the **derived** resume view, not
-/// the stored pointer: a pointer whose ref no longer matches any file reads
-/// here as `0`/`0` — and so does a real pointer at the very start of a
-/// single-file item. `WatchState.fromDetail` reads `0`/`0` as "no pointer",
-/// which is right for the first case and wrong for the second, and the error
-/// it leaves **persists** until this payload is fetched again. Re-read the
-/// detail after a report that crosses 90% of a single-file item;
-/// `WatchState.fromDetail` sets out why and what it costs.
-///
-/// [rating] is passed through exactly as the server sent it, including values
-/// the server's own write path would reject — it clamps on write, not on read
-/// (`media.go:425`). `WatchState.fromDetail` is where that is normalised.
+/// [continueIndex] and [continueSeconds] are the **derived** resume view rather
+/// than the stored pointer, which makes `0`/`0` ambiguous — see D15 for how it
+/// is read and what that costs. [rating] is passed through exactly as sent,
+/// including values the write path would reject (D16).
 @freezed
 abstract class MediaDetail with _$MediaDetail {
   /// The full detail payload, every field defaulted (§8).

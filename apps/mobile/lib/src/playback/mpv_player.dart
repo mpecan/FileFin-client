@@ -67,25 +67,16 @@ abstract base class MpvPlayer {
 
 /// What `media_kit_video` is told to draw over the picture: nothing.
 ///
-/// **A named function rather than an inline closure**, because a closure inside
-/// `buildSurface` is only ever invoked by a `Video` laying itself out — which
-/// is the one thing that does not happen under `flutter test` — so the app's
-/// decision to decline the library's transport was a line no test could reach.
+/// **A named function rather than an inline closure**: a closure in
+/// `buildSurface` is only invoked by a `Video` laying itself out, the one thing
+/// that does not happen under `flutter test`.
 ///
-/// It is not the library's own `NoVideoControls`, which is `const … = null` and
-/// therefore `dynamic`: passing it does not type-check against
-/// `VideoControlsBuilder?`. Either way the library draws no transport of its
-/// own, because `PlayerControls` is the app's overlay and two sets of buttons
-/// over one video is two things to tap and one of them wrong.
+/// Not the library's own `NoVideoControls`, which is `const … = null` and so
+/// `dynamic`, and does not type-check against `VideoControlsBuilder?`.
+/// **`Object?` rather than `VideoState`** is what makes it callable: no test
+/// can construct a `State<Video>`, and parameter contravariance means
+/// `Widget Function(Object?)` satisfies the typedef.
 ///
-/// **`Object?` rather than `VideoState`**, and that is what makes it callable:
-/// a `VideoState` is a `State<Video>` a test has no way to construct, while
-/// Dart's function subtyping is contravariant in its parameters — so a
-/// `Widget Function(Object?)` satisfies `VideoControlsBuilder` and takes a
-/// `null` from a test. The argument is ignored either way.
-///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 Widget noLibraryControls(Object? state) => const SizedBox.shrink();
 

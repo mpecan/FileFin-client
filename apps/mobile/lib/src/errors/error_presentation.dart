@@ -32,25 +32,15 @@ class ErrorMessage {
 /// Turns one of `filefin_api`'s errors into words (F12's discipline).
 ///
 /// **The switch is exhaustive and has no default arm, and that is the design.**
-/// It worked: when M5 added `TranscodingDisabled` — the 415 where F12's wording
-/// *is* the variant — this function stopped compiling, along with two test
-/// files, and the arm below was written because the compiler insisted (measured
-/// at M5.0/E-J: exactly three files failed). A default arm would have rendered
-/// "something went wrong" for the one error the spec asks us to name precisely,
-/// and nothing would ever have told us — which is exactly what
-/// `describeApiFailure` in `player_controller.dart` did until M5.1 deleted its
-/// `_` arm.
+/// Adding `TranscodingDisabled` stopped this compiling; a default would have
+/// said "something went wrong" for the one error F12 asks us to name.
 ///
-/// Every URL goes through `redactUserInfo`. A message is a log line waiting to
-/// happen (§9, NF4), and a saved-server URL is typed by a user —
-/// `https://sam:hunter2@nas.local/` is a thing people type.
+/// Every URL goes through `redactUserInfo`: a message is a log line waiting to
+/// happen (§9, NF4) and a saved-server URL is typed by a user.
 ///
-/// **A message names the cause it actually has.** `SessionExpired`'s wording
-/// used to blame a server restart, which is the one cause it almost never
-/// carries: a restart is exactly what F3 renews and replays without any
-/// message at all. `session.dart:137` and `:223` are where it really comes
-/// from — no stored session, or no password to renew with — so that is what
-/// the words say.
+/// **A message names the cause it actually has.** `SessionExpired` used to
+/// blame a server restart — what F3 renews silently. It means no stored
+/// session, or no password.
 ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
   RequestTimedOut(:final phase, :final requested) => ErrorMessage(
     title: 'The server did not answer in time',

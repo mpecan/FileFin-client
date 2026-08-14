@@ -66,34 +66,16 @@ enum CategorySort {
 
 /// Flattens a forest into the rows a `ListView.builder` should draw.
 ///
-/// **Flattened rather than nested, and that is what makes the list
-/// virtualised.** Nested `Column`s inside an expanded tile build every
-/// descendant on every frame whether or not it is on screen, so a large
-/// library's category list would cost O(all categories) per frame — the exact
-/// property NF2 rests on, in the one place people expect a tree to be nested.
-/// A category list has no documented bound either (SPEC.md L2: nothing on this
-/// server paginates).
-///
-/// Iterative rather than recursive for the same reason `buildCategoryTree` is:
-/// the depth is whatever the server sent.
+/// **Flattened rather than nested, which is what makes the list virtualised**
+/// (D14), and iterative rather than recursive: the depth is the server's.
 ///
 /// **A `for` over a list that grows as it is walked, not a `while` over a
-/// stack**, and that is not style: `mutation_rules.xml` excludes a `while` body
-/// up to its first closing brace, so the `if` below — the only branch here —
-/// would never be mutated. The `for` exclusion covers the header alone, which
-/// leaves the body in front of the gate.
-///
-/// Inserting children right after their parent is what makes the walk
-/// depth-first. `insertAll` is O(n) each time, so the function is O(n²) in the
-/// worst case; a category list is directories on a disk, and the alternative
-/// loop shape costs more than the arithmetic saves.
+/// stack**: `mutation_rules.xml` excludes a `while` body, so the only branch
+/// here would never be mutated.
 ///
 /// **A non-empty [filter] answers with matches rather than with a shape**, and
-/// every row it returns is unexpandable at depth zero. Pruning the tree to
-/// matching branches was the alternative and it is worse in the case that
-/// matters: someone typing "anime" wants the two categories called that, not a
-/// hierarchy with the shape of the two categories called that. Ancestors are
-/// searched too, so a match on a parent brings back the parent alone.
+/// every row is unexpandable at depth zero: someone typing "anime" wants the
+/// two categories called that, not a hierarchy shaped like them.
 List<VisibleRow> visibleRows(
   List<CategoryNode> forest,
   Set<CategoryId> expanded, {

@@ -30,22 +30,16 @@ final class NoResume extends ResumeChoice {
 
 /// F8's whole policy: does this item offer *Resume* as well as *Play*?
 ///
-/// **This is upstream's own rule, observed rather than invented.** Its player
-/// computes `hasResume = !watched &&
-/// (continueIndex > 0 || continueSeconds > 0)`
-/// (`web/src/lib/app.svelte.js:423`), and that is what resolves the `(0, 0)`
-/// ambiguity M1 recorded and could not close from the payload alone: a view of
-/// `(0, 0)` is reported both for an item nobody has played and for a pointer
-/// whose ref no longer matches any file, and the two are indistinguishable on
-/// the wire. Neither is offered, so this client never seeks to a position it
-/// made up.
+/// **Upstream's own rule, observed rather than invented**: its player computes
+/// `hasResume = !watched && (continueIndex > 0 || continueSeconds > 0)`
+/// (`web/src/lib/app.svelte.js:423`). That is also what settles D15's `(0, 0)`
+/// ambiguity — neither an unplayed item nor a stale pointer is offered, so this
+/// client never seeks to a position it made up.
 ///
-/// The detail goes through the engine — `WatchState.fromDetail` then
-/// [deriveView] — rather than being read field by field, which is what makes a
-/// `continueIndex` past the end of the file list normalise to *no resume*
-/// instead of an offer to seek into a file that is not there. That is the stale
-/// pointer case `test/fixtures/resume_vectors.json` exists for, and reproducing
-/// its resolution here rather than re-deriving it is the point.
+/// It goes through the engine rather than reading fields, which is what
+/// normalises a `continueIndex` past the end of the file list to *no resume*
+/// rather than an offer to seek into a file that is not there.
+/// `test/fixtures/resume_vectors.json` is the oracle for that case.
 ResumeChoice offerResume(MediaDetail detail) {
   final view = deriveView(
     WatchState.fromDetail(detail),
@@ -64,23 +58,15 @@ ResumeChoice offerResume(MediaDetail detail) {
 /// Where playback of [picked] should start, in whole seconds.
 ///
 /// Upstream's `playFile(idx)` seeks only when `idx == continueIndex`
-/// (`web/src/lib/app.svelte.js:864`). So tapping episode 1 after leaving off
-/// halfway through episode 2 starts episode 1 at the beginning — which is what
-/// the person who tapped that row asked for, and what every other client of
-/// this server does.
+/// (`web/src/lib/app.svelte.js:864`), so tapping episode 1 after leaving off in
+/// episode 2 starts episode 1 at the beginning. Written in terms of
+/// [offerResume] so the two cannot disagree about whether a pointer resolves.
 ///
-/// Written in terms of [offerResume] rather than beside it, so the two can
-/// never disagree about whether a pointer resolves.
-///
-/// **No default arm, and that is the point of the second `ResumeAvailable()`
-/// case.** It used to end `_ => 0`, because the first arm is *guarded* and a
-/// guarded pattern cannot make a switch exhaustive on its own. Measured both
-/// directions at M6.1 by adding a third [ResumeChoice] variant: against
-/// `_ => 0` the analyzer found no issue and the new variant would silently have
-/// started every file at 0, and against the three arms below it fails with
-/// `non_exhaustive_switch_expression`. Splitting the guard into "matched" and
-/// "any other `ResumeAvailable`" keeps the same answer for both and makes a
-/// fourth variant a compile error rather than a wrong number.
+/// **No default arm, which is the point of the second `ResumeAvailable()`
+/// case**: the first arm is *guarded*, and a guarded pattern cannot make a
+/// switch exhaustive on its own. With `_ => 0` a new [ResumeChoice] variant
+/// silently started every file at 0; with the arms below it is a compile error
+/// (measured both directions, M6.1).
 int startSecondsFor(MediaDetail detail, FileIndex picked) =>
     switch (offerResume(detail)) {
       ResumeAvailable(:final file, :final seconds) when file == picked =>

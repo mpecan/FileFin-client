@@ -5,23 +5,13 @@ import 'package:filefin_api/src/session.dart';
 /// The ONLY place a `401` is interpreted (SPEC.md §5.1), so F3 exists once.
 ///
 /// Server sessions live in memory and die with the process (L1), so a 401 on
-/// any call is routine rather than exceptional. This interceptor renews the
-/// session and replays the request once, transparently.
+/// any call is routine rather than exceptional. This renews the session and
+/// replays the request once, transparently.
 ///
-/// **Three separate mechanisms keep that from becoming a loop, and they guard
-/// different things.**
-///
-/// 1. *Recursion through login is structurally impossible.* `SessionManager`
-///    runs on a second `Dio` that does not carry this interceptor, so a 401
-///    from `/api/login` never reaches this code. There is deliberately no "is
-///    this the login path?" branch here: it would be unreachable, and §5 and
-///    `dead_types` exist to stop unreachable branches being written.
-/// 2. *Recursion through the retry is bounded by a marker on the request.* One
-///    retry, always, whatever else happens.
-/// 3. *Concurrency is handled by `SessionManager`*, which is where the state
-///    is. This interceptor's job is only to stamp the generation each request
-///    was issued under, so a 401 arriving after someone else has already
-///    renewed can be recognised as stale.
+/// **Three separate mechanisms stop that becoming a loop and they guard
+/// different things** — a second `Dio` without this interceptor, a marker on
+/// the request, and `SessionManager`'s generation counter. D20 says why one
+/// guard is not enough, and why there is no "is this the login path?" branch.
 class AuthInterceptor extends Interceptor {
   /// Renews sessions through [sessions] and replays through [dio].
   ///

@@ -49,23 +49,14 @@ extension FileFinClientBrowse on FileFinClient {
   /// `GET /api/media/{id}/poster` — image bytes, or **null when there is no
   /// poster**.
   ///
-  /// **`null` is a 404 and a 404 is normal here.** `docs/server-api.md` records
-  /// it: an un-enriched library has no artwork, and the server answers that
-  /// with a 404 rather than an empty body. Surfacing it as an error would put a
-  /// failure in front of every tile of a freshly imported library. Every OTHER
-  /// failure stays in the sealed hierarchy — a 503 is still `CacheUnavailable`,
-  /// so "the server is rebuilding" never reads as "you have no artwork".
+  /// **`null` is a 404 and a 404 is normal here**: an un-enriched library has
+  /// no artwork, and erroring would put a failure in front of every tile of a
+  /// freshly imported library. Every *other* failure stays in the sealed
+  /// hierarchy, so "the server is rebuilding" never reads as "no artwork".
   ///
-  /// [size] is a hint and not a contract (`media.go:351`): the server serves
-  /// the pre-built variant **if it exists** and silently falls back otherwise,
-  /// so the returned image may be any dimensions. It is only put on the wire
-  /// when asked for, because an absent value and an unrecognised one behave
-  /// identically and sending one always would make every request look like a
-  /// request for a variant.
-  ///
-  /// `async` for the same reason as [categoryMedia]: a rejected identifier
-  /// arrives as a failed Future. A grid building 5000 tiles must not have to
-  /// wrap the call in a `try` as well as an `await`.
+  /// [size] is a hint, not a contract (`media.go:351`). `async` for the same
+  /// reason as [categoryMedia]: a rejected identifier arrives as a failed
+  /// Future, so a grid of 5000 tiles need not `try` as well as `await`.
   Future<Uint8List?> posterBytes(
     MediaId id, {
     PosterSize? size,

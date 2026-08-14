@@ -27,14 +27,12 @@ extension type const SubtitleIndex(int value) implements Object {}
 /// **Our own** identifier for a saved server. It is never sent to any server.
 ///
 /// The other four name things the server named. This one names a row in the
-/// client's own server list (SPEC.md §7, F11), and it is the key of three
-/// per-server things `filefin_api` keeps side by side: the cookie jar, the
-/// secret-store namespace (`filefin/{serverId}/session|password|certpin`) and
-/// the accepted certificate fingerprint. Two servers sharing a jar would send
-/// one's session cookie to the other; two sharing a pin would defeat F15.
+/// client's own server list (SPEC.md §7, F11), and keys the three per-server
+/// things `filefin_api` holds apart: the cookie jar, the secret-store
+/// namespace (`filefin/{serverId}/session|password|certpin`) and the accepted
+/// fingerprint. Two servers sharing a jar would send one's session cookie to
+/// the other; two sharing a pin would defeat F15.
 ///
-/// It carries no `JsonConverter`, unlike the four above. Those appear in wire
-/// models and have to cross the JSON boundary; a `ServerId` appears in no
-/// payload in either direction, so a converter for it would be a dead branch
-/// (§5) — `json_converters.dart` holds exactly the four that are not.
+/// It carries no `JsonConverter`, unlike the four above: it appears in no
+/// payload in either direction, so one would be a dead branch (§5).
 extension type const ServerId(String value) implements Object {}

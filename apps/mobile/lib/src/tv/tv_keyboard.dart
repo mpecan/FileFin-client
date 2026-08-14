@@ -29,8 +29,6 @@ class TvKeyboard extends StatelessWidget {
 
   /// Every key, in the order they are drawn.
   ///
-  /// Public only so a test can walk them; nothing outside this library reads
-  /// it (§5, `public_member_no_consumer`).
   @visibleForTesting
   static const keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 

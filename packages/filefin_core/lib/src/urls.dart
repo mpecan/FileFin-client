@@ -4,49 +4,21 @@ import 'package:meta/meta.dart';
 
 /// Every path this client will ever request, written out in full, in one class.
 ///
-/// Every interpolated value goes through [_seg]. A path template is a string,
-/// so a parameter containing `/` would otherwise merge into the template and be
-/// split back out as two segments — the request would address a different route
-/// and the failure would arrive as a 404 from somewhere else. `MediaId` comes
-/// straight off the wire and defaults to `MediaId('')` (§8), so that is not a
-/// hypothetical.
+/// Every interpolated value goes through [_seg]: a parameter containing `/`
+/// would otherwise merge into the template and split back out as two segments,
+/// addressing a different route and failing as a 404 from somewhere else.
 ///
-/// One class and one full literal per route is a structural decision, not a
-/// stylistic one. `undocumented_endpoint` (`tool/check-constitution.sh`, §8)
-/// greps string literals containing `/api/` and checks each against
-/// `docs/server-api.md`; it cannot reconstruct a path assembled from pieces. So
-/// `'$_media/hls/index.m3u8'` would be invisible to the gate — correct today,
-/// and unchecked forever after. The repetition below is what keeps every route
-/// answerable to the document that cites its upstream line.
+/// The repetition below is deliberate and load-bearing — see D18.
 abstract final class ApiPaths {
-  /// Percent-encodes one interpolated path parameter, and rejects the three
-  /// values that no encoding can make safe.
+  /// Percent-encodes one interpolated path parameter, and **throws** for the
+  /// three values no encoding can make safe: `''`, `'.'` and `'..'`.
   ///
-  /// [FileFinUrls._resolve] decodes each segment again before handing it to
-  /// `Uri`, which re-encodes it — so the round trip is lossless and `Uri`
-  /// remains the only thing that decides the final escaping. That works for
-  /// every character; it does not work for `''`, `'.'` and `'..'`, which are
-  /// not characters but *whole segments* `Uri` deletes.
-  ///
-  /// `Uri.encodeComponent` leaves `.` alone (RFC-unreserved), and Dart's `Uri`
-  /// removes dot segments unconditionally — including from their escaped form,
-  /// so writing `%2E%2E` does not help either — `Uri.parse('https://h/a/b/'
-  /// '%2E%2E/x').path` is `/a/x`, and `urls_test.dart` pins that with the real
-  /// route rather than this stand-in, which is spelled with `a/b` only so the
-  /// §8 `undocumented_endpoint` gate does not read a doc example as a route. An
-  /// empty
-  /// segment is dropped the same way. Each of those addresses a **shorter
-  /// route**, and this server answers an unmatched `/api/*` path with the SPA
-  /// catch-all's `200 text/html` (`docs/server-api.md`, "Conventions") rather
-  /// than a 404 — a success that is not one, arriving as a JSON decode failure
-  /// somewhere else entirely. Curled live at v0.20.3: an empty [MediaId] on
-  /// `mediaDetail` hit `/api/media` and got exactly that.
-  ///
-  /// So the value is refused instead of escaped. `MediaId('')` is reachable
-  /// **today**: it is the models' own declared default (`media_detail.dart`,
-  /// `media_summary.dart`), so any payload with a missing or null `id`
-  /// produces one. Throwing here turns a request against the wrong route into
-  /// a stack trace naming the value.
+  /// They are whole segments rather than characters, and Dart's `Uri` deletes
+  /// them even when escaped (`docs/field-notes.md`), so each silently addresses
+  /// a *shorter route* — which this server answers with the SPA catch-all
+  /// rather than a 404. Reachable today: `MediaId('')` is the models' declared
+  /// default (§8). Throwing turns a request against the wrong route into a
+  /// stack trace naming the value.
   static String _seg(Object value) {
     final segment = '$value';
     if (segment.isEmpty || segment == '.' || segment == '..') {
@@ -217,27 +189,16 @@ class FileFinUrls {
 
   /// Joins [path] onto [base]'s own path and returns an absolute URL.
   ///
-  /// Built with the `Uri` constructor rather than `base.replace` so that the
-  /// base's query and fragment are dropped rather than inherited: a saved
-  /// server URL carrying `?theme=dark` must not append itself to every request.
+  /// The `Uri` constructor rather than `base.replace`, so the base's query and
+  /// fragment are dropped: `?theme=dark` must not append itself to every
+  /// request. `port` is passed only when [base] wrote one, because `base.port`
+  /// otherwise turns `https://h` into `https://h:443`.
   ///
-  /// `port` is passed only when [base] wrote one: `base.port` reports the
-  /// scheme's default otherwise, which turns `https://h` into `https://h:443`.
-  ///
-  /// Each segment is decoded here and re-encoded by `Uri`. [ApiPaths._seg]
-  /// escaped it so a `/` inside a parameter could not split into an extra
-  /// segment, and this is where that escaping is handed back.
-  ///
-  /// **The two halves filter differently, deliberately.** The base half drops
-  /// every empty segment, because `https://h/filefin/` and `https://h/filefin`
-  /// must resolve identically. The path half drops exactly one — `skip(1)`, the
-  /// empty string before the leading `/` that every [ApiPaths] literal starts
-  /// with, asserted in `urls_test.dart`. It used to filter empties everywhere,
-  /// which quietly did [ApiPaths._seg]'s job for it: an empty id vanished and
-  /// the URL addressed a shorter route that the SPA catch-all answers
-  /// `200 text/html`. One guard that refuses beats two mechanisms that
-  /// disagree, so an empty segment that ever gets past `_seg` must now survive
-  /// into a doubled slash — a visible 404 — rather than disappear.
+  /// **The two halves filter empties differently, deliberately.** The base half
+  /// drops all of them; the path half drops exactly one, the string before
+  /// every [ApiPaths] literal's leading `/`. Filtering everywhere quietly did
+  /// [ApiPaths._seg]'s job, so an empty segment that gets past `_seg` must
+  /// survive into a doubled slash — a visible 404 — rather than vanish.
   Uri _resolve(String path, [Map<String, String>? query]) => Uri(
     scheme: base.scheme,
     userInfo: base.userInfo,

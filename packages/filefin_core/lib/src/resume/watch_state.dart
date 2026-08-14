@@ -4,20 +4,13 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'watch_state.freezed.dart';
 
-/// Where playback of an item left off: a file and a whole-second offset into
-/// it.
+/// Where playback of an item left off: a file and a whole-second offset.
 ///
-/// The server stores this as a **ref string** — `"SxE"`, `""` for a single-file
-/// folder, or `"#N"` 1-based (`state/engine.go:17-31`). The client works in
-/// indices, because `fileInfo.index` and `continueIndex` are what it is given.
-/// The two agree for as long as the file list is stable, which is exactly as
-/// long as one detail response describes.
-///
-/// Where they part company is when a file is renamed or renumbered between
-/// sessions. Upstream's `indexOf` answers -1 for a ref it cannot find, and both
-/// `Apply` and `View` then treat the pointer as absent. The index-space
-/// equivalent is a [file] outside `0 ..< fileCount`, and the engine resolves it
-/// the same way — see `resolveIndex`.
+/// The client works in indices; the server stores a ref string (D15). They
+/// agree for as long as the file list is stable — that is, for as long as one
+/// detail response describes. A [file] outside `0 ..< fileCount` is a pointer
+/// that no longer resolves, and `resolveIndex` treats it as absent, which is
+/// what upstream's `indexOf` does with a ref it cannot find.
 @freezed
 abstract class ResumePointer with _$ResumePointer {
   /// A pointer at [file], [seconds] into it.
@@ -47,58 +40,12 @@ abstract class WatchState with _$WatchState {
   /// Reconstructs the state from a detail payload.
   ///
   /// The payload carries the **derived view** (`continueIndex`,
-  /// `continueSeconds`), not the stored pointer, and the two are not the same
-  /// thing: an unresolvable pointer is reported as `0`/`0`, indistinguishable
-  /// from no pointer at all.
+  /// `continueSeconds`), never the stored pointer, so `0`/`0` is ambiguous and
+  /// is read here as no pointer — see D15, which also names the one class of
+  /// input where that leaves the client ahead of the server.
   ///
-  /// So `0`/`0` is read here as **no pointer**. This is a tie-break, not a
-  /// derivation: the two readings differ on exactly one class of input — a
-  /// report that crosses 90% of an item with `fileCount == 1` — and everywhere
-  /// else they agree. This one was chosen because a fresh or a stale pointer is
-  /// the likelier ground truth behind `0`/`0`, and a stale pointer resolves to
-  /// index -1 upstream, which is what an absent pointer resolves to.
-  ///
-  /// **The residual divergence persists; it does not close itself.** On a
-  /// single-file item whose pointer genuinely sits at `(0, 0s)`, a crossing
-  /// report makes this client predict `seconds = round(position)` where the
-  /// server keeps `0` — and because the pointer only ever moves forward, the
-  /// client stays ahead until a later report *exceeds* its own value.
-  /// Transcribed from a live v0.20.3 session on a single-file film: after
-  /// `{position: 95, duration: 100}` the client holds 95 and the server holds
-  /// 0; after a rewind to `{position: 50}` the server moves to 50 and the
-  /// client still holds 95. Once the user rewinds, the optimistic value is
-  /// simply wrong, and `watched` being set does not hide it — un-watching
-  /// returns the item to the `continue` row with that stale offset.
-  ///
-  /// A consumer must therefore **re-read the detail** after a crossing report
-  /// on a single-file item rather than trust the prediction. M4's progress
-  /// reporter is the first consumer this binds; STATE.md carries it as a known
-  /// limitation.
-  ///
-  /// [MediaDetail.rating] is **copied through exactly as the server reports
-  /// it**, including a value outside `0..10`.
-  ///
-  /// The server validates a rating on write and not on read, so a hand-edited
-  /// `meta.json` really does serve `rating: 99` while
-  /// `POST .../rating {"rating": 99}` answers `400 rating out of range`
-  /// (M6.0/E-6). This class mirrors upstream's `UserState`
-  /// (`state/state.go:20-38`), and what upstream is storing in that case is 99.
-  ///
-  /// **It used to read anything outside `0..10` as 0, and that lost data.**
-  /// `applyWatchState` folds `state.rating` back onto the payload, and all of
-  /// `setFavorite`, `setWatched` and `clearWatched` round-trip through here —
-  /// so on an item the server reports as 99, tapping the heart made the screen
-  /// say *Not rated* and deleted the notice explaining the value, while the
-  /// server still held 99 (M6.R/P1.4). The write it followed is a total
-  /// assignment to `favorite` in the server's own fold and touches no rating at
-  /// all, so the prediction was simply wrong.
-  ///
-  /// The invariant it was defending — "every state we construct is one every
-  /// mutator accepts" — did not need defending. `setRating` range-checks its
-  /// **argument**, not `state.rating`, and no other mutator reads the rating,
-  /// so no mutator refuses a state carrying 99. The only caller that could have
-  /// tripped it was `setRating(state, rating: state.rating)`, which nothing
-  /// does: the picker offers `0..10` and nothing else.
+  /// [MediaDetail.rating] is copied through exactly as reported, including a
+  /// value outside `0..10` (D16).
   factory WatchState.fromDetail(MediaDetail detail) => WatchState(
     pointer: detail.continueIndex == 0 && detail.continueSeconds == 0
         ? null

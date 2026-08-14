@@ -7,26 +7,10 @@ import 'package:flutter/foundation.dart';
 /// F10's four writes on one screen: published immediately, serialised, and
 /// reverted when the server refuses.
 ///
-/// **Published before the round trip, always.** A toggle that waits for a
-/// server to answer is unusable over cellular — the tap appears to do nothing
-/// for a second and people press it again. So the screen is updated from
-/// [applyWatchState] first and put back if the write fails, and the failure is
-/// named rather than swallowed.
+/// D17 is the whole design: published before the round trip, exact rather than
+/// hopeful, exactly one write in flight, and a queue deliberately rejected.
 ///
-/// **That is only honest because the prediction is exact.** The four writes are
-/// total assignments in the server's own fold, and `applyWatchState`'s comment
-/// carries the proof and the contrast with F9's `applyProgress`, which has an
-/// ambiguity class and therefore a refetch path. There is no refetch path here
-/// and there does not need to be one.
-///
-/// **Exactly one write in flight, and a tap during it is refused visibly**
-/// (G5). The alternative — a queue — was considered and rejected: with three
-/// writes pending, "what does a failure revert to" has no answer a user could
-/// predict, and that ambiguity is what would turn the optimistic value into a
-/// lie. Refusing is worse UX and better behaviour.
-///
-/// It imports no widget, so every case below is a plain `test()` with no
-/// binding and no pumping.
+/// It imports no widget, so every case below is a plain `test()`.
 class WatchActions extends ChangeNotifier {
   /// Writes through [api] and hands each optimistic payload to [publish].
   WatchActions({
@@ -58,18 +42,8 @@ class WatchActions extends ChangeNotifier {
   /// has not answered yet**.
   ///
   /// This is what the detail route pops with, and [wrote] alone was wrong for
-  /// it: the pop is read at the moment the screen closes, so *tap favourite,
-  /// then Back before the server answers* popped `false` and the rows stayed
-  /// stale for the rest of the session even though the write landed
-  /// (M6.R/P1.3). A write that is on the wire is one the server is about to
-  /// apply, and "something changed" is all the pop can honestly say anyway.
-  ///
-  /// **The residual race is named rather than hidden.** The reload is issued
-  /// as soon as the route pops, so on a slow link it can still overtake the
-  /// write it was caused by and refetch the pre-write order. That is no worse
-  /// than the current behaviour and strictly better than never reloading;
-  /// closing it properly means holding the back gesture until the write
-  /// answers, which is a worse trade. STATE.md carries it as debt.
+  /// it — D17 has the defect and the residual race this leaves, which is named
+  /// rather than hidden.
   bool get wroteOrWriting => _wrote || _busy;
 
   /// What to tell the user right now, or null when there is nothing to say.

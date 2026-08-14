@@ -24,8 +24,6 @@ part 'player_panels.dart';
 /// explains a slow start. `transcode` is the server's own verdict
 /// (`internal/server/playback.go:78`), not a guess from the extension.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String playerFacts(PlayerController controller) {
   final file = controller.file;
@@ -198,20 +196,14 @@ class _PlayerPageState extends State<PlayerPage> {
       fit: StackFit.expand,
       children: [
         // The surface is the video and nothing else; every control is the
-        // overlay stacked on it. Until the redesign the two swapped places —
-        // the engine built the shipped controls and this page built none — so
-        // what widget tests drove was never what a user saw.
+        // overlay stacked on it.
         //
         // **`ExcludeFocus`, and it is not optional on a television.**
         // `media_kit_video`'s `Video` is focusable, and a focusable thing
-        // filling the screen under the overlay takes focus and keeps it: the
-        // remote then reaches no control at all, which is the whole player
-        // unusable rather than one button missing. `1b48603` had this around
-        // the same texture inside the overlay `RealMpvPlayer.buildSurface`
-        // used to build, and deleting that class to make `PlayerControls` the
-        // one set of controls took it with it. Found on a Google TV Streamer,
-        // then pinned two ways in `player_page_test.dart` — structurally, and
-        // by a D-pad walk that reached `VIDEO` and nothing else.
+        // filling the screen under the overlay takes focus and keeps it — the
+        // remote then reaches no control at all. Found on a Google TV
+        // Streamer, pinned two ways in `player_page_test.dart`: structurally,
+        // and by a D-pad walk that reached `VIDEO` and nothing else.
         ExcludeFocus(child: _controller.host.buildSurface()),
         PlayerControls(
           controller: _controller,

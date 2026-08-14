@@ -372,8 +372,6 @@ class CategoryRow extends StatelessWidget {
   /// **Numerals only, in the mono face**, which is the design's own compression
   /// of the same line: the words "items" and "files" were the widest thing on
   /// a 46-point row and the two numbers carry all of it.
-  /// Public only so a test can reach it; nothing outside this library calls it
-  /// (§5, `public_member_no_consumer`).
   @visibleForTesting
   static String counts(Category category) {
     if (category.media == 0 && category.files == 0) return '—';

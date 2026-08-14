@@ -5,24 +5,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// SPEC.md §7's secure store, backed by the Keychain and the Keystore (F2, §9).
 ///
 /// **A persistence decorator around [InMemorySecretStore], not a replacement
-/// for it**, which is the shape `secret_store.dart` and `docs/architecture.md`
-/// have both been promising since M2. Reads hit memory first and fall through
-/// to the platform on a miss, populating memory on the way back; writes and
-/// deletes go to both.
+/// for it.** Reads hit memory first and fall through to the platform on a miss,
+/// populating memory on the way back; writes and deletes go to both.
 ///
-/// **Memory-first is a correctness requirement rather than an optimisation.**
-/// F3 renews a session in the middle of a 401 retry, and on iOS a Keychain read
-/// can block on the device being unlocked — so a re-auth that had to await the
-/// platform store is a re-auth that can stall a request indefinitely. The
-/// in-memory copy is what makes the retry synchronous in practice; the platform
-/// copy is what makes a cold start silent.
-///
-/// The key layout is not repeated here. `secretKeyFor` is the only place
-/// `filefin/{serverId}/session|password|certpin` exists, and this class hands
-/// the platform exactly what it returns.
-///
-/// §13: there is no earlier layout, so there is no migration and no fallback
-/// branch reading what an earlier build wrote.
+/// **Memory-first is a correctness requirement rather than an optimisation**:
+/// F3 renews mid-401-retry, and an iOS Keychain read can block on the device
+/// being unlocked, so a re-auth awaiting the platform store can stall a request
+/// indefinitely. `secretKeyFor` is the only place the key layout exists.
 final class PlatformSecretStore extends SecretStore {
   /// A store over the platform's own secure storage.
   PlatformSecretStore();

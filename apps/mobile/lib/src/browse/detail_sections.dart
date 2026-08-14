@@ -77,8 +77,6 @@ class DetailSections extends StatelessWidget {
 /// do not, the count is still true and the extension is still the one a player
 /// will open first.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String filesSummary(MediaDetail detail) {
   final extension = detail.files

@@ -100,16 +100,13 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   /// F9's "reflect resulting watched/continue changes locally **without a full
   /// refetch**", applied to the screen the player was opened from.
   ///
-  /// `applyProgress` is the server's own engine transcribed and validated
-  /// against 601 captured vectors, so the state the player hands back IS what
-  /// the server holds — for every input but one. That one is
-  /// [PlaybackOutcome.needsDetailRefetch]: a crossing report on a single-file
-  /// item, where the wire's `(0, 0)` cannot say whether the pointer is fresh or
-  /// absent. There, and only there, this pays for a round trip.
+  /// `applyProgress` is the server's own engine, validated against 601 captured
+  /// vectors, so what the player hands back IS what the server holds — for
+  /// every input but [PlaybackOutcome.needsDetailRefetch] (D15). There, and
+  /// only there, this pays for a round trip.
   ///
-  /// Until M4.R/P3 neither branch existed and the screen simply showed what it
-  /// had loaded in `initState` — so after watching half a film the detail page
-  /// behind still offered to resume from where the *previous* session stopped.
+  /// Without both branches the screen shows what `initState` loaded, so after
+  /// watching half a film it still offers the *previous* session's position.
   Future<void> _afterPlaying(
     MediaDetail detail,
     FileIndex file,
@@ -289,19 +286,12 @@ class DetailActions extends StatelessWidget {
 
 /// The words on the resume button.
 ///
-/// The design writes it `Resume S2E2 · 1:46`. Naming the file is worth the
-/// width only when the name **identifies** it, which is two conditions rather
-/// than one:
+/// The design writes it `Resume S2E2 · 1:46`, but naming the file is worth the
+/// width only when the name **identifies** it. A single-file item has nothing
+/// to disambiguate and would carry its title twice; a multi-file item with no
+/// season, episode or name falls back to `File 0`, which tells the user nothing
+/// while costing the clock its legibility.
 ///
-/// - a single-file item has nothing to disambiguate, and `fileLabel` would
-///   print the file's own name so the button would carry the title twice;
-/// - a multi-file item whose files carry neither a season, an episode nor a
-///   name falls back to `File 0`, which is `fileLabel`'s way of saying it does
-///   not know — and putting that on the primary action tells the user nothing
-///   while costing them the clock's legibility.
-///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String resumeLabel(MediaDetail detail, ResumeAvailable choice) {
   final clock = _clock(choice.seconds);

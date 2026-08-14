@@ -7,18 +7,15 @@ part 'progress_policy.freezed.dart';
 
 /// What the server was last told, in the arithmetic the server itself uses.
 ///
-/// [positionSeconds] is the **rounded** value, not the raw double, because it
-/// is rounded the way the server rounds — Go's `int(x + 0.5)` — and the next
-/// report has to be compared against the same arithmetic. Keeping the double
-/// instead would let the client's idea of "30 seconds since the last report"
-/// drift from the pointer by up to half a second each time.
+/// [positionSeconds] is the **rounded** value, in the server's own arithmetic,
+/// so the next report is compared on the same footing; a raw double would drift
+/// from the pointer by up to half a second per report.
 ///
-/// **It is what this client last SENT, not what the server stored**, and the
-/// distinction is worth the line (corrected at M4.R/P7). The two part company
-/// whenever the server's own engine does something other than store the number
-/// — a crossing report past 90% moves the pointer to the next file at zero, and
-/// `lastSent` still holds the position that caused it. The dedupe is right
-/// either way, because what it wants is precisely "the last thing we said".
+/// **It is what this client last SENT, not what the server stored.** The two
+/// part company whenever the engine does something other than store the number
+/// — a crossing past 90% moves the pointer to the next file at zero while this
+/// still holds the position that caused it. The dedupe wants precisely "the
+/// last thing we said", so it is right either way.
 @freezed
 abstract class SentReport with _$SentReport {
   /// The last accepted report: [file], at [positionSeconds] whole seconds.
@@ -66,31 +63,16 @@ final class SkipProgress extends ProgressDecision {
 
 /// F9's entire reporting policy, as one pure function.
 ///
-/// **The interval is measured in MEDIA seconds, never wall clock**, and that is
-/// upstream's design rather than a simplification of it: its player compares
-/// `Math.abs(el.currentTime - lastMark) >= 30`
-/// (`web/src/views/library/Player.svelte`). Two things follow, and both are
-/// features.
+/// **The interval is MEDIA seconds, never wall clock** — upstream's design
+/// (`docs/field-notes.md`), so nothing reports while paused and the whole rule
+/// is testable with no clock. [lastSent] advances **only on a successful
+/// POST**, so a failed report is retried by the next trigger (§1).
 ///
-/// Nothing reports while playback is paused — the position is not moving, so
-/// there is nothing new to say, and the `pause` trigger has already fired. And
-/// the whole rule is testable with no clock, no `Timer` and no `fake_async`: a
-/// test pushes positions and asserts decisions.
-///
-/// [lastSent] advances **only on a successful POST**. A report that failed is
-/// therefore retried by the next trigger, with no queue and no timer (§1).
-///
-/// The rules, in order:
-///
-/// 1. a non-finite or non-positive duration, or a non-finite position, is
-///    [SkipReason.notStarted]. This mirrors upstream's own
-///    `if (!duration || !isFinite(duration)) return` and additionally protects
-///    [roundReportedSeconds] from a value Dart's `.toInt()` throws on.
-/// 2. a [ProgressEvent.checkpoint] sends when nothing has been sent, when the
-///    file changed, or when the rounded position has moved at least
-///    [intervalSecs] in **either** direction. A rewind is a move.
-/// 3. every other event sends unless it describes the same file at the same
-///    rounded second as the last one.
+/// The rules in order: a non-finite or non-positive duration, or non-finite
+/// position, is [SkipReason.notStarted]; a [ProgressEvent.checkpoint] sends
+/// when nothing has been sent, the file changed, or the rounded position moved
+/// at least [intervalSecs] **either way** (a rewind is a move); every other
+/// event sends unless it repeats the last file and rounded second.
 ProgressDecision decideReport({
   required FileIndex file,
   required double position,
@@ -127,18 +109,12 @@ ProgressDecision decideReport({
 
 /// Whether the detail payload must be re-read rather than predicted.
 ///
-/// `applyProgress` reproduces the server exactly **except** on one class of
-/// input, and this function is that exception made callable.
-/// `WatchState.fromDetail` reads a `(0, 0)` view as "no pointer", which is
-/// right for a stale ref and wrong for a genuine pointer at the very start of
-/// a single-file item — so a report crossing 90% of such an item makes this
-/// client predict `round(position)` where the server keeps `0`, and the
-/// pointer only ever moving forward means the error persists until the detail
-/// is fetched again.
+/// `applyProgress` reproduces the server exactly except on one class of input,
+/// and this is that exception made callable — D15 has the case and its cost.
 ///
-/// It is scoped to `fileCount == 1` deliberately. With more than one file a
-/// crossing advances the pointer to `(file + 1, 0)`, which is exactly
-/// predictable and needs no round trip.
+/// Scoped to `fileCount == 1` deliberately: with more than one file a crossing
+/// advances the pointer to `(file + 1, 0)`, which is exactly predictable and
+/// needs no round trip.
 bool progressNeedsRefetch(ProgressReport report, {required int fileCount}) =>
     fileCount == 1 &&
     report.duration > 0 &&

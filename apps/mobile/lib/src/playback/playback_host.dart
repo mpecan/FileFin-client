@@ -119,21 +119,14 @@ class PlaybackRequest {
 ///
 /// **This is the seam the whole milestone is built on.** `media_kit`'s core is
 /// pure Dart over `dart:ffi`, so a `Player` genuinely constructs under
-/// `flutter test` against a host libmpv (measured at M4.0/E2: duration, a
-/// position past one second, an audio track list and a `completed` event, all
-/// headless). What does **not** work headlessly is the texture — `vo=null`
-/// rasterises nothing and `VideoController` needs a platform channel
-/// `flutter_tester` does not host.
+/// `flutter test` against a host libmpv. What does **not** work headlessly is
+/// the texture (`docs/field-notes.md`).
 ///
 /// So [buildSurface] is on the port precisely so that no widget test ever
-/// builds `media_kit_video`'s `Video`. A fake host returns a coloured box and
-/// every screen test runs; the real one is exercised by `test_live/` and, for
-/// the pixels, by `docs/verification-backlog.md` row 15.
+/// builds `media_kit_video`'s `Video`: a fake returns a coloured box and every
+/// screen test runs, while the real one is exercised by `test_live/`.
 ///
-/// `abstract base class`, following `LibraryApi` and `SecretStore`: `base`
-/// forces subtypes to `extend`, so a method added here is a compile error in
-/// every implementation rather than something an `implements` clause satisfies
-/// with a silent stub.
+/// `abstract base class` for the reason D22 gives.
 abstract base class PlaybackHost {
   /// Allows implementations to be `const`.
   const PlaybackHost();

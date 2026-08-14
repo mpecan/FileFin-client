@@ -8,14 +8,11 @@ import 'package:meta/meta.dart';
 /// keystroke with this scope.
 ///
 /// **No `==`, no `hashCode`, no `toString`, and their absence is §1 rather than
-/// an oversight.** Nothing compares two queries or puts one in a set: the
-/// controller replaces the whole value on every change and `SearchOutcome`
-/// carries it along for display. The first draft had all three, and
-/// `just mutants` said so plainly — swapping `Object.hash`'s two arguments
-/// survived the entire suite, because a hash consistent with an equality
-/// nobody calls cannot be told from any other. Deleting the members was the
-/// answer; asserting a particular `Object.hash` output would have pinned an
-/// implementation detail of the SDK to make a gate go quiet.
+/// an oversight.** Nothing compares two queries or puts one in a set, and
+/// `just mutants` said so: swapping `Object.hash`'s arguments survived the
+/// suite, because a hash consistent with an equality nobody calls cannot be
+/// told from any other. Asserting one would pin an SDK detail to quiet a
+/// gate.
 @immutable
 class SearchQuery {
   /// A query over [field] for [text]. The default is an empty search of

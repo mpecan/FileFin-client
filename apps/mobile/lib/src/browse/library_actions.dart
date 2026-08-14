@@ -3,18 +3,14 @@ import 'package:flutter/material.dart';
 
 /// The header both library tabs carry: which server, and what to do about it.
 ///
-/// **A 48-point row rather than an `AppBar`, because the design's left-hand
-/// affordance is a chip and an `AppBar`'s is a title.** The server name is not
-/// a heading here — it is a control that opens F11's picker, and it says so by
-/// carrying a caret. Drawing it as `AppBar.title` would put a tap target where
-/// a label is expected and lose the one glyph that distinguishes the two.
+/// **A 48-point row rather than an `AppBar`**, because the server name is not
+/// a heading — it is a control that opens F11's picker, and says so by carrying
+/// a caret. `AppBar.title` would put a tap target where a label is expected.
 ///
-/// **Two glyphs where three actions live**, and that is a deliberate reading of
-/// the design rather than a dropped feature. The design draws a magnifier and
-/// a sliders icon; sign-out has no glyph of its own anywhere in it. Sign-out is
-/// rare, destructive and must stay reachable from the tab a launch lands on
-/// (the argument `HomePage` already makes about settings), so it shares the
-/// sliders glyph as the second entry of a menu.
+/// **Two glyphs where three actions live**, deliberately: the design has no
+/// sign-out glyph, and sign-out is rare, destructive and must stay reachable
+/// from the tab a launch lands on — so it is the second entry of the sliders
+/// menu.
 class LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
   /// Names [title] as the server, offering whichever actions are wired.
   const LibraryHeader({

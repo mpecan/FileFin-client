@@ -6,16 +6,13 @@ import 'package:filefin_mobile/src/servers/settings.dart';
 /// Reads and writes `settings.json` in an **injected** directory.
 ///
 /// The directory is a constructor argument rather than a
-/// `getApplicationSupportDirectory()` call inside, and that is the whole
-/// testability story: a plugin call here would make every settings test need a
-/// Flutter binding and a fake platform channel, mocking the one layer that
-/// matters. `main()` makes the plugin call once and hands the result in;
-/// `main_test.dart` covers that single line through
-/// `PathProviderPlatform.instance`, which is a supported seam.
+/// `getApplicationSupportDirectory()` call inside, which is the whole
+/// testability story: a plugin call here would make every settings test stand
+/// up a binding and a fake channel. `main()` makes it once and hands the
+/// result in.
 ///
-/// **Nothing secret is written here** (§9). This is plain JSON any app on a
-/// rooted device can read; the session, the password and the certificate pin
-/// live in `SecretStore`.
+/// **Nothing secret is written here** (§9): this is plain JSON any app on a
+/// rooted device can read.
 class SettingsStore {
   /// Stores `settings.json` under [directory].
   const SettingsStore(this.directory);
@@ -28,18 +25,15 @@ class SettingsStore {
 
   /// Reads the settings, or [AppSettings.empty] when there is nothing usable.
   ///
-  /// **A corrupt file is empty settings, not a crash**, and the reasoning is
-  /// §13's rather than leniency: our own format changes freely before release,
-  /// so a file an older build wrote is not something to migrate — it is
-  /// something to replace. Starting over costs a user their server list;
-  /// refusing to launch costs them the app.
+  /// **A corrupt file is empty settings, not a crash** — §13 rather than
+  /// leniency: a file an older build wrote is something to replace, not to
+  /// migrate. Starting over costs a user their server list; refusing to launch
+  /// costs them the app.
   ///
-  /// `Object` is caught rather than a list of types, and that is deliberate
-  /// here where it would be wrong almost anywhere else. The failure modes are a
-  /// `FormatException` from `jsonDecode`, a `TypeError` from a wrong shape, a
-  /// `CastError` from a wrong element type and a `FileSystemException` from a
-  /// permissions problem — four vocabularies for one question, "is this file
-  /// usable", whose answer is the same for all of them.
+  /// `Object` is caught rather than a list of types, deliberately here where it
+  /// would be wrong almost anywhere else: four vocabularies (`FormatException`,
+  /// `TypeError`, `CastError`, `FileSystemException`) answer one question — is
+  /// this file usable — the same way.
   AppSettings read() {
     try {
       if (!file.existsSync()) return AppSettings.empty;
@@ -58,16 +52,13 @@ class SettingsStore {
   ///
   /// **This one throws, and the asymmetry with [read] is the point.** A file we
   /// cannot read is answerable — start over with nothing (§13). A file we
-  /// cannot write has no answer at all: the server the user just added is gone
-  /// at the next launch, and there is nothing on screen to look at.
+  /// cannot write has no answer: the server just added is gone at the next
+  /// launch, with nothing on screen to look at.
   ///
-  /// **All five call sites catch [FileSystemException] and say so through
-  /// [describeSettingsWriteFailure].** This used to read "the two screens that
-  /// call this", and by M7.4 it was three screens and two methods on
-  /// `HomeRoute` — one of which, `_switchTo`, is invoked `unawaited(...)` with
-  /// no `runZonedGuarded` anywhere, so its throw went nowhere at all and the
-  /// user was told nothing. A comment that counts its callers is a comment
-  /// that decays; this one names the rule instead.
+  /// **Every call site catches [FileSystemException]** and says so through
+  /// [describeSettingsWriteFailure]. One of them, `HomeRoute._switchTo`, is
+  /// `unawaited(...)` with no `runZonedGuarded`, so its throw once went nowhere
+  /// and the user was told nothing.
   void write(AppSettings settings) {
     directory.createSync(recursive: true);
     file.writeAsStringSync(jsonEncode(settings.toJson()));

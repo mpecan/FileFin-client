@@ -16,13 +16,10 @@ const watchedThreshold = 0.90;
 /// a file list that shrank or was renumbered between sessions leaves behind.
 ///
 /// Both `applyProgress` and `deriveView` resolve ONCE through this and then
-/// read
-/// the resolved index, never the pointer's own. Reading the pointer directly is
-/// the bug the captured vectors exist to catch: `continueSeconds =
-/// pointer?.seconds ?? 0` reports a stale pointer's seconds where the server
-/// reports 0.
-/// Public only so a test can reach it; nothing outside this library calls
-/// it (§5, `public_member_no_consumer`).
+/// read the resolved index, never the pointer's own. Reading the pointer
+/// directly is the bug the captured vectors exist to catch:
+/// `continueSeconds = pointer?.seconds ?? 0` reports a stale pointer's seconds
+/// where the server reports 0.
 @visibleForTesting
 int resolveIndex(ResumePointer? pointer, int fileCount) {
   if (pointer == null) return -1;
@@ -35,26 +32,12 @@ int resolveIndex(ResumePointer? pointer, int fileCount) {
 ///
 /// **Public because the progress policy has to dedupe in exactly this
 /// arithmetic.** `decideReport` compares a new position against the seconds the
-/// server stored for the last one; comparing raw doubles instead would drift
-/// from the pointer by up to half a second per report, and `round(29.5) == 30`
-/// versus `29.5 < 30` is the boundary where the two disagree. One rounding, one
-/// place.
+/// server stored for the last one; raw doubles would drift from the pointer by
+/// up to half a second per report, and `round(29.5) == 30` versus `29.5 < 30`
+/// is the boundary where the two disagree. One rounding, one place.
 ///
-/// **Not Dart's `.round()`.** The two differ for negatives — `(-0.5).round()`
-/// is -1 — and -0.5 is reachable from a seek to the very start of a file.
-///
-/// The non-finite guard is client hardening with no upstream counterpart:
-/// Dart's
-/// `.toInt()` throws on NaN and Infinity where Go's `int()` does not — and what
-/// Go produces instead is worth naming, because only one of the three is a
-/// deliberate difference. Measured on darwin/arm64 against upstream's own
-/// `round`: `+Inf` → `9223372036854775807`, `NaN` → `0`, `-Inf` → `0` (through
-/// the negative clamp). So returning 0 for `NaN` and `-Inf` agrees with Go by
-/// accident of the platform, and `+Infinity` is the sole place we deliberately
-/// answer something else. Neither is reachable over the wire: Go's
-/// `encoding/json` refuses to marshal a non-finite float, so no server payload
-/// can carry one. This is a decision about our runtime, not a claim about the
-/// server.
+/// Deliberately not Dart's `.round()`, and the non-finite guard has no upstream
+/// counterpart — `docs/field-notes.md` has both measurements.
 int roundReportedSeconds(double x) {
   if (!x.isFinite) return 0;
   if (x < 0) return 0;
@@ -64,20 +47,15 @@ int roundReportedSeconds(double x) {
 /// Folds one playback report into [state] — upstream's `Apply`,
 /// `state/engine.go:56-85`.
 ///
-/// [fileCount] is the length of the item's file list, which is what the server
-/// calls `refs`. The rules, in the order they apply:
+/// [fileCount] is the length of the item's file list — the server's `refs`.
 ///
-/// 1. an out-of-range file index returns [state] **entirely unchanged**,
-///    `watched` included. (The HTTP handler answers `400` instead and never
-/// reaches the engine; `filefin_core` mirrors the engine, because that is the
-///    function an optimistic UI has to reproduce.)
-/// 2. `crossed` needs `duration > 0`, so a zero or negative duration never
-///    crosses whatever the position.
-/// 3. crossing a non-last file aims at the next file at 0 seconds; crossing the
-///    last file sets `watched` and stays put.
-/// 4. the pointer only ever moves forward, and the equal-index case
-/// additionally
-///    requires `!crossed` — which is where the last-file asymmetry comes from.
+/// Three rules the code does not say on its own: an out-of-range index returns
+/// [state] **entirely unchanged**, `watched` included (the HTTP handler answers
+/// `400` and never reaches the engine, but an optimistic UI has to reproduce
+/// the engine); `crossed` requires `duration > 0`, so a zero or negative
+/// duration never crosses whatever the position; and the pointer only ever
+/// moves forward, with the equal-index case additionally requiring `!crossed`,
+/// which is where the last-file asymmetry comes from.
 WatchState applyProgress(
   WatchState state,
   ProgressReport report, {

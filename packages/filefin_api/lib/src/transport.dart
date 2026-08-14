@@ -1,76 +1,15 @@
 import 'package:dio/dio.dart';
 
-/// The `BaseOptions` every FileFin `Dio` is built from.
+/// The `BaseOptions` every FileFin `Dio` is built from — the main client and
+/// the login-only one (which must not carry the auth interceptor, §0.3), so
+/// the two cannot drift apart in a way that shows up only under a session loss.
 ///
-/// One function so the main client and the login-only client (which must not
-/// carry the auth interceptor, §0.3) cannot drift apart in a way that shows up
-/// only under a session loss.
+/// [timeout] applies to all three phases (NF5), distinguished in the error
+/// rather than the configuration: "could not connect" and "answering too
+/// slowly" are different problems to a user.
 ///
-/// **`ResponseType.plain` is the load-bearing choice.** dio's default is
-/// `ResponseType.json`, which decodes the body itself when it likes the
-/// content type. That would hand two decisions to dio that belong to us:
-///
-/// 1. *whether* the media type is acceptable — F1's entire mechanism is a
-///    content-type-and-payload check, and delegating it to dio's own
-///    `isJsonMimeType` makes the rule an implementation detail of a
-///    dependency rather than something `json_response.dart` states and tests;
-/// 2. *what a bad body means* — a malformed body under an `application/json`
-///    header makes dio's transformer throw, and it arrives as
-///    `DioExceptionType.unknown`, which `mapDioException` can only read as a
-///    connection failure. A truncated payload would be reported as "could not
-///    reach the server", which is a lie the user cannot act on.
-///
-/// With `plain`, `response.data` is always the raw string and both decisions
-/// stay in this package, where there are tests about them.
-///
-/// [timeout] is applied to all three phases (NF5): a hung server must never
-/// hang the UI, and the three are distinguished in the error rather than in
-/// the configuration because a user reads "could not connect" and "answering
-/// too slowly" as different problems.
-///
-/// **`receiveTimeout` really does bound the body, not just the headers, and
-/// that is measured rather than assumed.** dio's IO adapter sets it on
-/// `request.close()`, which reads as time-to-headers — so M2's review predicted
-/// that a server sending headers and then dripping two bytes every 100 ms would
-/// hang forever. Against dio 5.11.0 with these exact options it does not: a
-/// stalled body aborted after 2038 ms and a drip-fed one after 2005 ms, both
-/// under a 2 s timeout, because the adapter's deadline covers the whole receive
-/// rather than resetting on each chunk. `client_test.dart` pins that with a
-/// real drip-feeding server: it is a fact about a dependency, and the exact pin
-/// in `pubspec.yaml` is what turns a change in it into a review event.
-///
-/// **`followRedirects: false` is a security decision, not a default.** dio
-/// follows up to five redirects, and `validateCertificate` sees only the
-/// connection that served the final response — so a pinned `https` origin that
-/// answered `302 -> http://impostor/api/me` had its redirect followed, the
-/// pinner was asked about a **null** certificate (correct for the plain-http
-/// LAN servers F15 permits, wrong for a downgraded request that began on a
-/// pinned origin) and returned accept, and the client decoded an
-/// unauthenticated cleartext origin's payload as the pinned server's answer.
-/// Measured at M2: `status=200 body={"user":"attacker","admin":true}`. The
-/// session cookie was **not** leaked — dart:io strips `cookie` across origins —
-/// so this is integrity, not credential loss, and dart:io's own exemption for
-/// same-scheme same-port subdomains means `https://evil.pinned.example` would
-/// have kept it.
-///
-/// Refusing outright rather than inspecting the final URI is the M2-shaped
-/// answer: no documented endpoint this client calls redirects (the wire trace
-/// of all seven found none), so a redirect here is already something we do not
-/// model and arrives as `ServerFailure` naming the status.
-///
-/// **This paragraph used to predict that M5 would turn it on. M5 did not, and
-/// the prediction was wrong for a reason worth keeping.** The `307` to HLS is a
-/// redirect we model, but *dio never follows it*: `PlaybackRequest.url` is the
-/// file route and **libmpv** follows the redirect itself, over its own socket,
-/// with the `Cookie` header surviving onto the playlist and the segments (R1,
-/// retired). The only thing dio does with that route is `requirePlayable`'s
-/// bounded `HEAD`, which wants to *read* the `307` rather than chase it —
-/// `validateStatus: (s) => s < 400` is what makes it return instead of throw.
-/// So turning `followRedirects` on would have re-opened M2's measured
-/// downgrade attack (`302 -> http://impostor/api/me` returning
-/// `{"user":"attacker","admin":true}`) in exchange for nothing at all.
-/// `preflight_test.dart` asserts `countFor(hlsPath) == 0`, which is the
-/// assertion that pins this off.
+/// See D12 (`ResponseType.plain`), D13 (`followRedirects: false`), and
+/// `docs/field-notes.md` for what `receiveTimeout` was measured to bound.
 BaseOptions fileFinBaseOptions({
   required Uri baseUrl,
   required Duration timeout,

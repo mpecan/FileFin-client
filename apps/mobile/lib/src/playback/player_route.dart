@@ -14,15 +14,12 @@ import 'package:flutter/material.dart';
 /// needs — the connection sample and the engine factory — come from that scope,
 /// and a widget test substitutes both by building it.
 ///
-/// **It returns the route's result**, which is what carries F9's local
-/// reflection back to the detail screen: without it `MediaDetailPage` showed a
-/// resume offset from before playback started and M1's divergence latch
-/// discharged nothing (M4.R/P3).
+/// **It returns the route's result**, which carries F9's local reflection back
+/// to the detail screen: without it `MediaDetailPage` showed a resume offset
+/// from before playback started.
 ///
-/// A free function rather than a method on `_HomeRouteState`, and split out of
-/// `app.dart` at M7.4 when F11's picker pushed that file past `just
-/// file-size`'s soft limit. It touches no state: everything it needs is the
-/// scope above [context] and its arguments.
+/// A free function rather than a method on `_HomeRouteState`: it touches no
+/// state, needing only the scope above [context] and its arguments.
 Future<PlaybackOutcome?> pushPlayer(
   BuildContext context, {
   required LibraryApi api,

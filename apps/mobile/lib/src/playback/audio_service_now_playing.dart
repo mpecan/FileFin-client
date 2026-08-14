@@ -11,13 +11,8 @@ import 'package:meta/meta.dart';
 /// as `media_kit_playback_host.dart` is the only one that may import
 /// `media_kit`. Nothing above it knows a `MediaItem` from a `PlaybackState`.
 ///
-/// What E-6 measured this arrangement doing, on an Android emulator at API 37:
-/// a backgrounded player goes from `mutedState:opControlAudio` — the OS's
-/// AppOps `CONTROL_AUDIO` restriction, which silences a background app — to
-/// `mutedState:none`, and `KEYCODE_MEDIA_PAUSE` arrives in Dart. On iOS
-/// `UIBackgroundModes: audio` is what stops the process being suspended, and
-/// libmpv sets `AVAudioSessionCategoryPlayback` itself. `docs/risks.md` R3
-/// carries both, with their negative controls.
+/// What this arrangement was measured doing on each platform is in
+/// `docs/field-notes.md`; `docs/risks.md` R3 has the negative controls.
 final class AudioServiceNowPlaying implements NowPlayingHost {
   /// Wraps the handler [openNowPlaying] built.
   AudioServiceNowPlaying(this._handler);
@@ -121,19 +116,14 @@ Future<NowPlayingHost>? _session;
 
 /// Starts the process's one media session, or returns the one already open.
 ///
-/// **A FAILED start is memoised too, and that is forced rather than chosen.**
-/// The review asked for the rejected future to be cleared so a second player
-/// screen could try again; `AudioService.init` cannot be tried again.
-/// `audio_service.dart:1007` opens with `assert(_cacheManager == null)` and
-/// `:1012` assigns `_cacheManager` **before** the platform `configure` call
-/// that is the thing which can fail — so after a failed init a retry trips that
-/// assert in a debug build and silently re-registers every callback in a
-/// release one. Clearing the memo would trade a cached failure for a worse
-/// one.
+/// **A FAILED start is memoised too, and that is forced rather than chosen**:
+/// `AudioService.init` cannot be retried (`docs/field-notes.md`), so clearing
+/// the memo would trade a cached failure for a tripped assert in debug and
+/// silently re-registered callbacks in release.
 ///
-/// What that costs is bounded because `PlayerPage._bindSession` catches: a
-/// session that will not start is a lock screen with no controls, not a film
-/// that will not play.
+/// The cost is bounded because `PlayerPage._bindSession` catches: a session
+/// that will not start is a lock screen with no controls, not a film that will
+/// not play.
 Future<NowPlayingHost> openNowPlaying() => _session ??= _openSession();
 
 Future<NowPlayingHost> _openSession() async => AudioServiceNowPlaying(
@@ -153,25 +143,16 @@ Future<NowPlayingHost> _openSession() async => AudioServiceNowPlaying(
 
 /// The artwork cache F14 declines to have (§1).
 ///
-/// `AudioService.init` builds a `DefaultCacheManager()` when it is handed
-/// none, and that opens a sqflite database and an `HttpClient` for fetching
-/// `MediaItem.artUri`. **We never publish one**, and could not: the poster
-/// route is behind `s.auth` and the platform fetches an artwork URI itself,
-/// unauthenticated, so the choice is between showing nothing and handing the
-/// session cookie to a request we do not control.
+/// `AudioService.init` builds a `DefaultCacheManager()` when handed none, which
+/// opens a sqflite database and an `HttpClient` to fetch `MediaItem.artUri`.
+/// **We never publish one**, and could not: the poster route is behind
+/// `s.auth` and the platform fetches unauthenticated, so the choice is between
+/// showing nothing and leaking the session cookie.
 ///
-/// Every method throws rather than returning an empty answer, so if a future
-/// change ever does set an `artUri` it fails loudly here instead of silently
-/// drawing no picture.
-///
-/// `putFile` and `putFileStream` take `Duration.zero` where the interface
-/// defaults to thirty days, and that is an answer to a mutant rather than a
-/// preference: nothing here reads the value, so `30` to `-30` is an equivalent
-/// mutant no assertion can kill. A literal that means nothing is better
-/// removed than excluded.
-///
-/// Public only so that `audio_service_now_playing_test.dart` can prove all
-/// eleven of those throws; nothing outside this library constructs one.
+/// Every method throws rather than returning empty, so a future change that
+/// does set an `artUri` fails loudly rather than drawing no picture.
+/// `Duration.zero` where the interface defaults to thirty days answers a
+/// mutant: nothing reads it, so a meaningless literal is better removed.
 @visibleForTesting
 final class NoArtworkCache implements BaseCacheManager {
   /// The cache that is not there.

@@ -10,16 +10,13 @@ import 'package:flutter/rendering.dart';
 ///
 /// **It draws nothing at all when [items] is empty, and that is the row's own
 /// decision rather than each caller's.** All three home buckets can be empty
-/// independently — a user who has favourited nothing still has a *Continue*
+/// independently — someone who has favourited nothing still has a *Continue*
 /// row — and a heading over an empty strip reads as something missing rather
 /// than something absent. One rule in one place, so the three call sites
 /// cannot drift.
 ///
-/// **Virtualised for the same reason `MediaGrid` is** (SPEC.md L2 — nothing on
-/// this server paginates): `/api/home` returns whole buckets, and
-/// `homeBucket` (`db/home.go`) applies no limit, so a heavy user's *Watched*
-/// row is as long as their library. A `Row` of `.map()`ed children would build
-/// every one of them on every frame.
+/// Virtualised for the reason `MediaGrid` is (D14): a heavy user's *Watched*
+/// row is as long as their library.
 class MediaRow extends StatelessWidget {
   /// Draws [items] under [label], fetching posters through [api].
   const MediaRow({

@@ -1,19 +1,16 @@
 import 'package:filefin_core/src/ids.dart';
 import 'package:json_annotation/json_annotation.dart';
 
-/// `json_serializable` does not understand extension types: it sees `MediaId`
-/// as an unknown class and emits nothing that constructs one. A `JsonConverter`
-/// is how a field keeps its wrapper type on our side while staying a plain
-/// string or number on the wire.
+/// `json_serializable` does not understand extension types, so a
+/// `JsonConverter` is how a field keeps its wrapper type (§7) while staying a
+/// plain string or number on the wire.
 ///
-/// Each is `const` because the generator inlines `const XConverter().fromJson`
-/// into the generated `_$…FromJson`, which only compiles for a const
-/// constructor.
+/// Each is `const`: the generator inlines `const XConverter().fromJson`, which
+/// only compiles for a const constructor.
 ///
-/// None of these validates. A `MediaId` that is not 12 hex characters, or a
-/// negative `FileIndex`, is the server saying something we did not expect, and
-/// §8 makes tolerating that our job — a decoder that throws on an unexpected
-/// value turns one odd item into a blank screen.
+/// **None of these validates**, deliberately — §8 makes tolerating an
+/// unexpected value our job, and a decoder that throws turns one odd item into
+/// a blank screen.
 class MediaIdConverter extends JsonConverter<MediaId, String> {
   /// The single const instance a `@MediaIdConverter()` annotation names.
   const MediaIdConverter();

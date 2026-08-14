@@ -73,37 +73,15 @@ extension FileFinClientPlayback on FileFinClient {
   /// `HEAD .../file/{n}` — F12's pre-flight, run **before** the engine opens.
   ///
   /// **libmpv surfaces no status code**, so a `415` reaches the player as
-  /// `Failed to open <url>.` over a black surface and nothing else — recorded
-  /// verbatim at M5.0/E-I as the "before" this method exists to replace. The
-  /// answer is the same one M4 reached for the 401: ask the layer that *can*
-  /// see a status, and ask it first. Returning normally means "the server will
-  /// serve this"; throwing means it will not, in this vocabulary.
+  /// `Failed to open <url>.` over a black surface. So ask the layer that *can*
+  /// see a status, and ask first: returning means the server will serve this.
   ///
-  /// **`HEAD`, and it really does route.** Go 1.22's `ServeMux` matches a
-  /// `GET` pattern for `HEAD` too, so this reaches `handleStream`; measured at
-  /// M5.0/E-A against v0.20.3, `HEAD` answers `307` for a transcoding file,
-  /// `200 video/mp4` for a direct-play one, `415` when transcoding is off,
-  /// `404` for a bad index and `401` unauthenticated. A one-byte
-  /// `GET Range: 0-0` gives identical statuses and moves a body — 81 bytes of
-  /// Go's redirect HTML on one arm, a media byte on the other — so `HEAD` is
-  /// the cheaper of two answers rather than a guess.
-  ///
-  /// **It starts no transcode.** Twenty pre-flights created zero
-  /// `filefin-hls-*` session directories and one playlist request created one
-  /// (M5.0/E-G): the `307` is decided in `playbackTarget` before any ffmpeg
-  /// exists. A pre-flight that spawned one per open would be a self-inflicted
-  /// denial of service on the user's own server.
+  /// `HEAD` really does route here, and starts no transcode — both measured,
+  /// `docs/field-notes.md`.
   ///
   /// `validateStatus` accepts everything under 400 so a `3xx` **returns**
-  /// rather than throwing, and `followRedirects` stays off: dio never fetches
-  /// media bytes, libmpv follows the `307` itself, and turning redirects on
-  /// would re-open M2's measured downgrade attack for no benefit at all.
-  ///
-  /// The HTML guard is deliberately **2xx-only**. The `307` carries
-  /// `Content-Type: text/html; charset=utf-8`, because `http.Redirect` writes
-  /// an HTML body (measured, M5.0/E-K) — so refusing HTML unconditionally
-  /// would reject the success case while letting the SPA catch-all's
-  /// `200 text/html` through, which is exactly backwards.
+  /// rather than throwing, and `followRedirects` stays off (D13). The HTML
+  /// guard is 2xx-only (D21), because the `307` carries `text/html` too.
   Future<void> requirePlayable(
     MediaId id,
     FileIndex file, {

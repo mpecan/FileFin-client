@@ -719,6 +719,12 @@ documented rather than rediscovered.
 Recorded so they are not silently relitigated. A decision reversed here must
 be reversed *here first*, then in the sections it touches.
 
+**This table is the index.** A decision whose argument does not fit a row has a
+file in [`docs/decisions/`](docs/decisions/), linked from its row, and the code
+cites the number rather than repeating the argument (CLAUDE.md §2). Numbers are
+never reused. How the server and our dependencies were *observed* to behave is
+not a decision and lives in [`docs/field-notes.md`](docs/field-notes.md).
+
 | # | Decision | Rationale | Touches |
 |---|---|---|---|
 | D1 | Flutter + Dart, not Tauri v2 | Tauri mobile hands playback to a fullscreen native Activity, so the player UI would be native anyway (§2) | whole spec |
@@ -729,10 +735,21 @@ be reversed *here first*, then in the sections it touches.
 | D6 | Trust-on-first-use with certificate pinning | Self-hosted servers commonly use self-signed or private-CA certs | F15, M2 |
 | D7 | Android 8 / iOS 15 floor | Within `media_kit` support, modern PiP and media-session APIs, small CI matrix | C5 |
 | D8 | Direct APK + TestFlight/sideload; no app store | Removes store review from the release path, and defuses the mpv GPL blocker | C6, R4 |
-| D10 | **TLS playback is a per-server choice that DEFAULTS TO REFUSE** | libmpv verifies no certificate by default — measured both directions at M4.0 (`docs/risks.md` R6) — so F15's pin does not reach the playback socket. `plainHttp` plays, `osTrustedTls` plays with `tls-verify=yes`, `pinnedTls` is refused unless `SavedServer.allowUnverifiedPlayback` is on, and when it is on a **persistent banner** names exactly what is unprotected: the session cookie may reach a peer whose certificate was never checked | F15, §5.3, `decide()`, M4 |
 | D9 | App state is a hand-written `ChangeNotifier` plus one generic `AsyncController<T>`, `AsyncView<T>` and `InheritedWidget`. No state-management package | M3's real screens are three, each one fetch, one cancel-on-dispose, one error render. A framework's rent at that size is unpaid surface (§1, §5) — and, less obviously, it would SHRINK what `just mutants` reaches, because framework-internal branching is never in our diff. Retirement condition at M7 in `docs/architecture.md` | §6, M3 |
-
+| D10 | **TLS playback is a per-server choice that DEFAULTS TO REFUSE** | libmpv verifies no certificate by default — measured both directions at M4.0 (`docs/risks.md` R6) — so F15's pin does not reach the playback socket. `plainHttp` plays, `osTrustedTls` plays with `tls-verify=yes`, `pinnedTls` is refused unless `SavedServer.allowUnverifiedPlayback` is on, and when it is on a **persistent banner** names exactly what is unprotected: the session cookie may reach a peer whose certificate was never checked | F15, §5.3, `decide()`, M4 |
 | D11 | **CLAUDE.md §13 — "no backward compatibility before release" — retires at the first TAGGED RELEASE, and M7 is the last milestone that may change a stored format freely** | The condition was "the first release", which is a date nobody can look up mid-milestone. M7.3 and M7.4 both changed `settings.json` (`selectedServerId`, and `servers[]` gaining a sixth field at M4), and retiring the rule *inside* M7 would have put a migration burden on M7's own steps for installs that do not exist. Whoever cuts the tag owns the switch: from that commit on, a change to `settings.json`, to the secure-store key layout, or to any cache schema needs a migration and a lenient decoder, and `SettingsStore`'s deliberate discard-on-mismatch (`servers/settings.dart`) becomes a defect rather than a design | CLAUDE.md §13, §7, `SettingsStore`, `SecretStore` |
+| D12 | dio is configured `ResponseType.plain`, so decoding stays in `filefin_api` | dio's default hands us two decisions that are ours: whether the media type is acceptable (F1's whole mechanism) and what a bad body means. → [`D12`](docs/decisions/D12-plain-response-type.md) | `transport.dart`, F1 |
+| D13 | **dio never follows a redirect** | The pinner only sees the final connection, so a followed `302 → http://impostor` returned an attacker's payload as the pinned server's answer (measured, M2). → [`D13`](docs/decisions/D13-no-redirect-following.md) | `transport.dart`, F15 |
+| D14 | Every list is virtualised | Nothing paginates (L2), so the whole array arrives at once and the only lever left is per-frame cost. → [`D14`](docs/decisions/D14-virtualised-lists.md) | NF2, `media_grid.dart`, `visible_rows.dart` |
+| D15 | `continueIndex 0 / continueSeconds 0` is read as "no pointer" | The payload carries the derived view, never the stored pointer, so `0`/`0` is ambiguous. A tie-break with a residual divergence that persists. → [`D15`](docs/decisions/D15-resume-pointer-from-derived-view.md) | F8, F9, `watch_state.dart` |
+| D16 | Watch state mirrors the server verbatim, including values its write path would reject | The server validates rating on write, not on read; normalising on read lost data (M6.R/P1.4). → [`D16`](docs/decisions/D16-mirror-server-state-verbatim.md) | F10, `watch_state.dart` |
+| D17 | F10's four writes are applied to the screen before the server answers | Waiting is unusable over cellular, and the prediction is *exact* because all four are total assignments in the server's own fold. → [`D17`](docs/decisions/D17-optimistic-watch-state-writes.md) | F10, `watch_actions.dart` |
+| D18 | Every route is one full string literal, never assembled | `undocumented_endpoint` (§8) greps literals and cannot reconstruct an interpolated path. → [`D18`](docs/decisions/D18-one-path-literal-per-route.md) | §8, `urls.dart` |
+| D19 | Pinning owns the handshake, through two hooks, over one pure policy | `badCertificateCallback` is handed the CA rather than the leaf, so a private-CA deployment pinned the wrong certificate (measured, M2). → [`D19`](docs/decisions/D19-certificate-pinning-wiring.md) | F15, D6 |
+| D20 | The 401 retry lives in one interceptor, bounded by three separate mechanisms | Sessions die with the process, so a 401 is routine; two copies of the retry would disagree about when to stop. → [`D20`](docs/decisions/D20-401-retry-lives-in-one-interceptor.md) | F3, §5.1 |
+| D21 | The HTML refusal applies to 2xx responses we intend to decode, and nowhere else | Both obvious generalisations break something: "must be JSON" refuses working responses, and applying it to errors would hide every 401 from F3. → [`D21`](docs/decisions/D21-html-refusal-on-2xx-only.md) | F1, F3 |
+| D22 | Every port is an `abstract base class`, never an interface | `base` forces `extend`, which makes a new method a compile error everywhere and `SecretStore`'s redacting `toString` inherited rather than merely recommended. → [`D22`](docs/decisions/D22-ports-are-abstract-base-classes.md) | §9, all four ports |
+| D23 | The controller advances files itself, and every report is gated on the engine agreeing | libmpv is a second source of truth for the fact every report is keyed on; three separate mechanisms keep them from disagreeing, each added after the previous proved insufficient. → [`D23`](docs/decisions/D23-the-engine-owns-one-file-at-a-time.md) | F7, F9, `player_controller.dart` |
 
 ### Still open
 

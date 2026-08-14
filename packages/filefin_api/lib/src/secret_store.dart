@@ -39,19 +39,13 @@ String secretKeyFor(ServerId server, SecretKind kind) =>
 
 /// Where credentials live. Implemented by the platform, injected here.
 ///
-/// **A port rather than a `flutter_secure_storage` call** because this package
-/// is Flutter-free: the plugin has no VM implementation and throws
-/// `MissingPluginException` under `dart test`, so depending on it directly
-/// would force every F3 unit test to stand up a Flutter binding and a fake
-/// platform channel — mocking precisely the layer that matters. `apps/mobile`
-/// supplies the Keychain/Keystore implementation at M7.
+/// **A port rather than a `flutter_secure_storage` call**, because this package
+/// is Flutter-free: the plugin throws `MissingPluginException` under
+/// `dart test`, so depending on it would make every F3 unit test mock precisely
+/// the layer that matters. `apps/mobile` supplies the Keychain/Keystore side.
 ///
-/// **`abstract base class`, not `abstract interface class`, and the modifier is
-/// load-bearing.** `base` forces every subtype to `extend` rather than
-/// `implement`, which is what makes the redacting [toString] below *inherited*
-/// instead of merely recommended. An interface could only ask implementations
-/// to redact; this guarantees it, and an implementation that wants to print
-/// something has to override a method that already does the right thing.
+/// `abstract base class` rather than an interface (D22) is what makes the
+/// redacting [toString] below *inherited* rather than merely recommended (§9).
 abstract base class SecretStore {
   /// Allows implementations to be `const`.
   const SecretStore();

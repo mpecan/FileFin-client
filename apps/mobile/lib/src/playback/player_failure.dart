@@ -36,17 +36,13 @@ class PlaybackOutcome {
   /// Whether the SERVER accepted at least one progress report this session.
   ///
   /// Distinct from [state], which is the optimistic fold and exists whether or
-  /// not anything was posted. This one is `lastSent != null`, which the
-  /// reporter sets only after a `204` — so it means the server re-stamped
-  /// `updated`, and `updated` is the ordering key of all three home rows
-  /// (M6.0/E-3). The detail route pops it, and it is the reason watching
-  /// something now moves it out of *Continue watching* on Home rather than
-  /// leaving it there in its pre-playback position for the rest of the session
-  /// (M6.R/P1.2).
+  /// not anything was posted. This is `lastSent != null`, set only after a
+  /// `204` — so it means the server re-stamped `updated`, which orders all
+  /// three home rows (`docs/field-notes.md`). The detail route pops it, and it
+  /// is why watching something moves it out of *Continue watching*.
   ///
-  /// Defaulted rather than required: a test constructing an outcome to exercise
-  /// F9's fold is not making a claim about the home rows, and the two cases
-  /// that ARE about them say so explicitly.
+  /// Defaulted rather than required: a test exercising F9's fold is not making
+  /// a claim about the home rows.
   final bool wrote;
 }
 
@@ -56,16 +52,12 @@ class PlaybackOutcome {
 /// the player shows one line over the video, not a full panel with a Retry
 /// button, and the two surfaces want different things from the same error.
 ///
-/// **There is no `_` arm, and its absence is the point.** This function had one
-/// until M5.1, and it was a hole in an alarm three other switches were sounding
-/// correctly: `error_presentation.dart`, `error_presentation_test.dart` and
-/// `error_mapper_test.dart` all stopped compiling when `TranscodingDisabled`
-/// landed and this one did not (measured, M5.0/E-J). It would have rendered
-/// `Playback could not start: TranscodingDisabled: … turned off` on the player
-/// banner — the surface F12 is actually about — with nothing to say so. The
-/// generic sentence is now a **grouped arm** rather than a default, so it still
-/// covers everything with no wording of its own while a new variant remains a
-/// compile error here.
+/// **There is no `_` arm, and its absence is the point.** It had one until
+/// M5.1, and it was the hole in an alarm three other switches sounded
+/// correctly when `TranscodingDisabled` landed: this one kept compiling, and
+/// would have put `Playback could not start: TranscodingDisabled: …` on the
+/// banner F12 is actually about. The generic sentence is a **grouped arm**
+/// rather than a default, so a new variant stays a compile error here.
 (String, bool) describeApiFailure(FileFinApiException error) => switch (error) {
   SessionExpired() => (
     'Your session ended. Sign in again to keep playing.',

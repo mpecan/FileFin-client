@@ -8,30 +8,16 @@ import 'package:filefin_api/src/tls/pin_decision.dart';
 
 /// Turns dio's one exception type into our sealed hierarchy.
 ///
-/// This lives in a **different file from `errors.dart` on purpose**:
-/// `dead_types` (§5, `tool/check-constitution.sh`) asks that every sealed
-/// variant be constructed outside the file that declares it, so a variant that
-/// nothing can produce fails the gate rather than sitting in the tree looking
-/// finished.
+/// In a **different file from `errors.dart` on purpose**: `dead_types` (§5)
+/// wants every sealed variant constructed outside its declaring file.
 ///
-/// [requested] is passed rather than read from `error.requestOptions.uri`
-/// because the caller knows the URL it *meant* to fetch, which is the one a
-/// user recognises. dio's copy has been through `BaseOptions` merging and a
-/// redirect, so on the 307 to HLS the two genuinely differ.
+/// [requested] is passed rather than read from `error.requestOptions.uri`,
+/// because the caller knows the URL it *meant* to fetch — dio's copy has been
+/// through `BaseOptions` merging, and on the 307 the two genuinely differ.
 ///
-/// **This function never inspects a content type.** The JSON media-type check
-/// belongs to 2xx responses we intend to decode and lives in
-/// `json_response.dart`. Applying it here would be catastrophic in a way that
-/// looks like tightening: `401 unauthorized` and `404 page not found` are
-/// served as plain text (`docs/server-api.md`, "Authentication"), so a blanket
-/// guard would turn every documented error into "not a FileFin server" and F3
-/// would never see a 401 at all.
-///
-/// [pinner] is optional and is consulted only for the two exception types TLS
-/// can produce. It is how a `HandshakeException` — which carries nothing but
-/// an OpenSSL string — becomes a message naming the fingerprint the user has
-/// to compare. Without it F15's failures would read "TLS failed", which is the
-/// message F15 exists to replace.
+/// **This never inspects a content type** (D21). [pinner] is consulted only for
+/// the two exception types TLS can produce, and is what turns a
+/// `HandshakeException` into a message naming the fingerprint to compare.
 FileFinApiException mapDioException(
   DioException error, {
   required Uri requested,
@@ -169,21 +155,16 @@ bool _isFileRoute(Uri url) {
 
 /// Reads `Retry-After` as whole seconds, keeping the raw value when it is not.
 ///
-/// Integer-only, deliberately. `auth.go:149` writes `int(retry.Seconds()) + 1`
+/// Integer-only, deliberately: `auth.go:149` writes `int(retry.Seconds()) + 1`
 /// and nothing upstream can produce an HTTP-date, so a date branch would be
-/// code for a case this server cannot reach (§1). What is *not* skipped is the
-/// possibility of a proxy rewriting the header: the value survives verbatim so
-/// a human can see what arrived, and the parsed duration stays zero rather
-/// than becoming a number nobody measured.
+/// code for a case this server cannot reach (§1). A proxy rewriting the header
+/// is *not* dismissed — the value survives verbatim in
+/// [RateLimited.rawRetryAfter] and the parsed duration stays zero rather than
+/// becoming a number nobody measured.
 ///
-/// **The list form, not `Headers.value`.** dio's `value` *throws* when a header
-/// arrived more than once, and a `429` is the worst possible moment for an
-/// exception to escape the sealed hierarchy: a caller doing
-/// `on FileFinApiException` gets a raw `_Exception` exactly when login is being
-/// rate limited. No malice is needed — any proxy that folds or duplicates
-/// `Retry-After` reaches it. Taking the first value keeps a duplicate a
-/// cosmetic problem, and [RateLimited.rawRetryAfter] still shows a human what
-/// arrived.
+/// **The list form, not `Headers.value`**, which throws on a repeated header
+/// (`docs/field-notes.md`) — and a `429` is the worst moment for an exception
+/// to escape the sealed hierarchy.
 RateLimited _rateLimited(Response<dynamic> response, Uri requested) {
   final raw = response.headers['retry-after']?.firstOrNull;
   final seconds = raw == null ? null : int.tryParse(raw.trim());

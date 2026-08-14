@@ -6,20 +6,14 @@ import 'package:filefin_core/filefin_core.dart';
 /// Everything the UI is allowed to ask a server for.
 ///
 /// **A port, and the reason is testability rather than tidiness.** A widget
-/// test that wants to see the error panel has to make a request fail; against
-/// `FileFinClient` that means standing up a socket and arranging a status code,
-/// and inside `testWidgets` it also means `tester.runAsync` because a real
-/// socket's callback never fires under `FakeAsync` (measured at M3.0). Against
-/// this interface it means a two-line fake that throws.
+/// test that wants the error panel has to make a request fail; against
+/// `FileFinClient` that means a socket, a status code and `tester.runAsync`
+/// (`docs/field-notes.md`). Against this interface it is a two-line fake that
+/// throws. `abstract base class` for the reason D22 gives.
 ///
-/// **`abstract base class`, following `SecretStore`'s reasoning.** `base`
-/// forces subtypes to `extend` rather than `implement`, so a new method here is
-/// a compile error in every implementation instead of something an
-/// `implements` clause silently satisfies with a stub.
-///
-/// Every method takes a `CancelToken` (NF5). None of them is optional in
-/// practice: a poster request that outlives its tile is the difference between
-/// a grid that scrolls and one that queues five thousand requests.
+/// Every method takes a `CancelToken` (NF5), none of them optional in practice:
+/// a poster request that outlives its tile is the difference between a grid
+/// that scrolls and one that queues five thousand requests.
 abstract base class LibraryApi {
   /// Allows implementations to be `const`.
   const LibraryApi();

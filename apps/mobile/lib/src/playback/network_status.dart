@@ -30,28 +30,16 @@ abstract base class NetworkStatus {
 
 /// Maps `connectivity_plus`'s transports onto [NetworkType], conservatively.
 ///
-/// **The plugin reports a transport, not a cost, and this is where that gap is
-/// made explicit rather than papered over.** Its result set is
-/// `{wifi, ethernet, mobile, vpn, bluetooth, satellite, other, none}` — eight
-/// values, read off the enum at M4.0 rather than from documentation, and one
-/// more than C4 listed — and not one of them says "metered". So:
+/// **The plugin reports a transport, not a cost**, and none of its eight
+/// values says "metered". So `wifi` and `ethernet` are the only two we can
+/// *show* to be unmetered and everything else is treated as metered — `vpn`
+/// included, because a VPN reports as `vpn` over whatever it tunnels through.
+/// `none` entries are dropped first; a list containing `wifi` prefers `wifi`,
+/// because the OS reports every active transport at once.
 ///
-/// - `wifi` and `ethernet` are the only two we can *show* to be unmetered.
-/// - everything else, `vpn` and `other` included, is treated as metered.
-///   A VPN reports as `vpn` over whatever it is tunnelled through, so the
-///   underlying transport is unknowable and the cautious answer is the guarded
-///   one.
-/// - `none` entries are dropped before the decision; an empty list, or one that
-///   is all `none`, is [NetworkType.none].
-/// - a list containing `wifi` prefers `wifi`, because the OS reports every
-///   active transport and a phone on Wi-Fi with a live cellular radio is on
-///   Wi-Fi.
-///
-/// The residual, and it is the exact case F13 exists for: **a tethered hotspot
-/// is reported as `wifi`**, so the guard does not fire.
-/// `docs/verification-backlog.md` row 20 carries the device experiment.
-/// Public only so a test can reach it; nothing outside this library calls
-/// it (§5, `public_member_no_consumer`).
+/// The residual is the exact case F13 exists for: **a tethered hotspot reports
+/// as `wifi`**, so the guard does not fire.
+/// `docs/verification-backlog.md` row 20 has the device experiment.
 @visibleForTesting
 NetworkType networkTypeOf(List<ConnectivityResult> results) {
   final usable = results.where((r) => r != ConnectivityResult.none).toList();

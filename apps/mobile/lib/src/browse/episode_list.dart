@@ -126,20 +126,13 @@ class _SeasonTabs extends StatelessWidget {
     // ONE focusable spanning the whole strip, with left and right stepping
     // between seasons — not one per pill.
     //
-    // **A remote could not reach the pills at all**, and the reason is
-    // geometry rather than anything missing: `DpadTraversalPolicy` prefers
-    // candidates overlapping the source on the cross axis and then weights
-    // cross-axis displacement, so a pill 124 points wide at the left edge
-    // loses to a full-width episode row every time — from above, because a
-    // centred *Play* does not overlap it at all; from below, because a row
-    // centred at x=480 is 400 points off the pill's centre and only 8 points
-    // further down. Measured: `down` from *Play* went to S1E1 and `up` from
-    // S1E1 came back to *Play*, with the selector between them and reachable
-    // from neither.
+    // **A remote could not reach the pills at all**, for reasons of geometry
+    // rather than anything missing — `docs/field-notes.md` has the traversal
+    // policy's weighting and the measurement.
     //
-    // Widening the pills was tried and is the fragile version of this: it
+    // Widening the pills was tried and is the fragile version of this fix: it
     // depends on how the policy happens to weight two axes today. A strip that
-    // spans the row is centred by construction, so it wins on both counts, and
+    // spans the row is centred by construction, so it wins either way, and
     // left/right inside it is the pattern `PlayerScrubber` already uses.
     child: DpadFocusable(
       onDirection: _step,
@@ -292,8 +285,6 @@ class _EpisodeRow extends StatelessWidget {
 /// whether playback starts instantly or after a transcode — and F12 exists
 /// because a user can have that path turned off entirely.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String episodeFacts(FileInfo file) => [
   if (file.size > 0) humanSize(file.size),

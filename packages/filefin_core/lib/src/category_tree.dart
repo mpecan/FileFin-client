@@ -40,28 +40,16 @@ const _topLevel = 0;
 
 /// Assembles [flat] into a forest, losing nothing and terminating always.
 ///
-/// Four things the server can send that a naive `parentId` lookup gets wrong,
-/// each with the rule that answers it:
+/// Four inputs a naive `parentId` lookup gets wrong, and the rule for each:
+/// **`parentId == 0`** is the top-level sentinel; an **orphan** surfaces at top
+/// level rather than being dropped (G5); a **cycle** loses no row — the first
+/// index in input order lying on one is cut loose and becomes a root, breaking
+/// exactly one link per cycle; a **duplicate id** attaches children to the
+/// first row only, so both rows appear and only one parents anything.
 ///
-/// - **`parentId == 0`** is the top-level sentinel, so it is a root.
-/// - **an orphan** — a `parentId` naming a category that is not in the list —
-///   surfaces at top level. Dropping it would be the silent failure G5 forbids,
-///   and the cause is ordinary: a category the caller cannot see, or a listing
-///   raced against an import.
-/// - **a cycle** — `a` under `b` under `a` — must not hang, and must not lose
-///   either row. The FIRST index in input order that lies on a cycle is cut
-///   loose from its parent and becomes a root; the rest of the cycle then
-///   resolves normally. That breaks exactly one link per cycle, where marking
-///   every member a root would throw away structure the server did send.
-/// - **a duplicate id** must not duplicate a subtree. Children attach to the
-///   FIRST row carrying their `parentId`, so both rows appear and only one
-///   parents anything.
-///
-/// Siblings order by `position`, then `name`, then input order. The third key
-/// is not decoration: Dart's `List.sort` is not documented stable, so a
-/// comparator returning 0 leaves the order to the implementation — and `just
-/// mutants` runs the suite once per mutant, so an answer that moves between
-/// runs is a gate that flaps.
+/// Siblings order by `position`, then `name`, **then input order** — the third
+/// key is not decoration: Dart's `List.sort` is not documented stable, and an
+/// answer that moves between runs is a gate that flaps.
 List<CategoryNode> buildCategoryTree(List<Category> flat) {
   final count = flat.length;
 

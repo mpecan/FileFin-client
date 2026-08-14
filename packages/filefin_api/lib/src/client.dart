@@ -151,18 +151,9 @@ class FileFinClient {
 
   /// Refuses an HTML body on a route that does not serve JSON.
   ///
-  /// Same reasoning as F1, and the same mechanism: this server registers its
-  /// SPA catch-all outside the route table (`server.go:352`), so a route that
-  /// moved — or an address that is not FileFin at all — answers `200
-  /// text/html` with `index.html`. Those bytes handed to an `ImageProvider`
-  /// become a broken image with no explanation, and handed to libmpv as a
-  /// subtitle they become a track with no cues; named here they become a
-  /// sentence.
-  ///
-  /// Anything else is allowed through on purpose. The poster is served with
-  /// `http.ServeFile`, so its content type is whatever the file is — WebP, PNG,
-  /// or absent — and the subtitle route answers `text/vtt`. A client insisting
-  /// on one media type would refuse responses that work.
+  /// Same mechanism as F1 (D21): catch-all HTML handed to an `ImageProvider`
+  /// becomes a broken image with no explanation, and handed to libmpv as a
+  /// subtitle becomes a track with no cues. Named here it becomes a sentence.
   static void _refuseHtml(Headers headers, Uri url) => refuseHtml(headers, url);
 
   /// Turns dio's exception into ours, keeping a cause we already wrapped.
@@ -184,15 +175,9 @@ class FileFinClient {
 
   /// Builds a URL, turning a rejected identifier into one of our errors.
   ///
-  /// `ApiPaths` refuses `''`, `'.'` and `'..'` with an `ArgumentError`, because
-  /// `Uri` deletes those segments and the request would silently address a
-  /// **shorter route** that the SPA catch-all answers `200 text/html`.
-  ///
-  /// The bad value comes from **server data** — `MediaSummary.id` and
-  /// `MediaDetail.id` both default to `MediaId('')`, so a payload with a
-  /// missing `id` produces one. Letting `ArgumentError` escape means one null
-  /// id crashes the UI, which is the opposite of G5's "degrade visibly rather
-  /// than silently".
+  /// `ApiPaths` refuses `''`, `'.'` and `'..'` with an `ArgumentError`, and the
+  /// bad value comes from **server data** (§8's defaults), so letting it escape
+  /// would mean one null id crashes the UI — the opposite of G5.
   ///
   /// What this deliberately does **not** do is filter bad items out of a list.
   /// That IS the silent failure G5 forbids: the list is returned exactly as
@@ -234,24 +219,15 @@ class FileFinClient {
 
   /// One POST of a JSON body, one error vocabulary, no response to decode.
   ///
-  /// A sibling of [_send] rather than a seventh copy of its try/catch: `just
-  /// dupes` (15 lines / 50 tokens / 5%) would fire on the duplication, and
-  /// more importantly two copies is two chances to map an error differently.
+  /// A sibling of [_send] rather than a seventh copy of its try/catch: two
+  /// copies is two chances to map an error differently.
   ///
-  /// **It checks the media type, and until M7.8 it did not.** These routes
-  /// answer `204` with no body, so the original reasoning was that there was
-  /// nothing to read and no media type to check — which is true of the route
-  /// behaving correctly and false of the case the check exists for. The SPA
-  /// catch-all sits outside the route table (`server.go:352`), so an unmatched
-  /// `/api/*` path answers `200 text/html`, and a helper that looked only at
-  /// the status read that as a successful write. Every F10 write then reported
-  /// success to a screen that had already drawn the change.
-  ///
-  /// **F11 makes it likelier rather than rarer**, which is why it was paid
-  /// here: a user who can save several servers can save a base URL with a
-  /// stray path on it, and after that nothing they tap is stored anywhere.
-  /// A genuine `204` carries no `Content-Type` at all and passes untouched —
-  /// [_refuseHtml] refuses `text/html` and nothing else.
+  /// **It checks the media type even though these routes answer `204` with no
+  /// body**, which is the case the check exists for rather than an oversight:
+  /// an unmatched path answers `200 text/html`, and a helper reading only the
+  /// status took that as a successful write, so every F10 write reported
+  /// success to a screen that had already drawn the change. A genuine `204`
+  /// carries no `Content-Type` at all and passes untouched (D21).
   Future<void> _sendJson(
     Uri url,
     Map<String, Object?> body, {
@@ -272,17 +248,13 @@ class FileFinClient {
 
   /// One DELETE, one error vocabulary, and no body in either direction.
   ///
-  /// A sibling of [_sendJson] rather than a copy of its try/catch, for the same
-  /// two reasons: `just dupes` fires on the duplication at 15 lines / 50
-  /// tokens, and two copies is two chances to map an error differently.
+  /// A sibling of [_sendJson] rather than a copy, for the same reason.
   ///
-  /// It exists at all because the verb is what distinguishes the two un-watch
-  /// operations. `DELETE .../watched` drops the resume pointer where
-  /// `POST {"watched": false}` keeps it, so a `DELETE` carrying a body would be
-  /// the other operation wearing the wrong verb.
-  /// It checks the media type for the reason [_sendJson] does, and it needs
-  /// its own call: a fix applied to the POST helper alone would have left the
-  /// un-watch that drops the resume pointer reading the catch-all as success.
+  /// It exists at all because **the verb distinguishes the two un-watch
+  /// operations** (`docs/field-notes.md`): a `DELETE` carrying a body would be
+  /// the other operation wearing the wrong verb. It needs its own media-type
+  /// check (D21) — fixing the POST helper alone would have left the un-watch
+  /// that drops the resume pointer reading the catch-all as success.
   Future<void> _sendDelete(Uri url, {CancelToken? cancelToken}) async {
     try {
       final response = await _dio.deleteUri<void>(

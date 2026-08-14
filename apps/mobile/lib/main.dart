@@ -33,20 +33,11 @@ Future<void> main() async {
 /// Separate from [main] so a test can build the same tree over a temp
 /// directory without touching the plugin at all.
 ///
-/// **One `SecretStore` for the process, and from M7.2 it persists.** F3 needs
-/// the password in memory for the process lifetime — a re-auth cannot await a
-/// Keychain prompt in the middle of a 401 retry — so [PlatformSecretStore] is a
-/// persistence decorator around the in-memory cache rather than a replacement
-/// for it, and reads still come from memory once anything has been read once.
-///
-/// The second plugin call in this package lives behind it. It is not made here
-/// and it is not made at launch: nothing touches the Keychain until something
-/// asks for a secret, which is why `main()` still has exactly one plugin call
-/// on its own critical path (NF1).
-/// It is called by [main] above, in this same file, and by `main_test.dart`.
-/// `main.dart` has no `part`, so it is its own library and the check reports
-/// it for the same reason it reports the seven below — this is the same
-/// class, not one of its own (§5, `public_member_no_consumer`).
+/// **One `SecretStore` for the process**, memory-first for the reason
+/// [PlatformSecretStore] gives. The second plugin call in this package lives
+/// behind it and is not made at launch: nothing touches the Keychain until
+/// something asks for a secret, which is why `main()` still has exactly one
+/// plugin call on its critical path (NF1).
 @visibleForTesting
 Widget buildApp(Directory support, {required FormFactor formFactor}) {
   final secrets = PlatformSecretStore();

@@ -13,13 +13,9 @@ import 'package:flutter/widgets.dart';
 /// a locator is global mutable state that a widget test has to reset between
 /// cases, and forgetting to reset it makes one test's fake leak into the next.
 ///
-/// **`secrets` was deliberately absent until M7.5, and its return is a §5
-/// story rather than a reversal.** M3 removed it because nothing read it:
-/// `main()` built the `SecretStore` and closed over it in [apiFactory], so the
-/// field was written once and read never. F15's accept-and-pin loop is what
-/// finally reads it — the pin has to be resolved into memory *before* a client
-/// is built, because TLS's callbacks are synchronous and cannot await a store
-/// read — and accepting a certificate is what writes one.
+/// **`secrets` is here because F15's accept-and-pin loop reads it**, and not
+/// before: M3 removed the field precisely because nothing did (§5). The pin
+/// must be resolved into memory before a client is built (D19).
 @immutable
 class AppDependencies {
   /// Holds the settings store, the secret store, the API factory and
@@ -72,16 +68,14 @@ class AppDependencies {
   /// Opens F14's media session — the lock-screen transport and, on Android,
   /// the foreground service that stops the OS muting a backgrounded player.
   ///
-  /// **A factory returning a FUTURE, and per PROCESS rather than per screen**,
-  /// which is the opposite of [playbackHostFactory] and for the opposite
-  /// reason: there is one lock screen, `AudioService.init` asserts on a second
-  /// call, and starting the session is a platform round trip.
-  /// `openNowPlaying` memoises, so a second player screen gets the first
-  /// one's session.
+  /// **A factory returning a FUTURE, and per PROCESS rather than per screen** —
+  /// the opposite of [playbackHostFactory], for the opposite reason: there is
+  /// one lock screen and `AudioService.init` asserts on a second call
+  /// (`docs/field-notes.md`). `openNowPlaying` memoises.
   ///
-  /// It is deliberately not called from `main()`. Nothing touches the
-  /// media-session channel until a player screen opens, which is what keeps
-  /// NF1's cold start down to the one plugin call it has always had.
+  /// Deliberately not called from `main()`: nothing touches the media-session
+  /// channel until a player screen opens, which is what keeps NF1's cold start
+  /// at the one plugin call it has always had.
   final Future<NowPlayingHost> Function() nowPlayingFactory;
 }
 

@@ -107,17 +107,14 @@ class _AddServerPageState extends State<AddServerPage> {
   /// Drops the pin again when the address it was accepted for was not saved.
   ///
   /// **The pin is written BEFORE the second probe decides whether this is a
-  /// FileFin server at all**, and it has to be: `apiForServer` reads it out of
-  /// the store to build the client that probe runs on. So a refusal — "not a
-  /// FileFin server", "needs setup", a typo in the port — left a
-  /// `SecretKind.certificatePin` keyed to an origin that appears in no
-  /// settings file, and `ServerListPage._remove` is the only deleter there is
-  /// and it iterates saved servers.
+  /// FileFin server at all**, and has to be: `apiForServer` reads it to build
+  /// the client that probe runs on. So a refusal leaves a pin keyed to an
+  /// origin no settings file mentions, which the only deleter — which iterates
+  /// saved servers — can never reach.
   ///
-  /// It is worse than untidiness. The id IS the origin, so adding that same
-  /// address later silently loads the orphan and the server connects pinned
-  /// without ever asking — which is F15's deliberate accept skipped entirely,
-  /// for a certificate the user was shown once and did not go on to use.
+  /// Worse than untidy: the id IS the origin, so adding that address later
+  /// loads the orphan and connects pinned without asking, which is F15's
+  /// deliberate accept skipped entirely.
   Future<void> _forgetOrphanedPin(
     AppDependencies deps,
     SavedServer candidate,

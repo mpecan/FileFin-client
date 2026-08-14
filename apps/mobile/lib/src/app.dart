@@ -204,20 +204,15 @@ class _HomeRouteState extends State<HomeRoute> {
   /// F11's switch: one method, because closing the previous client is the half
   /// that leaks a socket when it is written twice.
   ///
-  /// The selection is written **before** the restore rather than after it, so a
-  /// server whose session has since died is still the one the next launch
-  /// opens — the user asked for it, and landing back on the previous server
-  /// tomorrow is not an answer to that.
+  /// The selection is written **before** the restore, so a server whose session
+  /// has since died is still the one the next launch opens — the user asked for
+  /// it. Clearing `_api` first is what makes the shell rebuild from nothing:
+  /// its tabs are `Offstage` rather than disposed, so a surviving shell would
+  /// keep the previous server's rows under the new server's name.
   ///
-  /// Clearing `_api` first is what makes the shell rebuild from nothing:
-  /// `LibraryShell`'s tabs are `Offstage` rather than disposed, so a shell that
-  /// survived the swap would keep the previous server's rows on screen under
-  /// the new server's name.
-  ///
-  /// The write is caught, and this was the one `SettingsStore` call site of
-  /// five that did not: `_switchTo` runs `unawaited(...)` with no
-  /// `runZonedGuarded`, so a full disk closed the picker and said nothing.
-  /// The switch still goes ahead; only the NEXT launch is affected.
+  /// The write is caught — this runs `unawaited(...)` with no
+  /// `runZonedGuarded`, so a full disk once closed the picker and said
+  /// nothing. The switch still goes ahead; only the NEXT launch is affected.
   Future<void> _switchTo(SavedServer target) async {
     final settings = FileFinScope.of(context).settings;
     try {
@@ -276,22 +271,16 @@ class _HomeRouteState extends State<HomeRoute> {
 
   /// What a `SessionExpired` on ANY browsing screen does.
   ///
-  /// Two halves, and both are needed. `popUntil` is the half the tree does not
-  /// need and the grid and the detail page do: this is a state change on this
-  /// route, so without it the user is returned to a signed-out shell sitting
-  /// under two pushed routes they must dismiss by hand. Clearing the API is
-  /// what makes [build] draw the signed-out screen at all.
+  /// Two halves, both needed: `popUntil`, or the user lands on a signed-out
+  /// shell under two pushed routes they must dismiss by hand; and clearing the
+  /// API, which is what makes [build] draw the signed-out screen at all.
   ///
-  /// [_server] is deliberately KEPT. It is what the sign-in button then offers,
-  /// and dropping it sent someone who signed out of their second server to
-  /// their first one — silently, with no picker anywhere to correct it.
-  ///
-  /// **It deliberately does NOT call `logout()`, and that is the whole
-  /// distinction from [_signOut].** A `SessionExpired` means the server has
-  /// already forgotten this session; the stored *password* is what F3 renews
-  /// from and what F2's silent cold start needs, so clearing it here would
-  /// turn every server restart into a password prompt — the case F2 exists to
-  /// remove.
+  /// [_server] is deliberately KEPT — it is what the sign-in button offers, and
+  /// dropping it sent someone who signed out of their second server to their
+  /// first, with no picker to correct it. **It also does NOT call `logout()`**,
+  /// which is the whole distinction from [_signOut]: the stored password is
+  /// what F3 renews from, so clearing it would make every server restart a
+  /// password prompt.
   void _sessionExpired() {
     Navigator.of(context).popUntil((route) => route.isFirst);
     setState(() {
@@ -302,20 +291,16 @@ class _HomeRouteState extends State<HomeRoute> {
 
   /// The user asking to be forgotten (F2, §9).
   ///
-  /// `logout()` first, then the local drop, and the order is load-bearing:
-  /// closing the client releases the sockets the request would travel on.
+  /// `logout()` first, then the local drop: closing the client releases the
+  /// sockets the request would travel on.
   ///
-  /// A server that does not answer still signs the user out here.
-  /// `SessionManager.logout`'s `finally` has already cleared the jar and both
-  /// secrets by the time it throws, so treating the throw as "still signed in"
-  /// would leave the app claiming a session neither side holds — and someone
-  /// whose server is down could never leave it. The failure is said out loud
-  /// rather than swallowed.
+  /// A server that does not answer still signs the user out. `logout`'s
+  /// `finally` has cleared the jar and both secrets by the time it throws, so
+  /// treating that as "still signed in" would claim a session neither side
+  /// holds — and strand anyone whose server is down.
   ///
-  /// It takes the API rather than reading [_api] so there is no
-  /// "what if there isn't one" branch: the affordance only exists on a
-  /// signed-in shell, and a guard for a case the UI cannot produce is a dead
-  /// branch (§5) that nothing could ever cover.
+  /// It takes the API rather than reading [_api], so there is no "what if there
+  /// isn't one" branch nothing could ever cover (§5).
   Future<void> _signOut(LibraryApi api) async {
     try {
       await api.logout();

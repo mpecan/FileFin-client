@@ -26,22 +26,11 @@ enum NetworkType {
 
 /// How this server's bytes would travel — F15's protection, or the lack of it.
 ///
-/// The distinction exists because **libmpv verifies no certificate by
-/// default**, and that is measured rather than assumed. Against this
-/// repository's own committed self-signed certificate
-/// (`packages/filefin_api/test/support/certs/server_a.crt`), with mpv 0.41.0:
-///
-/// ```text
-/// $ mpv --vo=null --ao=null --tls-verify=no  https://127.0.0.1:8443/x.mp4
-/// rc 0 — and the server logged `"GET /x.mp4 HTTP/1.1" 200`
-///
-/// $ mpv --vo=null --ao=null --tls-verify=yes https://127.0.0.1:8443/x.mp4
-/// rc 2 — error:0A000086 certificate verify failed, server logged nothing
-/// ```
-///
-/// So the playback socket is not F15's socket. `filefin_api` pins the
-/// certificate on every request it makes; libmpv opens its own connection from
-/// native code, and on that connection a pinned fingerprint means nothing.
+/// The distinction exists because the playback socket is **not** F15's socket:
+/// `filefin_api` pins the certificate on every request it makes, while libmpv
+/// opens its own connection from native code and verifies nothing on it by
+/// default. Measured both directions — `docs/field-notes.md`. D10 is what this
+/// enum is consulted for.
 enum PlaybackTransport {
   /// `http://` — nothing to verify. F1 already warns about this in words.
   plainHttp,
@@ -63,17 +52,10 @@ enum PlaybackTransport {
 ///
 /// Every variant is constructible from [decide]'s own inputs, which is the test
 /// for whether a reason belongs here. A `415 transcoding disabled` is only
-/// knowable *after* a request, so it is not a branch of this function — and M5
-/// kept it that way.
-///
-/// **Where it went instead is worth one line, because this comment used to say
-/// "it is `filefin_api`'s to report" and that assigns F12 to the wrong layer.**
-/// The *variant* is `filefin_api`'s: `TranscodingDisabled`, raised by
-/// `requirePlayable`. The *message* is `apps/mobile`'s — `describeApiError`,
-/// `describeApiFailure` and `_UnplayablePanel` — because `filefin_api` is
-/// Flutter-free and user-facing prose does not belong in it. Taken literally,
-/// the old wording would have put F12's sentence in a package that draws
-/// nothing.
+/// knowable *after* a request, so it is not a branch of this function: the
+/// variant is `filefin_api`'s (`TranscodingDisabled`, raised by
+/// `requirePlayable`) and the wording is `apps/mobile`'s, because this package
+/// draws nothing.
 enum RefuseReason {
   /// [NetworkType.none] — there is nothing to stream over.
   offline,
@@ -173,31 +155,15 @@ final class Refuse extends PlaybackDecision {
 
 /// Decides whether — and how — to start playing [file] (SPEC.md §5.4, F13).
 ///
-/// The intent was to direct-play on wifi and transcode on cellular. The server
-/// makes that impossible: `GET .../file/{n}` picks the mode from the probed
-/// codecs alone, and there is no quality, bitrate or resolution parameter
-/// anywhere. So this is a **guard**, not a switch. The only thing it can vary
-/// is whether playback starts at all, using `fileInfo.size` — the only
-/// bandwidth signal the API offers.
+/// A **guard**, not a switch (D4): the server exposes no quality or bitrate
+/// parameter, so the only thing this varies is whether playback starts at all.
+/// The mode comes from [FileInfo.transcode], the server's own verdict.
+/// [transport] and [allowUnverifiedPlayback] are D10, both required so a call
+/// site cannot forget the question.
 ///
-/// The mode comes from [FileInfo.transcode], **the server's own verdict**.
-/// Reimplementing `transcode.DirectPlayable` here would be a second copy of a
-/// decision the server has already made and told us, and it would drift.
-///
-/// [transport] and [allowUnverifiedPlayback] are D10, and both are required so
-/// that a call site cannot forget the question. libmpv opens its own socket
-/// from native code, so F15's pin does not reach it (see [PlaybackTransport]);
-/// a [PlaybackTransport.pinnedTls] server is therefore refused **unless** the
-/// user has turned the per-server override on, which is a deliberate,
-/// persistent choice with a banner attached rather than a dialog someone
-/// dismisses.
-///
-/// Order matters, and each step is a superset of the next: offline refuses
-/// before anything else is consulted, because with no connection nothing else
-/// is actionable; an unverifiable transport refuses before the metered guards,
-/// because it refuses at every size and on every network; the wifi-only setting
-/// refuses before the size is looked at; the size guard asks only **strictly
-/// above** the threshold.
+/// **Order matters, each step being a superset of the next:** offline, then an
+/// unverifiable transport (it refuses at every size on every network), then
+/// wifi-only, then size — which asks only *strictly above* the threshold.
 PlaybackDecision decide(
   FileInfo file,
   NetworkType network,

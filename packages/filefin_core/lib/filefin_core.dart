@@ -4,16 +4,10 @@
 /// (CLAUDE.md §6). Time and network state arrive as arguments; nothing in this
 /// package reads a clock, a socket or a file.
 ///
-/// This barrel is the package's entire public surface: `lib/src/**` is private
-/// by convention, so a symbol that is not exported here has no consumer outside
-/// the library and is dead by §5.
-///
-/// **`ApiPaths` is hidden rather than exported**, by that same criterion:
-/// nothing outside this library uses it, so exporting it would be a §5 claim we
-/// cannot back. It is `FileFinUrls`'s own route table, `undocumented_endpoint`
-/// (§8) reads its literals straight out of the source rather than through the
-/// barrel, and `urls_test.dart` imports `src/urls.dart` directly to pin them.
-/// Unhide it the day `filefin_api` genuinely needs a bare path.
+/// This barrel is the package's entire public surface: a symbol not exported
+/// here has no consumer outside the library and is dead by §5. `ApiPaths` is
+/// hidden by that same criterion — unhide it the day `filefin_api` needs a
+/// bare path.
 library;
 
 export 'src/category_tree.dart';

@@ -75,29 +75,12 @@ String _withoutDecadeSuffix(String query) {
 /// Whether the server will actually **run** a search for [query] in [field], as
 /// opposed to answering `200 []` because it could not read the input.
 ///
-/// Three ways a search returns nothing, and only one of them is "nothing
-/// matched". An empty `q` short-circuits before any query is built
-/// (`db/search.go:17-19`), and the two numeric scopes **fail closed**: `year`
-/// parses `q` with `strconv.Atoi` and `decade` parses it after
-/// [_withoutDecadeSuffix], and either failing returns no rows and no error
-/// (`db/search.go:36-48`). On screen those are indistinguishable from a library
-/// with nothing in it, so the client has to know the difference in order to say
-/// it.
-///
-/// **It mirrors `Atoi`'s grammar rather than trusting `int.tryParse`, and the
-/// reason is measured rather than defensive** (M6.0/E-4). The two agree on
-/// everything the milestone plan expected them to disagree about: Dart's parser
-/// skips leading and trailing whitespace exactly as `TrimSpace` does — for
-/// U+00A0 as well as for a space — both accept a leading `+` and leading zeros,
-/// both reject `2e3`, `2_020`, `2020.0`, `٢٠٢٠` and `20 20`, and both are
-/// 64-bit, agreeing on `9223372036854775807` and on the value above it.
-///
-/// They part company on exactly one class of input: **`int.tryParse` honours a
-/// `0x` prefix and `Atoi` does not**. Proven against the live binary rather
-/// than read off the source — `0x7E4` *is* 2020, and `field=year&q=0x7E4` came
-/// back `[]` from v0.20.3 where `q=2020` returned the row. A bare
-/// `int.tryParse` would tell the user a search was running that the server had
-/// already refused.
+/// Three ways a search returns nothing and only one is "nothing matched": an
+/// empty `q` short-circuits (`db/search.go:17-19`), and the two numeric scopes
+/// fail closed. On screen all three look like an empty library, so the client
+/// has to know the difference in order to say it. It mirrors `strconv.Atoi`'s
+/// grammar rather than `int.tryParse`, which differs on exactly one input
+/// class (`docs/field-notes.md`).
 ///
 /// The switch has no default arm, so a twelfth [SearchField] cannot be added
 /// without deciding whether it is numeric.

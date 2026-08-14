@@ -12,20 +12,13 @@ import 'package:flutter/material.dart';
 
 /// F6: the three rows `GET /api/home` returns, in the order it returns them.
 ///
-/// **Refetched after a write, never predicted, and that is measured rather than
-/// cautious.** The rows come from the `user_state` mirror rather than from
-/// `meta.json` (`media.go:227`), the mirror upsert is best-effort, and every
-/// bucket is `ORDER BY us.updated DESC` where `updated` is re-stamped by
-/// *every* write — so setting a rating re-orders the *Continue watching* row
-/// (M6.0/E-3). None of that is derivable from what a client holds, and a
-/// prediction that was *more* right than the server would still look like a
-/// bug. [HomePageState.reload] is the whole mechanism, and the detail
-/// route's `bool` result is what triggers it.
+/// **Refetched after a write, never predicted**, because every write re-stamps
+/// the key all three buckets are ordered by (`docs/field-notes.md`) and none of
+/// that is derivable from what a client holds. [HomePageState.reload] is the
+/// mechanism; the detail route's `bool` result triggers it.
 ///
-/// **An item legitimately appears in more than one row.** The captured
-/// `home_populated.json` has the film in `continue` *and* in `favorites`,
-/// because the buckets are independent predicates over one `user_state` row
-/// rather than a partition. Nothing here de-duplicates.
+/// **An item legitimately appears in more than one row** — the buckets are
+/// independent predicates rather than a partition, so nothing de-duplicates.
 class HomePage extends StatefulWidget {
   /// Shows [api]'s home rows under [title]; [onOpen] opens an item.
   const HomePage({

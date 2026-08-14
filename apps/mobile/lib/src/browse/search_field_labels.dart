@@ -32,8 +32,6 @@ String searchFieldLabel(SearchField field) => switch (field) {
 /// Separate from [searchFieldLabel] because "No matches for *ada* in Cast"
 /// reads as a proper noun and "…in cast" reads as English, and a single string
 /// cannot be both a menu entry and a fragment.
-/// Public only so a test can reach it; nothing outside this library calls
-/// it (§5, `public_member_no_consumer`).
 @visibleForTesting
 String searchFieldNoun(SearchField field) => switch (field) {
   SearchField.all => 'anything',
@@ -55,8 +53,6 @@ String searchFieldNoun(SearchField field) => switch (field) {
 /// stripping one trailing `s`; either failing returns **no rows and no error**
 /// (`db/search.go:36-48`). The nine text scopes run any non-empty `q`, so they
 /// have no unit to fail to parse.
-/// Public only so a test can reach it; nothing outside this library calls
-/// it (§5, `public_member_no_consumer`).
 @visibleForTesting
 String? searchFieldNumericUnit(SearchField field) => switch (field) {
   SearchField.year => 'year',

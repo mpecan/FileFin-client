@@ -46,24 +46,14 @@ final class CertificateNotTrusted extends FileFinApiException {
 /// A pinned server presented a **different** certificate (F15).
 ///
 /// The loud, blocking half of F15, and the one that must never soften into a
-/// prompt. `filefin_api` does not update the stored pin when this happens, and
-/// no code path in this package can: a changed fingerprint on a pinned server
-/// is the exact event pinning exists to make visible.
+/// prompt: no path in this package updates a stored pin, because a changed
+/// fingerprint is the exact event pinning exists to make visible.
 ///
-/// **The message says "refused", not "nothing was sent", and the difference is
-/// a measurement rather than a nicety.** Two hooks can raise this. On a new
-/// connection `CertificatePinner.connect` compares the leaf and destroys the
-/// socket before dart:io writes a request byte, so nothing — cookie included —
-/// reached the peer. On a *pooled* connection the handshake already happened,
-/// and `validateCertificate` rejects only once the response headers are back:
-/// the request did reach the server. The variant cannot tell a caller which it
-/// was, so it claims neither. It used to end "Nothing was sent." whatever had
-/// happened, while 106 bytes had gone out — which is the one thing an error
-/// message may never do.
-///
-/// It also fires for an innocent cause: pinning a CA-signed server means every
-/// certificate renewal changes the fingerprint. That is the price of the
-/// guarantee, and the message names both values so a user can compare them.
+/// **The message says "refused", never "nothing was sent"** — on a pooled
+/// connection the request did reach the server, and the variant cannot tell
+/// which case it is (D19). It once claimed the first while 106 bytes had gone
+/// out. It also fires innocently: pinning a CA-signed server means every
+/// renewal changes the fingerprint, so both values are named for comparison.
 final class CertificatePinMismatch extends FileFinApiException {
   /// [requested] presented [actual] where [expected] was pinned.
   const CertificatePinMismatch(

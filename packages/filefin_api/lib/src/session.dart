@@ -16,13 +16,9 @@ const sessionCookieName = 'filefin_session';
 /// **It runs on its own `Dio`.** `authDio` shares the cookie jar and the pinned
 /// adapter with the main client but carries **no `AuthInterceptor`**, which is
 /// what makes recursion through login structurally impossible rather than
-/// merely guarded: a 401 from `/api/login` cannot reach the retry logic because
-/// the retry logic is not on this chain. There is deliberately no "is this the
-/// login path?" branch anywhere — it would be unreachable, and §5 and
-/// `dead_types` exist to stop unreachable branches being written.
+/// merely guarded (D20).
 ///
-/// `now` is injected so the rate-limit block is testable without sleeping. §3
-/// requires it of `filefin_core`; it is worth just as much here, where the
+/// `now` is injected so the rate-limit block is testable without sleeping — the
 /// alternative is a test that waits fifteen minutes or one that proves nothing.
 class SessionManager {
   /// Builds a manager for one server.
@@ -165,17 +161,13 @@ class SessionManager {
 
   /// Renews the session silently, at most once per generation (F3).
   ///
-  /// [seenGeneration] is what the failing request was stamped with. Two guards,
-  /// and **both are needed** because they answer different questions:
-  ///
-  /// - the generation returns immediately when someone else has already logged
-  ///   in since this request was issued, which is the common shape after a
-  ///   server restart 401s everything at once;
-  /// - the in-flight future makes N callers that *do* need a login share one,
-  ///   rather than racing into N attempts against a five-failure limiter.
-  ///
-  /// Without the future the concurrent count is 2..9; without the generation it
-  /// is 9. `session_test.dart` fires eight and asserts exactly one.
+  /// [seenGeneration] is what the failing request was stamped with. **Two
+  /// guards, both needed**, answering different questions: the generation
+  /// returns immediately when someone else already logged in since this request
+  /// was issued (the shape after a restart 401s everything at once), while the
+  /// in-flight future makes N callers that *do* need a login share one rather
+  /// than race a five-failure limiter. Without the future the concurrent count
+  /// is 2..9; without the generation it is 9.
   Future<void> reauthenticate({required int seenGeneration}) {
     if (_generation != seenGeneration) return Future<void>.value();
     return _inFlight ??= _renew().whenComplete(() => _inFlight = null);
@@ -241,18 +233,14 @@ class SessionManager {
   /// Throws without touching the network once the stored password is known bad.
   ///
   /// **The generation guard and the in-flight future bound concurrency;
-  /// nothing bounded repetition.** A renewal that fails with
-  /// `InvalidCredentials` used to leave no state at all, so the next 401
-  /// re-submitted the same known-bad password — and the server locks an
-  /// account after five failures in fifteen minutes (`loginlimit.go:15-27`).
-  /// Ten sequential calls sent ten logins and locked the account; the benign
-  /// cause is simply a password changed server-side while this client still
-  /// holds the old one. Measured at M2: ten calls, ten logins, before this
-  /// latch and one after.
+  /// nothing bounded repetition.** The server locks an account after five
+  /// failures in fifteen minutes (`loginlimit.go:15-27`), and without this
+  /// latch ten sequential calls sent ten logins and locked it — measured at M2.
+  /// The benign cause is a password changed server-side while this client still
+  /// holds the old one.
   ///
-  /// It is latched the way `_blockedUntil` is, and cleared by the same events:
-  /// a caller supplying credentials, and [logout]. There is no timer, because
-  /// unlike a 429 nothing about waiting makes a wrong password right.
+  /// Cleared by a caller supplying credentials, and by [logout]. No timer:
+  /// unlike a 429, nothing about waiting makes a wrong password right.
   void _refuseWhileRejected() {
     if (_passwordRejected) throw InvalidCredentials(urls.login);
   }

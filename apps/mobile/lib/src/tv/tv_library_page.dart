@@ -173,8 +173,6 @@ class _TvLibraryPageState extends State<TvLibraryPage> {
 /// heading that said "0 items" would state as a fact something it does not
 /// know.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String categoryCounts(Category category) {
   if (category.media == 0 && category.files == 0) return 'No items listed';

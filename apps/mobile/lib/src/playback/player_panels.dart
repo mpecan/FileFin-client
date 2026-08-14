@@ -309,8 +309,6 @@ Future<void> showSubtitlePicker(
 /// quietly ask the engine for the previous file's sidecar. Off is the honest
 /// answer to "the thing you tapped is gone".
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 SubtitleSource? stillOffered(
   PlayerController controller,

@@ -18,8 +18,6 @@ enum FormFactor {
 
 /// The channel `MainActivity` answers `isTelevision` on.
 ///
-/// Public so its own suite can mock it; nothing outside this library invokes
-/// it (§5, `public_member_no_consumer`).
 const formFactorChannel = MethodChannel(
   'dev.filefin.filefin_mobile/form_factor',
 );

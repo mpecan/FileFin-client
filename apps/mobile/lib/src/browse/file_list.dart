@@ -72,15 +72,12 @@ String fileLabel(FileInfo file) {
 /// worth showing rather than hiding — F13's metered guard is built on the same
 /// number at M4.
 ///
-/// **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** It
-/// divided by 1024 under those labels until M4.R/P7, which understated every
-/// size by 2.4% per step: `PlaybackPrefs`' own default of `500 * 1000 * 1000`
-/// came out of the settings dropdown as **"477 MB"** — an option the user
-/// never chose, offered as if they had. The thresholds this renders are
-/// written in powers of 1000, so decimal is the base the values are already
-/// in; relabelling to KiB/MiB/GiB would have been correct arithmetic showing a
-/// unit nobody picked. Routed through one constant so the two divisions cannot
-/// disagree, exactly as `formatPosition`'s `perMinute` is.
+/// **Powers of 1000, ONE constant, because the labels say kB/MB/GB.** Dividing
+/// by 1024 under those labels understated every size by 2.4% per step, and
+/// `PlaybackPrefs`' own default came out of the dropdown as "477 MB" — an
+/// option nobody chose, offered as if they had. The thresholds are written in
+/// powers of 1000, so decimal is the base the values are already in. One
+/// constant, so the two divisions cannot disagree.
 String humanSize(int bytes) {
   const perUnit = 1000;
   if (bytes < perUnit) return '$bytes B';

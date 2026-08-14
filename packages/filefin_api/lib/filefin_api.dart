@@ -1,29 +1,15 @@
 /// The FileFin HTTP client.
 ///
-/// Everything that touches a socket lives here (CLAUDE.md §6): `filefin_core`
-/// holds the types, the URLs and the rules, `apps/mobile` draws, and this
-/// package is the only layer that knows what a `401` means (SPEC.md §5.1).
-///
-/// It is **pure Dart — Flutter-free**, which is a structural decision rather
-/// than a preference. `just test`, `just coverage` and `just mutants` all run
-/// `dart test` per package; a Flutter package needs `flutter test` and a
-/// different coverage path, so a Flutter dependency here would force all three
-/// gates to grow a branch at M2. It is also why credential persistence arrives
-/// as an injected port rather than as `flutter_secure_storage`, whose plugin
-/// has no VM implementation and would make every F3 unit test mock the one
-/// layer that matters. `dart:io` is fine and is required for F15.
-///
-/// This barrel is the package's entire public surface: `lib/src/**` is private
-/// by convention, so a symbol not exported here has no consumer outside the
-/// library and is dead by §5.
+/// Everything that touches a socket lives here (§6), and this is the only
+/// layer that knows what a `401` means (SPEC.md §5.1). **Pure Dart —
+/// Flutter-free**, structurally so; `docs/architecture.md` has the argument.
+/// This barrel is the entire public surface: a symbol not exported here is
+/// dead by §5.
 ///
 /// **`CancelToken` is dio's, re-exported so `apps/mobile` never imports dio.**
-/// NF5 puts a cancel token on every endpoint, so the app cannot call one
-/// without naming the type — while `just constitution`'s `app_no_raw_http`
-/// refuses `package:dio/` under `apps/*/lib`, because an app that imports dio
-/// can also build its own client and skip F3's 401 retry, F15's pinning and the
-/// cookie jar in one line. Re-exporting the one type the app legitimately needs
-/// is what makes that refusal live-able rather than something to route around.
+/// NF5 puts one on every endpoint while `app_no_raw_http` refuses
+/// `package:dio/` under `apps/*/lib`; re-exporting the one type the app
+/// legitimately needs is what makes that refusal live-able.
 library;
 
 export 'package:dio/dio.dart' show CancelToken;

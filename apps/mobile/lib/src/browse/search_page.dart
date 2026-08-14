@@ -12,23 +12,14 @@ import 'package:flutter/material.dart';
 
 /// F5: a box, a scope, and the same poster grid the library uses.
 ///
-/// **The scope selector is not decoration.** `db/search.go:70` degrades an
-/// unrecognised `field` to `all` rather than erroring, so a screen that dropped
-/// the selector still returns plausible results and quietly ignores what the
-/// user picked. The widget test that matters here asserts the wire —
-/// `search(Kurosawa, director)`, never `search(Kurosawa, all)`.
+/// **The scope selector is not decoration**: an unrecognised `field` degrades
+/// to `all` rather than erroring (`docs/field-notes.md`), so a screen that
+/// dropped it still returns plausible results while ignoring what the user
+/// picked. The test that matters asserts the wire, not the rendering.
 ///
-/// **The box, the scope and the results DO survive a tab round trip**, and this
-/// paragraph used to say the opposite. The claim was that the shell rebuilds
-/// this tab on every visit; it does not — `LibraryShell` keeps a selected tab
-/// `Offstage`, which is what its own doc comment says and what
-/// `library_shell_test.dart` now pins. Nothing survives a sign-out or a
-/// relaunch, because the whole shell goes with it.
-///
-/// It is the better behaviour of the two: switching to Home to check something
-/// and coming back is the common move, and re-typing the query afterwards is a
-/// cost with no benefit. Said here because two files disagreeing about state
-/// that lives in one of them is how a "fix" gets made to the wrong one.
+/// **The box, the scope and the results survive a tab round trip**, because
+/// `LibraryShell` keeps a selected tab `Offstage`. Nothing survives a sign-out
+/// or a relaunch, because the whole shell goes with it.
 class SearchPage extends StatefulWidget {
   /// Searches through [api]; [onOpen] opens a result.
   const SearchPage({

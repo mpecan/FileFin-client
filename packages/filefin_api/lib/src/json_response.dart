@@ -14,22 +14,10 @@ const _jsonMediaType = 'application/json';
 
 /// Refuses an HTML body on a **2xx** from a route that does not serve HTML.
 ///
-/// Lives here rather than on `FileFinClient` because it has three callers in
-/// two libraries, and the third is the one that made it worth moving:
-/// `SessionManager.logout` writes and reads nothing, so nothing else on its
-/// path would ever have noticed the SPA catch-all answering.
-///
-/// **Why `text/html` specifically and not "must be JSON".** The routes this
-/// guards answer `204` with no `Content-Type` at all, the poster route answers
-/// whatever the file is, and the subtitle route answers `text/vtt` — a client
-/// insisting on one media type would refuse responses that work. What it
-/// refuses is the one answer that means "no route matched": the catch-all
-/// (`server.go:352`) serving `index.html`.
-///
-/// **2xx only, and that boundary is measured.** Go's `http.Redirect` writes an
-/// HTML body, so the `307` to HLS carries `Content-Type: text/html` — applying
-/// this to a redirect would refuse the SUCCESS case while the catch-all's
-/// `200 text/html`, which is the real failure, sailed through (M5.0/E-K).
+/// `text/html` specifically rather than "must be JSON", and **2xx only** — a
+/// boundary that is measured rather than reasoned, because the `307` to HLS
+/// carries `text/html` too. D21 has both arguments and what each one costs if
+/// generalised.
 void refuseHtml(Headers headers, Uri requested) {
   final contentType = headers[Headers.contentTypeHeader]?.firstOrNull;
   if (contentType != null &&
@@ -89,18 +77,14 @@ List<Map<String, Object?>> jsonObjects(
 
 /// Runs [fromJson] over server data, turning any decode failure into ours.
 ///
-/// The values come from a server we do not control (§8), so a type that does
-/// not match is a fact about the payload, not a bug in the caller — and the
-/// caller must be able to catch it in the same vocabulary as everything else.
+/// The values come from a server we do not control (§8), so a mismatched type
+/// is a fact about the payload rather than a bug in the caller.
 ///
-/// `TypeError` is caught and nothing else, deliberately. It is what a wrong
-/// wire type produces: `filefin_core`'s generated decoders throw `_TypeError`
-/// on a `bool` where an `int` belongs (measured at M1.10 — 124 of 208 fixture
-/// mutations do exactly that). Catching `Object` here would also swallow a
-/// real bug in one of our own converters and report it as the server's fault,
-/// which is the more expensive mistake. No model this client decodes parses a
-/// date or a number from a string, so there is no `FormatException` arm; add
-/// one with the first model that needs it rather than ahead of it (§1).
+/// **`TypeError` and nothing else**, deliberately: it is what a wrong wire type
+/// produces (measured M1.10 — 124 of 208 fixture mutations do exactly that),
+/// and catching `Object` would swallow a real bug in one of our own converters
+/// and report it as the server's fault. There is no `FormatException` arm
+/// because no model here parses a date or number from a string (§1).
 T decodeModel<T>(
   Map<String, Object?> json,
   T Function(Map<String, Object?>) fromJson, {
@@ -121,21 +105,13 @@ T decodeModel<T>(
 
 /// Checks the media type, then decodes the raw body.
 ///
-/// **The check is applied here and nowhere else, which is the point.** It
-/// belongs to a 2xx response we intend to decode. Applied to every response it
-/// would be catastrophic in a way that looks like tightening: `401
-/// unauthorized` and `404 page not found` are served as plain text
-/// (`docs/server-api.md`), so a blanket guard would turn every documented
-/// error into "not a FileFin server" and F3 would never see a 401. dio throws
-/// on a non-2xx before this function is ever reached, and `error_mapper.dart`
-/// — which never looks at a content type — is what handles those.
+/// **The check is applied here and nowhere else, which is the point** — D21.
+/// dio throws on a non-2xx before this is reached, and `error_mapper.dart`
+/// handles those without ever looking at a content type.
 ///
-/// The content type is read through the **list** form. dio's `Headers.value`
-/// throws when a header arrived twice, and an exception from here would escape
-/// the sealed hierarchy `errors.dart` exists to keep total — on a 2xx, which is
-/// the path a caller has no reason to guard. dart:io happens to collapse a
-/// duplicated `Content-Type` today, so this is defence against a dependency's
-/// accident rather than an observed payload.
+/// The content type is read through the **list** form, because dio's
+/// `Headers.value` throws on a repeated header (`docs/field-notes.md`) and an
+/// exception here would escape the sealed hierarchy on a 2xx.
 Object? _jsonBody(Response<dynamic> response, {required Uri requested}) {
   final contentType = response.headers[Headers.contentTypeHeader]?.firstOrNull;
   if (!_isJson(contentType)) {

@@ -17,41 +17,15 @@ const _versionKey = 'version';
 
 /// Asks an address whether it is a FileFin server (F1).
 ///
-/// **A status check would be worthless here and this is not a style
-/// preference.** The server registers an SPA catch-all outside its route table
-/// (`server.go:352`), so an unmatched `/api/*` path answers `200 text/html`
-/// with `index.html` — verified live at v0.20.3. No path or method mismatch is
-/// ever answered with a 404 or a 405. A `200` from `GET /api/state` therefore
-/// proves nothing: any SPA host, any reverse proxy with a fallback, and any
-/// unrelated web server answers identically.
+/// **A status check would be worthless**: every unmatched path answers
+/// `200 text/html` from the SPA catch-all (`docs/field-notes.md`). An address
+/// is accepted only when the response is `application/json` **and** the body
+/// decodes to an object carrying both documented keys.
 ///
-/// So the probe accepts an address only when the response is
-/// `Content-Type: application/json` **and** the body decodes to an object
-/// carrying both documented keys. Everything else — including a `200` — is
-/// "not a FileFin server", with a reason a person can read.
-///
-/// **Every message below names the redacted address, never [FileFinUrls]'s
-/// own.** `ProbeResult` is F1's user-facing dialog text — the string most
-/// likely to reach a screenshot, a bug report or a log — and a *saved server*
-/// URL is typed by the user, so `https://sam:hunter2@host/` is a shape that
-/// reaches here. Every `FileFinApiException.toString()` applies
-/// `redactUserInfo`; until M2's review, none of these four verdicts did.
-///
-/// Every outcome is **returned**, with two exceptions, and both are questions
-/// rather than verdicts about what is at this address.
-///
-/// A caller that cancels its own request gets `RequestCancelled` thrown (NF5).
-/// Turning that into a verdict would show "unreachable" for something the user
-/// did on purpose, and would leave a caller no way to tell its own
-/// cancellation from a real failure.
-///
-/// **A certificate problem is thrown too, and until M7.5 it was not.** [pinner]
-/// was not passed here at all, so `mapDioException` could not build one:
-/// F15's `CertificateNotTrusted` collapsed into `ConnectionFailed` and came
-/// back as `ServerUnreachable`, which F1 renders as *"Nothing answered at that
-/// address"*. A self-signed server — F15's stated common case — answered
-/// perfectly well and was reported as the one thing it was not, with no way
-/// for a user to accept it. `CertificatePinMismatch` had the same fate.
+/// Every message names the **redacted** address (§9) — this is F1's dialog
+/// text, and a saved-server URL is typed by the user. Every outcome is
+/// **returned** except two, which are questions rather than verdicts about the
+/// address: `RequestCancelled` (NF5) and a certificate problem ([pinner]).
 Future<ProbeResult> probe({
   required Dio dio,
   required FileFinUrls urls,

@@ -3,35 +3,16 @@ import 'package:meta/meta.dart';
 
 /// One server the user has saved (SPEC.md §7's `servers[]`).
 ///
-/// **No secrets, ever.** `settings.json` is plain JSON in the application
-/// support directory — readable by any app on a rooted device — so the session,
-/// the password and the certificate pin live in `SecretStore` instead (§9).
-/// [lastUser] is here because a cold start needs it to renew a session
-/// silently (F2), and a username is not a secret.
-///
-/// [wifiOnly] and [allowUnverifiedPlayback] are both **per server**, and both
-/// arrived at M4 with the code that reads them — §1's rule, and §13 is what
-/// made waiting free.
-///
-/// [allowUnverifiedPlayback] is D10. libmpv opens its own socket from native
-/// code and verifies no certificate by default (measured: mpv 0.41.0 accepted
-/// this repository's own self-signed certificate and logged the request;
-/// `--tls-verify=yes` refused it with `error:0A000086` and logged nothing), so
-/// F15's pin does not reach playback at all. The default is `false` — refuse —
-/// because the alternative is handing the session cookie to a peer whose
-/// certificate nothing checked. Turning it on is a per-server decision with a
-/// **persistent banner** attached, because what is given up is ongoing.
+/// **No secrets, ever** (§9): `settings.json` is plain JSON any app on a rooted
+/// device can read. [lastUser] is here because F2's silent renewal needs it.
+/// [wifiOnly] and [allowUnverifiedPlayback] are per server; the latter is D10.
 ///
 /// **A `baseUrl` carrying `userInfo` is a credential**, and the constructor
-/// refuses one. `https://sam:hunter2@nas.local/` is a thing people type into an
-/// address field; M3 shipped it straight to disk and back out as a `Basic`
-/// header. [SavedServer.fromTypedUrl] is where a typed URL loses it; this
-/// assert is what stops a second construction path from skipping that. It is an
-/// assert rather than a repair because a silent repair is a leak nobody ever
-/// finds, and rather than a throw because the caller who gets it wrong is us,
-/// at test time. **Asserts are off in a release build**, so the guarantee a
-/// shipped APK has is the one construction path plus the tests over it — which
-/// is why `add_server_page_test` asserts on the bytes that reach the disk.
+/// refuses one — M3 shipped one to disk and back out as a `Basic` header.
+/// [SavedServer.fromTypedUrl] is where a typed URL loses it; the assert stops
+/// a second path skipping that, and is an assert rather than a repair because
+/// a silent repair is a leak nobody finds. Asserts are off in release, so the
+/// shipped guarantee is that one path plus its test.
 @immutable
 class SavedServer {
   /// A saved server, identified by [id] and reached at [baseUrl].
@@ -154,17 +135,14 @@ class SavedServer {
 
 /// SPEC.md §7's `playback { … }` block — the settings that are not per server.
 ///
-/// **Adding this block discards every `settings.json` an earlier build wrote**,
-/// and that is §13 working as designed rather than an accident: the decoder is
-/// strict, a file with no `playback` key fails it, and `SettingsStore` turns a
-/// failed decode into [AppSettings.empty]. Nothing has shipped, so there are no
-/// installs to migrate — but it does happen to a developer with a saved server,
-/// which is why it is written down here and in STATE.md instead of being
-/// discovered.
+/// **Adding this block discarded every `settings.json` an earlier build
+/// wrote** — §13 working as designed: the decoder is strict and a failed decode
+/// becomes [AppSettings.empty]. Nothing has shipped, but it does happen to a
+/// developer with a saved server.
 ///
-/// [meteredWarnBytes] defaults to 500 MB: a few minutes of a high-bitrate
-/// stream, and well under a typical monthly allowance, so the prompt means
-/// something without firing on every television episode.
+/// [meteredWarnBytes] defaults to 500 MB: a few minutes of high-bitrate stream
+/// and well under a monthly allowance, so the prompt means something without
+/// firing on every television episode.
 @immutable
 class PlaybackPrefs {
   /// The playback settings, at their defaults unless a user changed them.
@@ -217,16 +195,12 @@ class PlaybackPrefs {
 /// Everything `settings.json` holds.
 ///
 /// **The decoder is strict on purpose, and this comment exists so nobody
-/// "fixes" it.** §8's tolerance rule governs the *server's* formats, where we
-/// are the ones who must cope with a field appearing. This is **our own**
-/// format, and §13 says our own formats change freely before release: no
-/// migration, no lenient decoder, no fallback branch reading what an earlier
-/// build wrote. A missing key here means the file was written by a build that
-/// no longer exists, and the right answer is to start over rather than to
-/// half-read it.
-///
-/// `SettingsStore` is what turns a strict decode failure into an empty
-/// settings object, so the strictness costs a user nothing.
+/// "fixes" it.** §8's tolerance governs the *server's* formats; this is our
+/// own, and §13 says ours change freely before release — no migration, no
+/// lenient decoder. A missing key means a build that no longer exists wrote
+/// the file, and the right answer is to start over rather than half-read it.
+/// `SettingsStore` turns the failure into empty settings, so it costs a user
+/// nothing.
 @immutable
 class AppSettings {
   /// The settings, or [AppSettings.empty] when there is no file.

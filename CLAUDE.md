@@ -10,7 +10,11 @@ external boundary — observed, documented, and versioned, never assumed.
 - Full technical specification → `SPEC.md`
 - Current state, milestone by milestone → `STATE.md`
 - Server API contract, cited to upstream source → `docs/server-api.md`
-- Architecture, layout, design decisions → `docs/architecture.md`
+- Architecture, layout, gate scope → `docs/architecture.md`
+- Decisions we made, and what each rejected → `docs/decisions/` (indexed by
+  `SPEC.md` §13)
+- How the server, libmpv, dio and Flutter were **measured** to behave →
+  `docs/field-notes.md`
 - Risks not yet retired, with their spikes → `docs/risks.md`
 
 ## Constitutional stipulations
@@ -24,30 +28,51 @@ no settings nobody reads. Every line must be reachable from a test or a
 running path. Delete dead code immediately — git remembers.
 *Enforced by: `just constitution` (placeholders), `just analyze`.*
 
-**§2 — Comment budget.** Explanatory `//` comments below 15% of source lines;
-above 25% is an error. Numerator is `//` only — not `///` doc comments.
-Denominator is non-blank lines, excluding generated files (`*.g.dart`,
-`*.freezed.dart`). Comments that pay rent: why a non-obvious choice was made,
-what invariant holds, which server quirk a workaround exists for. Comments
-that don't: what the code already says.
+**§2 — Comments describe interfaces. Everything longer lives in a document.**
 
-**One size exemption, and it is named here because an exemption a rule does
-not mention is a blind spot rather than a decision.** A file under **20**
-counted lines is not measured: below twenty, one comment moves the ratio by
-five points or more, so 15% and 25% cannot be stated to the precision they are
-written at. The number was 40 through M3 and was in the script only; at 40 it
-hid three files past the ERROR line — `filefin_api.dart` 32%, `filefin_core.dart`
-28%, `visible_rows.dart` 27% — while `just comments` printed "0 error(s), 0
-warning(s)" and STATE.md quoted that. All three were paid at M3.R by moving the
-rationale into the `///` doc comment of the declaration it describes. Every
-file still exempt **and over a line** is printed by the gate on every run, so
-the exemption is visible rather than inferred.
+A comment says what a reader of the declaration needs and cannot get from the
+code: why a non-obvious choice was made, what invariant holds, which server
+quirk a workaround exists for. It does not say what the code already says, and
+it does not carry the argument for a decision or the record of a measurement.
+Those have homes:
+
+- **`docs/decisions/`** — a choice *we* made, with the alternative that was
+  rejected. Indexed by `SPEC.md` §13, which keeps the D-numbering.
+- **`docs/field-notes.md`** — how the server, a dependency or the framework was
+  *observed* to behave. Not our choice, so not a decision.
+
+The comment then cites it: `/// See D12.` The prose is the asset; its location
+was the bug.
+
+**Two checks, and the first one is the rule.** No single comment block may
+exceed **12 lines** — a comment describing an interface is bounded by that
+interface, and twelve lines is four sentences. Separately, comment lines stay
+below **35%** of non-blank lines **tree-wide**, error at 45%, counting `//` and
+`///` together.
+
+**The ratio is tree-wide rather than per file, and that is on evidence.** Per
+file it punishes the shape this rule exists to produce: `ids.dart` scores 81%
+for being five one-line `extension type` declarations each with a sentence on
+them, and nothing about that file is wrong. Per file, the number correlates
+with declaration density rather than with verbosity. There is no size exemption
+any more, because a tree-wide ratio has no small-file sensitivity and a block
+is a count rather than a percentage.
+
+**The numerator changed at M8.R and the old thresholds do not carry over.** §2
+counted `//` and excluded `///` from both sides, on the reasoning that the
+budget was about narration. The outcome: the tree measured 3.8% `//` and 34.0%
+`///` — 37.9% overall — while `just comments` printed "0 error(s), 0
+warning(s)". Worse, the documented remediation exploited it: three files that
+breached §2 at M3.R were paid "by moving the rationale into the `///` doc
+comment", and were still 44–59% comments five milestones later. The fix was a
+change of comment syntax. Do not compare 15/25 with 35/45; they measure
+different things.
 
 **This budget governs Dart, and `just comments` measures Dart only.** The shell
 under `tool/` is deliberately exempt, and the exemption is a decision rather
-than an oversight: by §2's own arithmetic 12 of the 21 M0 shell scripts are past
-the 25% error line and all 21 are past the warn line. Every one of those
-comments is the kind §2 calls rent-paying — *why* process substitution instead
+than an oversight: nearly every script there would breach both the block cap and
+the ratio, several of them many times over. Every one of those comments is the
+kind §2 calls rent-paying — *why* process substitution instead
 of a pipe, *why* each constitutional check ends in `|| true`, *why* the seed's
 `meta.json` must be `version: 2`, *why* a guard keys on `pubspec.yaml` rather
 than on the source list. A gate script is read once a year, by someone deciding
@@ -230,7 +255,7 @@ does not exist.
 | Codegen | `just codegen-check` | build_runner then `git diff --exit-code` (§10) |
 | Test | `just test` | `dart test` for pure packages, `flutter test` for the app |
 | File size | `just file-size` | 400 soft / 600 hard lines; generated files exempt |
-| Comment budget | `just comments` | 15% warn / 25% error, `//` only (§2) |
+| Comment budget | `just comments` | 12-line block cap; 35/45% tree-wide, `//` and `///` (§2) |
 | Constitution | `just constitution` | ratcheting debt baseline (§1, §5–§9) |
 | Dependencies | `just deps` | unused-in-pubspec / imported-but-undeclared (§4) |
 | Mutation | `just mutants` | `mutation_test`, diff-scoped vs `FILEFIN_MUTANTS_BASE` (default `HEAD`; CI passes a real base) |
@@ -358,101 +383,16 @@ directory, because seeding is recoverable and a missing binary is not.
 
 ## Playback truths that keep biting
 
-Kept here because every one of them was discovered by reading upstream source,
-and each will look like a client bug when it happens:
+**Moved to [`docs/field-notes.md`](docs/field-notes.md) at M8.R.** Every one of
+them was discovered by reading upstream source or by measuring against a real
+binary, and each will look like a client bug when it happens — but they are
+facts about things we do not control rather than rules, and a rules document
+was the wrong place to keep them. The file also carries what was scattered
+across doc comments: the dio, Flutter and `audio_service` observations, and the
+server behaviours the endpoint documentation does not imply.
 
-- A non-browser-native file (HEVC, H.264-in-MKV) **cannot** be fetched as raw
-  bytes. `GET .../file/{n}` 307s to HLS with no override.
-- The reverse also holds: `.../hls/` returns **415** for a file that does *not*
-  need transcoding. There is no quality or bitrate parameter anywhere.
-- Server sessions are **in-memory and die on restart**. A `401` on any call is
-  normal, not exceptional — re-auth and retry once (see `filefin_api`).
-- No endpoint paginates. A large library returns everything in one array;
-  lists must be virtualised.
-- **"Browser-native" is decided by the PROBED container and codecs — but only
-  once the probe agent has reached the row.** `fileNeedsTranscode`
-  (`internal/server/playback.go:78`, v0.20.3) reads
-  `if f.Container != "" && f.VideoCodec != ""` and otherwise falls back to
-  `transcode.NeedsTranscode(f.Ext)`, whose whole vocabulary is
-  `{.mp4, .webm, .m4v}`. **`tool/testserver/seed.sh` never probes** — it
-  rebuilds the cache and stops, so `media_files.container` is `''` for every
-  seeded row and `probe_tasks` is empty — which means *every verdict measured
-  against the seeded library is the extension fallback*. M4's first pass read
-  that fallback as the rule and amended SPEC §3.4; it was wrong, and the
-  correction cost a whole exit criterion. **Both arms are in
-  `tool/spikes/e5_mkv_direct_play.sh`:** one VP9/Opus `.mkv`, unprobed →
-  `transcode:true` and **307**; after `POST /api/admin/probe/scan` the row
-  carries `matroska,webm` / `vp9` / `opus` → `transcode:false` and **200 with
-  `Accept-Ranges`**. So an `.mkv` *does* direct-play. Before concluding
-  anything about this endpoint, look at the three format columns first.
-- **The `307` to HLS carries `Content-Type: text/html`.** Go's `http.Redirect`
-  writes an HTML body, so a client that refuses HTML on this route refuses the
-  **success** case — while the SPA catch-all's `200 text/html`, which is the
-  real failure, sails through. `FileFinClient._refuseHtml` is therefore applied
-  to **2xx only** in `requirePlayable`, and the boundary is tested at 206, 300
-  and 302. Measured at M5.0/E-K; the M5 plan predicted the opposite.
-- **`Media(start:)` IS honoured on an HLS VOD playlist**, so F8 works over the
-  transcode path with no fallback. Measured at M5.0/E-D against mpv 0.41.0:
-  `startAt: 1200 ms` produced the position stream `[0, 1200, 1289, …]` where a
-  `startAt: 0` control produced `[0, 89, 156, …]`. The shipped Android and iOS
-  builds are a different question — `docs/verification-backlog.md` row C.
-- **The event order after a second `open()` is IDENTICAL on the direct and HLS
-  paths**, so `_switchTo`'s zeroing and `_positionIsCurrent` cover both.
-  Measured at M5.0/E-E, mid-playback, on the same host: an emptied `tracks`,
-  then `playing=false`, then `position=0`, then `duration=0`, then
-  `playing=true`, then the new file's real values. The load-bearing half of the
-  claim `player_controller.dart` records — `playing=false` before any position
-  or duration event — holds on both.
-- **mpv reports the PLAYLIST's duration on the HLS path, not the source
-  file's.** The seeded 3.000 s HEVC item comes back as **3.023 s**, from
-  `#EXTINF:3.023`. The 90% crossing is computed against whatever mpv says, so
-  an assertion written against the source duration is wrong by 23 ms and an
-  exact-equality one is simply wrong.
-- **`real_mpv_player_test.dart` segfaults intermittently, and it is not yours.**
-  `TestDeviceException(Shell subprocess crashed with segmentation fault.)`
-  takes the whole file down and every test reports "did not complete".
-  Measured at M5: **1 failure in 6 runs at HEAD with all changes stashed**, and
-  1 in 5 with them — so it is a property of the file and libmpv, not of a diff.
-  It sank three `just check` runs. Before hunting a cause in your own change,
-  re-run. Also worth checking first: **five orphaned `flutter_tester` processes
-  eight hours old** were found during M5, four of them still pointing at a
-  `scratchpad/mutcopy/` mutation copy from an earlier session. Killing them is
-  the cheapest thing to try, and `ps -eo pid,etime,command | grep
-  flutter_tester` is how to see them.
-- **libmpv verifies NO certificate by default.** Measured with mpv 0.41.0
-  against this repo's own `server_a.crt`: default → the server logged
-  `"GET … 200"`; `--tls-verify=yes` → `error:0A000086 certificate verify failed`
-  and the server logged nothing. F15's pin lives in `filefin_api`'s socket;
-  libmpv opens its own from native code. D10 is the answer.
-- **The progress interval is MEDIA time, never wall clock.** Upstream compares
-  `Math.abs(el.currentTime - lastMark) >= 30`. A wall-clock timer keeps
-  re-reporting a paused position, and it makes F9 need a fake clock to test.
-- **`Media`'s `httpHeaders` are cached GLOBALLY by URI** (`media_native.dart`:
-  `httpHeaders ?? cache[uri]?.httpHeaders`). A second `Media` for the same URL
-  with no headers inherits the first one's — so a negative control that shares a
-  process with its positive is **vacuous**. Measured: an open with no cookie
-  "succeeded" in-process and failed correctly in a fresh one.
-  **It is not reachable through this app's code, and saying so is the point of
-  keeping the entry** (M4.R/T6): the cache is consulted *only* when
-  `httpHeaders` is null, `MediaKitPlaybackHost.open` always passes
-  `request.headers`, and `PlaybackRequest.headers` is non-nullable — so the null
-  branch cannot be taken from here. The separate control file and its
-  distinguished URI stay as defence in depth against a future caller that stops
-  passing them; treat this as a trap in the library, not as a live defect.
-- **`VideoController` constructs fine under `flutter test`, and the thing that
-  hangs is DISPOSE.** The original entry said the constructor "does not
-  construct… it awaits a platform channel `flutter_tester` does not host", and
-  `tool/coverage-gate.sh` raised the coverage ratchet on that sentence.
-  Re-measured at M4.R in a plain `test()` body with a binding up:
-  `VideoController(player)` returns, `Video(controller: …)` returns, and
-  `player.dispose()` **never** returns. The constructor body is a fire-and-forget
-  `() async { … }()` whose first statement awaits `addPostFrameCallback`
-  (`video_controller.dart:71`), so it parks a closure rather than the caller —
-  but it also sets `isVideoControllerAttached`, and `Player.dispose()` then
-  awaits a completer only that parked closure completes. **Pumping** a `Video`
-  is the other non-terminating case and is the one M4.0 actually measured.
-  `real_mpv_player_test.dart` covers `buildSurface` by giving that test its own
-  `Player` and never disposing it.
+Read it before concluding anything about libmpv, the 307 to HLS, the transcode
+verdict, or why a test file crashes its own runner.
 
 ## D-pad reachability is a gate, not a review note
 

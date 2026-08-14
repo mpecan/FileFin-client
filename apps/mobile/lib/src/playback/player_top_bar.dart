@@ -156,8 +156,6 @@ class PlayerTopBar extends StatelessWidget {
 /// so naming a track before a selection would be a guess. The design's
 /// "English" is what the pill reads once one has been made.
 ///
-/// Public only so a test can reach it; nothing outside this library calls it
-/// (§5, `public_member_no_consumer`).
 @visibleForTesting
 String audioLabel(PlayerController controller) =>
     controller.audio?.label ?? 'Audio';
