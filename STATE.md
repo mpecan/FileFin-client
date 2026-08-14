@@ -221,6 +221,54 @@ It also gained the gate's comment-only filter, because the two must compute
 `changed` identically — two drivers that disagree about which files to mutate
 answer different questions while claiming to answer one.
 
+### The gate stopped mutating the tree you are standing in
+
+Four interrupted runs left a mutant on disk during M8.R. The reason none of them
+was cleaned up automatically is the one that matters: **on a dirty tree there is
+no safe automatic recovery.** `git checkout --` cannot tell the mutant from the
+uncommitted edit the run exists to test, so the only available repair destroys
+the work. That is why `check-mutants.sh` had no `trap` while
+`run-mutants-parallel.sh` has had one from the start — the parallel driver owns
+disposable worktrees and can clean up unconditionally.
+
+**A clean-tree precondition was considered and rejected.** The gate is
+diff-scoped against `HEAD` by default, so on a clean tree `git diff HEAD` is
+empty and it reports "nothing to mutate". Requiring a clean tree would mean it
+measures nothing locally and runs only in CI — which is exactly the silent
+no-op the `$CI` guard was added to catch. The precondition would have removed
+the hazard by removing the gate.
+
+So the mutations moved instead. `git stash create` writes a commit object for
+the current working tree without touching the stash stack, the index or the
+tree; the gate builds a detached worktree from it, copies in the
+untracked-but-not-ignored files (a brand-new file is precisely the code that has
+never been tested), resolves dependencies there, and mutates that. A `trap` on
+`EXIT INT TERM` removes it unconditionally, which it can now do safely because
+nothing in it is anybody's work.
+
+**Measured cost, apps/mobile: 7s** — 1s to add the worktree, 1s for `pub get`,
+5s for the first suite against a cold `.dart_tool`, against a run measured in
+minutes to hours. Measured rather than assumed, because the RAM-disk result
+below is the standing reminder that intuitions about this cache are unreliable.
+
+Proven four ways:
+
+| | expected | got |
+|---|---|---|
+| clean tree | nothing to mutate, exit 0, no worktree left | ✅ |
+| killed mid-run | real tree shows only the user's edit, no mutant | ✅ |
+| uncommitted change with an untested branch | exit 1, `1 surviving mutant` | ✅ |
+| uncommitted change, all mutants killed | exit 0 | ✅ |
+
+The second is the one that was impossible before, and it is the whole point:
+the mutant and the real code are now distinguishable by construction, because
+the mutant is never in the same tree as the code.
+
+This also retires the reason the gate had to run last in `just check` and had to
+not overlap another gate — it no longer edits the files the other gates read.
+It is still listed last, because a gate measured in minutes belongs after the
+ones measured in seconds.
+
 ### `dart analyze` cannot tell you whether a mutant is on disk
 
 Three mutation runs were interrupted during this work, and all three left a

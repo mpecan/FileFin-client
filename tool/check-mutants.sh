@@ -12,9 +12,15 @@ cd "$ROOT"
 # diff of one commit is the code this commit is actually responsible for.
 #
 # `mutation_test` REWRITES SOURCE FILES IN PLACE and restores them afterwards.
-# Nothing else may read those files while it runs, which is why `just check`
-# lists this gate last and why just's sequential dependency execution matters.
-# Do not parallelise it with another gate.
+# **Since M8.R those files live in a disposable worktree, not in yours** — see
+# the block above the package loop for why a clean-tree precondition was the
+# wrong fix and what `git stash create` buys instead.
+#
+# That removes the reason this gate had to be last in `just check` and had to
+# not overlap another gate: it no longer edits the files the other gates read.
+# It is still listed last, because a gate measured in minutes belongs after the
+# ones measured in seconds, and because being wrong about this once cost four
+# mutants left on disk.
 #
 # Exit statuses of the tool itself, verified against the pinned 1.7.1:
 #   0    every mutant killed
@@ -184,6 +190,56 @@ if [ -z "$changed" ]; then
     exit 0
 fi
 
+# THE MUTATIONS HAPPEN IN A DISPOSABLE WORKTREE, NEVER IN THE TREE YOU ARE
+# STANDING IN. This is the single most important line in the file.
+#
+# `mutation_test` rewrites a source, runs the suite, and restores it. Interrupt
+# it — a timeout, a Ctrl-C, a SIGTERM, a laptop lid — and the mutant it was
+# holding stays on disk. That happened FOUR times during M8.R alone, and one of
+# them was `500 * 1000 * -1000`, which `dart analyze` reports as "No issues
+# found" because a negated literal is perfectly good Dart.
+#
+# The reason it was never simply cleaned up is the one that matters: **on a
+# dirty tree there is no safe automatic recovery.** A `git checkout --` cannot
+# tell the mutant from the uncommitted edit the run exists to test, so the only
+# available repair destroys the work. That is why this script had no `trap`
+# while run-mutants-parallel.sh has had one all along — the parallel driver owns
+# disposable worktrees and can clean up unconditionally. Now so can this.
+#
+# A CLEAN-TREE PRECONDITION WOULD HAVE BEEN THE WRONG FIX, and it is worth
+# saying why so nobody proposes it again. The gate is diff-scoped against
+# `HEAD` by default, so on a clean tree `git diff HEAD` is empty and it reports
+# "nothing to mutate". Requiring a clean tree would mean it measures nothing
+# locally and runs only in CI — which is exactly the silent no-op the `$CI`
+# guard above exists to catch.
+#
+# `git stash create` is what makes this possible: it writes a commit object for
+# the current working tree WITHOUT touching the stash stack, the index or the
+# tree. Untracked files are not in that commit, so they are copied in — and they
+# matter, because a brand-new file is precisely the code that has never been
+# tested and `changed` deliberately includes it.
+#
+# Measured cost, apps/mobile: 1s to add the worktree, 1s for `pub get`, 5s for
+# the first suite against a cold `.dart_tool` — 7s against a run measured in
+# minutes to hours. Measured rather than assumed, because the RAM-disk
+# experiment (STATE.md, M8) is the standing reminder that intuitions about this
+# particular cache are unreliable.
+WT="${TMPDIR:-/tmp}/filefin-mutants-wt.$$"
+cleanup_worktree() {
+    [ -n "${WT:-}" ] || return 0
+    git worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"
+    git worktree prune >/dev/null 2>&1 || true
+}
+trap cleanup_worktree EXIT INT TERM
+
+snapshot="$(git stash create 2>/dev/null || true)"
+git worktree add --detach "$WT" "${snapshot:-HEAD}" >/dev/null 2>&1 \
+    || fail "could not create the mutation worktree at $WT"
+git ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do
+    mkdir -p "$WT/$(dirname "$f")" && cp "$f" "$WT/$f"
+done
+echo "mutants: mutating a disposable worktree; your working tree is not touched"
+
 # Group by owning package: mutation_test runs the test command from a working
 # directory, and `dart test` only means anything inside a package.
 packages=$(printf '%s\n' "$changed" | sed 's|/lib/.*||' | sort -u)
@@ -224,14 +280,25 @@ for pkg in $packages; do
        for which test runner mutation_test should use. Add one here." ;;
     esac
 
+    # Resolve dependencies in the worktree first. It has no `.dart_tool`, and
+    # the test command carries `--no-pub`, so without this the first mutant
+    # fails to run rather than resolving for itself.
+    (cd "$WT/$pkg" && { flutter pub get >/dev/null 2>&1 || dart pub get >/dev/null 2>&1; }) \
+        || fail "$pkg — could not resolve dependencies in the mutation worktree"
+
     # Time the suite on the UNMUTATED tree, once, and derive the per-mutant
     # timeout from it. mutation_test validates this baseline itself before it
     # mutates anything, so the run happens either way; measuring it here costs
     # one extra pass and buys a timeout that tracks the suite instead of a
     # number someone guessed in M0.
+    #
+    # Measured IN THE WORKTREE, which is where the mutants will run — and it is
+    # a cold measurement there, which the derivation below already relies on
+    # being safe: a cold baseline over-estimates, and over-estimating a timeout
+    # only costs wall clock on a mutant that was going to fail anyway.
     baseline_start=$(date +%s)
     set +e
-    (cd "$pkg" && eval "$test_cmd") >/dev/null 2>&1
+    (cd "$WT/$pkg" && eval "$test_cmd") >/dev/null 2>&1
     baseline_rc=$?
     set -e
     baseline_secs=$(( $(date +%s) - baseline_start ))
@@ -385,7 +452,7 @@ for pkg in $packages; do
     # lost (CLAUDE.md's ratchet section), and raising it is an edit here that a
     # reviewer sees in the diff.
     [ "$run_cap" -lt 600 ] && run_cap=600
-    (cd "$pkg" && timeout --kill-after=30s "${run_cap}s" \
+    (cd "$WT/$pkg" && timeout --kill-after=30s "${run_cap}s" \
         dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
         > "$log" 2>&1
     rc=$?
@@ -397,7 +464,7 @@ for pkg in $packages; do
         echo "       Usual cause: a mutant that makes the code loop forever — a"
         echo "       bound written as a condition in front of a recursive call,"
         echo "       where flipping the operator removes the bound. Find it with:"
-        echo "         while :; do git -C $pkg diff --stat; sleep 10; done"
+        echo "         while :; do git -C $WT diff --stat; sleep 10; done"
         echo "       and look for the source that stays mutated. The fix is to"
         echo "       make the recursion structurally bounded (pass the budget as"
         echo "       an argument) rather than to widen this cap."
