@@ -120,6 +120,26 @@ void main() {
     expect(seen, ['POST /api/login {"username":"sam","password":"hunter2"}']);
   });
 
+  test('signInWithToken reaches GET /api/me with the bearer header', () async {
+    // A separate client, deliberately: `signInWithToken` only exists on a
+    // token-mode `FileFinClient`, and this suite's shared `api` is built by
+    // `forServer` (password mode) for every other test in this file.
+    final tokenClient = FileFinClient.forTokenServer(
+      server: const ServerId('home-token'),
+      baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      secrets: InMemorySecretStore(),
+    );
+    final tokenApi = FileFinLibraryApi(tokenClient);
+    addTearDown(tokenApi.close);
+
+    final result = await tokenApi.signInWithToken(
+      const ApiToken('ffpat_good'),
+    );
+
+    expect(result.user, 'sam');
+    expect(seen, ['GET /api/me']);
+  });
+
   test('categories reaches GET /api/categories', () async {
     final categories = await api.categories();
 

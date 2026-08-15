@@ -34,8 +34,8 @@ void main() {
       ..restoreResult = null;
     File('${dir.path}/settings.json').writeAsStringSync(
       '{"servers":[{"id":"a","name":"Attic NAS", '
-      '"baseUrl":"http://nas.local","lastUser":"sam","wifiOnly":false,'
-      '"allowUnverifiedPlayback":false}],'
+      '"baseUrl":"http://nas.local","lastUser":"sam","authMode":"password",'
+      '"wifiOnly":false,"allowUnverifiedPlayback":false}],'
       '"playback":{"progressIntervalSecs":30,"meteredWarnBytes":500000000},'
       '"selectedServerId":"a"}',
     );

@@ -57,6 +57,9 @@ base class FakeLibraryApi extends LibraryApi {
   /// What `login()` answers with, or throws.
   Object? loginResult;
 
+  /// What `signInWithToken()` answers with, or throws.
+  Object? tokenSignInResult;
+
   /// Holds `restore()` open until a test completes it.
   ///
   /// F2's cold start builds a client BEFORE it knows whether the session is
@@ -190,6 +193,10 @@ base class FakeLibraryApi extends LibraryApi {
   @override
   Future<AuthResult> login(Credentials credentials) async =>
       _answer<AuthResult>(loginResult, 'login(${credentials.username})', null);
+
+  @override
+  Future<AuthResult> signInWithToken(ApiToken token) async =>
+      _answer<AuthResult>(tokenSignInResult, 'signInWithToken', null);
 
   @override
   Future<void> restore() async {

@@ -156,4 +156,26 @@ void main() {
     await expectLater(api.restore(), throwsA(isA<SessionExpired>()));
     expect(seen, isEmpty);
   });
+
+  test(
+    'a token-mode SavedServer gets a token-mode client, not a password one',
+    () {
+      // `login()` only exists on a password-mode `FileFinClient` — a
+      // `StateError` from it is the observable proof that `apiFactory` took
+      // the `AuthMode.token` branch, without needing a real socket.
+      final server = SavedServer(
+        id: const ServerId('https://nas.local'),
+        name: 'nas',
+        baseUrl: Uri.parse('https://nas.local'),
+        authMode: AuthMode.token,
+      );
+      final api = deps().apiFactory(server);
+      addTearDown(api.close);
+
+      expect(
+        () => api.login(const Credentials(username: 'x', password: 'y')),
+        throwsStateError,
+      );
+    },
+  );
 }

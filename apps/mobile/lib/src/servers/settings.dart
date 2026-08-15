@@ -1,17 +1,28 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:meta/meta.dart';
 
+/// How a saved server is signed into. Not a secret — it says which kind of
+/// credential to ask for, never the credential itself.
+enum AuthMode {
+  /// Username and password, with a silently renewed session.
+  password,
+
+  /// A personal access token, pasted from the server's own Settings page.
+  token,
+}
+
 /// One server the user has saved.
 ///
 /// **No secrets, ever**: `settings.json` is plain JSON any app on a rooted
-/// device can read. [lastUser] is here because a silent renewal needs it.
-/// [wifiOnly] and [allowUnverifiedPlayback] are both per server.
+/// device can read. [lastUser] is here because a silent renewal needs it,
+/// [authMode] so a cold start builds the right client without asking, and
+/// [wifiOnly]/[allowUnverifiedPlayback] are both per server.
 ///
 /// **A `baseUrl` carrying `userInfo` is a credential**, and the constructor
-/// refuses one: letting it through writes a password to disk and sends it back
-/// out as a `Basic` header. [SavedServer.fromTypedUrl] is where a typed URL
-/// loses it, and the assert stops a second path skipping that. Asserts are off
-/// in release, so the shipped guarantee is that one path plus its test.
+/// refuses one: letting it through writes a password to disk and sends it
+/// back out as a `Basic` header. [SavedServer.fromTypedUrl] is where a typed
+/// URL loses it, and the assert stops a second path skipping that. Asserts
+/// are off in release, so the shipped guarantee is that path plus its test.
 @immutable
 class SavedServer {
   /// A saved server, identified by [id] and reached at [baseUrl].
@@ -20,6 +31,7 @@ class SavedServer {
     required this.name,
     required this.baseUrl,
     this.lastUser = '',
+    this.authMode = AuthMode.password,
     this.wifiOnly = false,
     this.allowUnverifiedPlayback = false,
   }) : assert(
@@ -51,6 +63,7 @@ class SavedServer {
     name: json['name']! as String,
     baseUrl: Uri.parse(json['baseUrl']! as String),
     lastUser: json['lastUser']! as String,
+    authMode: AuthMode.values.byName(json['authMode']! as String),
     wifiOnly: json['wifiOnly']! as bool,
     allowUnverifiedPlayback: json['allowUnverifiedPlayback']! as bool,
   );
@@ -64,8 +77,13 @@ class SavedServer {
   /// Where it lives.
   final Uri baseUrl;
 
-  /// The account last signed in, for a silent renewal. Not a secret.
+  /// The account last signed in, for a silent renewal. Not a secret. Only
+  /// meaningful for [AuthMode.password] — a token has no separate account
+  /// name this client ever asks for.
   final String lastUser;
+
+  /// The credential kind the last successful sign-in used.
+  final AuthMode authMode;
 
   /// The hard refusal: never play over a metered connection at all.
   final bool wifiOnly;
@@ -80,12 +98,24 @@ class SavedServer {
     'name': name,
     'baseUrl': baseUrl.toString(),
     'lastUser': lastUser,
+    'authMode': authMode.name,
     'wifiOnly': wifiOnly,
     'allowUnverifiedPlayback': allowUnverifiedPlayback,
   };
 
-  /// A copy with [lastUser] replaced, written after a successful sign-in.
-  SavedServer withLastUser(String user) => copyWith(lastUser: user);
+  /// A copy with [lastUser] replaced, written after a successful password
+  /// sign-in.
+  SavedServer withLastUser(String user) =>
+      copyWith(lastUser: user, authMode: AuthMode.password);
+
+  /// A copy with [AuthMode.token] recorded, written after a successful token
+  /// sign-in.
+  ///
+  /// [lastUser] is cleared rather than left stale: it would otherwise keep
+  /// showing an account name from a password sign-in that may not even be
+  /// the one the token belongs to.
+  SavedServer withTokenAuth() =>
+      copyWith(lastUser: '', authMode: AuthMode.token);
 
   /// A copy with the playback settings a user changed.
   ///
@@ -94,6 +124,7 @@ class SavedServer {
   /// `just dupes` exists to notice.
   SavedServer copyWith({
     String? lastUser,
+    AuthMode? authMode,
     bool? wifiOnly,
     bool? allowUnverifiedPlayback,
   }) => SavedServer(
@@ -101,6 +132,7 @@ class SavedServer {
     name: name,
     baseUrl: baseUrl,
     lastUser: lastUser ?? this.lastUser,
+    authMode: authMode ?? this.authMode,
     wifiOnly: wifiOnly ?? this.wifiOnly,
     allowUnverifiedPlayback:
         allowUnverifiedPlayback ?? this.allowUnverifiedPlayback,
@@ -113,6 +145,7 @@ class SavedServer {
       other.name == name &&
       other.baseUrl == baseUrl &&
       other.lastUser == lastUser &&
+      other.authMode == authMode &&
       other.wifiOnly == wifiOnly &&
       other.allowUnverifiedPlayback == allowUnverifiedPlayback;
 
@@ -122,6 +155,7 @@ class SavedServer {
     name,
     baseUrl,
     lastUser,
+    authMode,
     wifiOnly,
     allowUnverifiedPlayback,
   );

@@ -10,6 +10,7 @@ import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
 import 'package:filefin_mobile/src/scope.dart';
 import 'package:filefin_mobile/src/servers/platform_secret_store.dart';
+import 'package:filefin_mobile/src/servers/settings.dart';
 import 'package:filefin_mobile/src/servers/settings_store.dart';
 import 'package:filefin_mobile/src/shell/form_factor.dart';
 import 'package:flutter/widgets.dart';
@@ -61,13 +62,21 @@ Widget buildApp(Directory support, {required FormFactor formFactor}) {
       // when that pin changes. Until nothing passed it and every shipped
       // client ran `CertificatePinner(pin: null)`.
       apiFactory: (server, {pin}) => FileFinLibraryApi(
-        FileFinClient.forServer(
-          server: server.id,
-          baseUrl: server.baseUrl,
-          secrets: secrets,
-          pin: pin,
-          username: server.lastUser.isEmpty ? null : server.lastUser,
-        ),
+        switch (server.authMode) {
+          AuthMode.password => FileFinClient.forServer(
+            server: server.id,
+            baseUrl: server.baseUrl,
+            secrets: secrets,
+            pin: pin,
+            username: server.lastUser.isEmpty ? null : server.lastUser,
+          ),
+          AuthMode.token => FileFinClient.forTokenServer(
+            server: server.id,
+            baseUrl: server.baseUrl,
+            secrets: secrets,
+            pin: pin,
+          ),
+        },
       ),
     ),
     child: FileFinApp(formFactor: formFactor),

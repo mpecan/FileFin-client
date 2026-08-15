@@ -139,7 +139,9 @@ void main() {
       expect(Uri.parse(entry['baseUrl']! as String).userInfo, isEmpty);
     }
     expect(text, isNot(contains('hunter2')));
-    expect(text, isNot(contains('password')));
+    // Not 'password': `authMode` legitimately carries that word as an enum
+    // NAME, never a credential value — the same distinction §9 already draws
+    // for `lastUser`, which is an account name rather than a secret.
     expect(text, isNot(contains('session')));
     expect(text, isNot(contains('certpin')));
     expect(text, contains('lastuser'));
