@@ -171,3 +171,13 @@ flutter:
         - asset: assets/fonts/IBMPlexMono-Regular.ttf
   assets:
     - assets/fonts/OFL.txt
+    # Mozilla's CA root bundle, as distributed by curl (MPL-2.0, a Compatible
+    # Licence in the EUPL's own Appendix). The shipped iOS libmpv links mbedTLS
+    # and never touches Apple's trust store, so without this it verifies against
+    # no anchors and refuses an ordinary public certificate. Android does not
+    # read it — MainActivity exports the device's live store, which is current
+    # and holds enterprise roots this snapshot cannot.
+    #
+    # Refresh with `curl -O https://curl.se/ca/cacert.pem` and check the digest
+    # against https://curl.se/ca/cacert.pem.sha256 before committing.
+    - assets/ca/cacert.pem

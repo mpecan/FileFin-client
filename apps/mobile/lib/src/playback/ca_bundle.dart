@@ -1,46 +1,52 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// The device's live CA trust store, exported as a PEM file for mpv.
+/// The trust store libmpv verifies against, because it will not find one.
 ///
-/// Android's system trust store is not a PEM bundle — it is individual DER
-/// files, and inside the Conscrypt APEX on API 34+. libmpv reads neither, so
-/// every `tls-verify=yes` connection fails with "Failed to open".
+/// The shipped players link mbedTLS on both platforms and have no system trust
+/// store, so with no `tls-ca-file` they verify against no anchors at all and
+/// refuse an ordinary public certificate. Two answers, in order of preference:
 ///
-/// [path] exports the device's real trust store through a platform channel and
-/// returns a file `tls-ca-file` can be handed, regenerated on every cold start
-/// so new enterprise CAs are picked up. iOS and desktop need no bundle.
-///
-/// `abstract final` rather than a private constructor, which would be a line
-/// nothing could ever run.
+/// 1. **the device's own store**, exported through [channel]. Current, and it
+///    holds enterprise roots a shipped file cannot. Only Android answers.
+/// 2. **the roots shipped in the app**, written to [cacheDirectory]. iOS has
+///    no API to enumerate system roots, so this is its only answer.
 abstract final class CaBundle {
   /// The channel `MainActivity` answers `exportCaBundle` on.
-  ///
   @visibleForTesting
   static const channel = MethodChannel('dev.filefin.filefin_mobile/ca_bundle');
+
+  /// The bundled roots: Mozilla's, as distributed by curl.
+  @visibleForTesting
+  static const asset = 'assets/ca/cacert.pem';
+
+  /// Where the shipped roots are written when the host has no store to export.
+  ///
+  /// Injected rather than resolved here, because resolving it means a second
+  /// `path_provider` call and `main()` already holds a directory. It is also
+  /// what lets every arm below run in an ordinary test.
+  static Directory? cacheDirectory;
+
+  /// The bundle the shipped roots are read from. Swapped in tests.
+  @visibleForTesting
+  static AssetBundle assets = rootBundle;
 
   static Future<String?>? _pending;
   static String? _path;
 
-  /// The exported PEM file path, or null when unavailable or still loading.
-  ///
-  /// Returns null on any host with no handler for the channel — iOS, desktop
-  /// and the test runner — and when the export fails.
-  ///
-  /// **No `Platform.isAndroid` guard, and its removal is the point.** The guard
-  /// made every line below unreachable under `flutter test`, which reports
-  /// macOS, so the export and its error arms were shipped untested. It bought
-  /// nothing either: a host with no handler answers `MissingPluginException`,
-  /// which is what iOS and desktop do and what [_export] already catches.
+  /// A PEM file libmpv can be handed as `tls-ca-file`, or null if neither
+  /// answer is available.
   static Future<String?> get path async {
     if (_path != null) return _path;
-    return _pending ??= _export();
+    return _pending ??= _resolve();
   }
 
-  /// Forgets what was exported, so each test starts from nothing.
+  /// Forgets what was resolved, so each test starts from nothing.
   ///
   /// The cache is `static` because there is one trust store per process and
-  /// re-exporting it on every open would write a file per playback. That makes
+  /// re-resolving it on every open would write a file per playback. That makes
   /// it state a test has to be able to reset.
   @visibleForTesting
   static void reset() {
@@ -48,14 +54,44 @@ abstract final class CaBundle {
     _pending = null;
   }
 
-  static Future<String?> _export() async {
+  static Future<String?> _resolve() async =>
+      _path = await _exportFromHost() ?? await _writeShippedRoots();
+
+  static Future<String?> _exportFromHost() async {
+    String? exported;
     try {
-      _path = await channel.invokeMethod<String>('exportCaBundle');
+      exported = await channel.invokeMethod<String>('exportCaBundle');
     } on MissingPluginException {
-      _path = null;
+      return null;
     }
-    // An empty string means the KeyStore was empty — treat as unavailable.
-    if (_path != null && _path!.isEmpty) _path = null;
-    return _path;
+    // An empty string means the KeyStore was empty. Handing mpv a path to an
+    // empty file is worse than handing it none: `tls-verify` would then trust
+    // nothing at all, which is the failure this class exists to prevent.
+    return (exported == null || exported.isEmpty) ? null : exported;
+  }
+
+  /// Materialises the shipped roots into a file, **overwriting** any previous
+  /// copy.
+  ///
+  /// Rewritten on every cold start rather than written once: an app update
+  /// ships a new bundle, and a cached copy from the previous version would
+  /// keep a revoked root alive and hide a newly added one for as long as the
+  /// install lasts.
+  static Future<String?> _writeShippedRoots() async {
+    final dir = cacheDirectory;
+    if (dir == null) return null;
+    try {
+      final pem = await assets.loadString(asset);
+      if (pem.isEmpty) return null;
+      final file = File('${dir.path}/cacert.pem');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(pem, flush: true);
+      return file.path;
+    } on Exception {
+      // A trust store we cannot write is not a reason to fail the launch. The
+      // caller leaves `tls-ca-file` unset, and playback refuses on its own
+      // terms rather than crashing here.
+      return null;
+    }
   }
 }

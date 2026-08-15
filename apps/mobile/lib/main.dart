@@ -4,6 +4,7 @@ import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_mobile/src/app.dart';
 import 'package:filefin_mobile/src/library_api.dart';
 import 'package:filefin_mobile/src/playback/audio_service_now_playing.dart';
+import 'package:filefin_mobile/src/playback/ca_bundle.dart';
 import 'package:filefin_mobile/src/playback/media_kit_playback_host.dart';
 import 'package:filefin_mobile/src/playback/mpv_player.dart';
 import 'package:filefin_mobile/src/playback/network_status.dart';
@@ -40,6 +41,10 @@ Future<void> main() async {
 /// plugin call on its critical path.
 @visibleForTesting
 Widget buildApp(Directory support, {required FormFactor formFactor}) {
+  // Where the shipped CA roots are written when the host exports no store of
+  // its own, which is every platform but Android. Injected from the directory
+  // already resolved above rather than resolving a second one.
+  CaBundle.cacheDirectory = support;
   final secrets = PlatformSecretStore();
   return FileFinScope(
     dependencies: AppDependencies(

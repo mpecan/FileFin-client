@@ -221,6 +221,54 @@ It also gained the gate's comment-only filter, because the two must compute
 `changed` identically — two drivers that disagree about which files to mutate
 answer different questions while claiming to answer one.
 
+### iOS playback over HTTPS was broken, and the code said it could not be
+
+The first run on real iOS hardware found it: the library browsed, every file
+refused to play. The cause was a comment.
+
+`media_kit_playback_host.dart` said "on every other platform the system libmpv
+uses the OS trust store natively", and that sentence shipped for four
+milestones without ever being measured. Read off the built app instead:
+**`Mbedtls.framework` is in `Runner.app/Frameworks`, and the `Mpv` binary
+references Apple's Security framework zero times.** The shipped iOS player links
+mbedTLS, has no system trust store, and iOS implements none of this app's method
+channels — so `tls-ca-file` was never set and `tls-verify=yes` verified against
+**no anchors at all**. A valid Let's Encrypt certificate failed exactly like a
+self-signed one.
+
+`verification-backlog.md` row 20 had predicted this in as many words: "a build
+with no CA bundle would fail `tls-verify=yes` for an ordinary public
+certificate". The prediction sat in the backlog while the contradicting comment
+sat in the code, and the comment won for four milestones because nothing
+measured either.
+
+**The Android fix does not port.** iOS has no public API to enumerate system
+roots — `SecTrustCopyAnchorCertificates` is macOS-only — so there is nothing to
+export. D24 is the answer: the device's own store where a host can export one,
+Mozilla's roots shipped in the app where it cannot, device store winning
+whenever both exist.
+
+Two properties are worth more than the fix itself, and both have tests written
+red first: **the host's store beats the snapshot**, because it is current and
+holds enterprise roots; and **a stale cached copy is overwritten**, because an
+app update ships new roots and a file from the previous version would otherwise
+keep a revoked one alive for the life of the install.
+
+**The cost is a divergence, recorded rather than discovered later.** On iOS the
+player's trust is now narrower than `dio`'s: a private CA the device trusts
+authenticates every API call and is still refused by the player. The symptom is
+a library that browses perfectly and will not play, which reads as a playback
+bug. Backlog row 21.
+
+**A process note.** Two guesses were made and checked before this one was found
+— `detectFormFactor` (already catches `MissingPluginException`) and a
+device-specific fault. Reading the device console and then the linked frameworks
+was what produced the answer. The earlier crash on launch was not a defect
+either: a Flutter **debug** build cannot be launched from the home screen on
+iOS 14+, because debug mode needs JIT and therefore a debugger. Release runs
+fine. Both cross-checks the situation invited — try the iPhone, try the
+simulator — would have pointed away from the cause.
+
 ### The entry point, the licence, and a gate that keeps them honest
 
 The M8.R review's cheapest finding was that there was **no README**: the entry

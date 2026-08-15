@@ -55,14 +55,11 @@ final class MediaKitPlaybackHost extends PlaybackHost {
   /// second of the beginning first.
   @override
   Future<void> open(PlaybackRequest request) async {
-    // On Android, mpv uses mbedTLS or GnuTLS, neither of which knows where
-    // the system trust store is. The device's live CA certificates (system
-    // AND user-installed) are exported to a PEM file at startup by
-    // `CaBundle`; handing that to mpv as `tls-ca-file` gives it the same
-    // trust store the platform HTTP stack uses, and `tls-verify=yes` then
-    // verifies against the device's actual roots rather than a bundled
-    // snapshot. On every other platform the system libmpv uses the OS trust
-    // store natively.
+    // Both shipped players link mbedTLS, which has no system trust store on
+    // either platform: with no `tls-ca-file` they verify against no anchors at
+    // all and refuse an ordinary public certificate. `CaBundle` answers with
+    // the device's own store where the host can export one, and the roots
+    // shipped in the app where it cannot.
     final caPath = await CaBundle.path;
     if (caPath != null) {
       await _player.setProperty('tls-ca-file', caPath);

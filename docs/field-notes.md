@@ -192,6 +192,26 @@ to test.
 
 ## libmpv and `media_kit`
 
+### The shipped players link mbedTLS, and iOS has no trust store behind it
+
+Read off the built app rather than assumed. `Mbedtls.framework`,
+`Mbedcrypto.framework` and `Mbedx509.framework` are all in
+`Runner.app/Frameworks`, and `otool -L` on the `Mpv` binary references Apple's
+**Security framework zero times** — so it never consults the iOS trust store.
+`strings` finds the `tls-ca-file` option and no compiled-in default CA path.
+
+The consequence is that on iOS, `tls-verify=yes` with no `tls-ca-file` verifies
+against **no anchors at all**, and a valid public certificate fails exactly like
+a self-signed one. Confirmed on an iPad Pro (iOS 26.6): playback of an
+HTTPS-served file failed until the app began shipping CA roots, and worked
+immediately afterwards.
+
+**The code asserted the opposite** — "on every other platform the system libmpv
+uses the OS trust store natively" — and that sentence shipped for four
+milestones. `verification-backlog.md` row 20 had predicted the failure exactly.
+There is no public iOS API to enumerate system roots, which is why the answer is
+a shipped snapshot rather than an export.
+
 ### libmpv verifies NO certificate by default
 
 Measured with mpv 0.41.0 against this repo's own `server_a.crt`: default → the
