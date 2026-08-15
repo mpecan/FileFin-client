@@ -88,10 +88,8 @@ void main() {
     final request = await probe.getUrl(
       client.fileUrl(detail.id, const FileIndex(0)),
     );
-    request.headers.add(
-      HttpHeaders.cookieHeader,
-      '$sessionCookieName=${(await client.sessions.sessionCookie())!}',
-    );
+    final sessionHeaders = await client.sessions.headers();
+    request.headers.add(HttpHeaders.cookieHeader, sessionHeaders!['Cookie']!);
     final response = await request.close();
     await response.drain<void>();
     expect(response.statusCode, 200);

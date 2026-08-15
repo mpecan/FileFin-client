@@ -150,6 +150,9 @@ class StubRequest {
   /// The `Cookie` header, or `null` when the request carried none.
   String? get cookie => headers['cookie'];
 
+  /// The `Authorization` header, or `null` when the request carried none.
+  String? get authorization => headers['authorization'];
+
   @override
   String toString() => '$method $path cookie=${cookie ?? '<none>'}';
 }

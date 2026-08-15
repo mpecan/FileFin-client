@@ -80,6 +80,37 @@ class ClientHarness {
   final LoginCounter logins;
 }
 
+/// A token-mode client wired the way `forTokenServer` wires one, but with an
+/// injected `Dio` so a test can count requests the way `ClientHarness` does.
+///
+/// A separate function rather than a second mode on `ClientHarness`: the two
+/// modes share nothing wireable (no jar, no `authDio` cookie manager), so a
+/// unified builder would be branches inside branches for no reader's benefit.
+FileFinClient buildTokenClient(
+  StubServer stub,
+  FileFinUrls urls,
+  SecretStore secrets, {
+  Duration timeout = const Duration(seconds: 5),
+}) {
+  final authDio = Dio(
+    fileFinBaseOptions(baseUrl: stub.baseUrl, timeout: timeout),
+  );
+  final dio = Dio(fileFinBaseOptions(baseUrl: stub.baseUrl, timeout: timeout));
+  return FileFinClient(
+    server: serverId,
+    dio: dio,
+    authDio: authDio,
+    jar: DefaultCookieJar(),
+    urls: urls,
+    sessions: TokenAuthSession(
+      authDio: authDio,
+      urls: urls,
+      secrets: secrets,
+      server: serverId,
+    ),
+  );
+}
+
 /// Serves `POST /api/login`, handing out a distinguishable cookie each time.
 ///
 /// `sess-1`, `sess-2`, … so a test can assert *which* session a request

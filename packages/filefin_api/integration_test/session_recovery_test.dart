@@ -94,7 +94,7 @@ void main() {
     );
     addTearDown(fresh.close);
 
-    final me = await fresh.sessions.restore();
+    final me = await (fresh.sessions as SessionManager).restore();
 
     expect(me.user, seededCredentials.username);
   });

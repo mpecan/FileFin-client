@@ -14,7 +14,9 @@ library;
 
 export 'package:dio/dio.dart' show CancelToken;
 
+export 'src/api_token.dart';
 export 'src/auth_interceptor.dart';
+export 'src/auth_session.dart';
 export 'src/client.dart';
 export 'src/credentials.dart';
 export 'src/error_mapper.dart';
@@ -29,4 +31,6 @@ export 'src/tls/certificate_pinner.dart';
 export 'src/tls/fingerprint.dart';
 export 'src/tls/pin_decision.dart';
 export 'src/tls/pinned_adapter.dart';
+export 'src/token_auth_interceptor.dart';
+export 'src/token_auth_session.dart';
 export 'src/transport.dart';
