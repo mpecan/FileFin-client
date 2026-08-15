@@ -1,7 +1,7 @@
 # FileFin server API — the contract we observe
 
-**Verified against:** FileFin `v0.20.3`, commit
-`9399feb8f2f20cfad9f8d5be070d723faff5b3f6`. Source read 2026-08-08. Every
+**Verified against:** FileFin `v0.21.0`, commit
+`662b01a198bfee6c3f22094f2a797b720a4164da`. Source read 2026-08-15. Every
 shape below is cited to the upstream file and line that proves it, and every
 endpoint we call has a captured payload under `test/fixtures/`
 (`test/fixtures/PROVENANCE.md` says which request produced which file).
@@ -34,9 +34,15 @@ encodes with the standard library. Numbers are JSON numbers, never strings.
 
 **Authentication.** Everything except `GET /api/state`, `POST /api/login` and
 `POST /api/logout` is wrapped in `s.auth(...)` (`server/server.go:259-284`).
-The middleware (`server/auth.go:79-93`) reads the `filefin_session` cookie and
-answers `401 unauthorized` — as a plain-text body, not JSON — when the cookie
-is absent *or* names a session the in-memory store no longer knows.
+The middleware (`server/auth.go:83-97`) accepts either of two credentials:
+the `filefin_session` cookie, or — since 0.21.0 — an `Authorization: Bearer
+<token>` header naming a personal access token, checked by
+`authUserFromBearer` (`server/auth.go:106-130`) against every account's
+minted tokens on a non-blocked account, constant-time. Either miss answers
+`401 unauthorized` as a plain-text body, not JSON. A token carries the full
+permissions of the account that minted it, has no expiry, and this client
+never mints or revokes one itself — only `TokenAuthSession.verify` proves one
+already pasted in against `GET /api/me` (D26).
 
 **A 401 is routine, not exceptional.** Sessions live in memory and die with the
 process (SPEC.md L1). F3 re-authenticates and retries once, transparently. The
