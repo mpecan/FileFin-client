@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8 and up composes the icon from these two layers and masks the
+     result to whatever shape the launcher uses. Without this the legacy
+     mipmap is shrunk and dropped onto a white plate, which puts a pale ring
+     around a mark whose own ground is nearly black. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

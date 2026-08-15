@@ -1,3 +1,4 @@
+import 'package:filefin_mobile/src/shell/nav_glyph.dart';
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
@@ -6,17 +7,26 @@ import 'package:flutter/material.dart';
 class ShellDestination {
   /// A destination drawn as [icon] when at rest and [selectedIcon] when it is
   /// the one showing, under [label].
-  const ShellDestination({
-    required this.icon,
-    required this.selectedIcon,
+  ShellDestination({
+    required IconData icon,
+    required IconData selectedIcon,
     required this.label,
-  });
+  }) : glyph = iconGlyph(icon),
+       selectedGlyph = iconGlyph(selectedIcon);
 
-  /// The resting glyph — outline weight.
-  final IconData icon;
+  /// A destination drawn as the application mark, under [label].
+  ///
+  /// One glyph for both states: the mark is the product's own, and an outline
+  /// and a filled weight of it would read as two different logos.
+  const ShellDestination.mark({required this.label})
+    : glyph = markGlyph,
+      selectedGlyph = markGlyph;
 
-  /// The glyph while this destination is showing — filled weight.
-  final IconData selectedIcon;
+  /// The resting glyph.
+  final NavGlyph glyph;
+
+  /// The glyph while this destination is showing.
+  final NavGlyph selectedGlyph;
 
   /// The word under the glyph. Also what a widget test taps.
   final String label;
@@ -116,10 +126,9 @@ class _Destination extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    selected ? destination.selectedIcon : destination.icon,
+                  (selected ? destination.selectedGlyph : destination.glyph)(
                     size: 20,
-                    color: selected ? palette.accentBright : palette.textDim,
+                    colour: selected ? palette.accentBright : palette.textDim,
                   ),
                   const SizedBox(height: 3),
                   Text(

@@ -125,6 +125,16 @@ integration suite that reports success is a gate that cannot fail wearing a
 different hat. It is not in `just check`, because CI has no binary; it is in
 `just check-all`, which is local-only.
 
+## The application mark
+
+The mark is drawn by `FileFinMarkPainter`, and the launcher icons are rendered
+from that same painter rather than exported alongside it. If you touch the
+geometry, run `just icons` and commit what it rewrites.
+
+**Nothing enforces that.** `just check` does not re-render the icons, so a mark
+changed without the recipe ships a stale home-screen icon while every test
+stays green. The widget suites cover only the glyph inside the app.
+
 ## Commits
 
 Conventional Commits: `type(scope): description`.

@@ -5,6 +5,7 @@ import 'package:filefin_mobile/src/browse/library_shell.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
 import 'package:filefin_mobile/src/browse/search_page.dart';
 import 'package:filefin_mobile/src/shell/nav_bar.dart';
+import 'package:filefin_mobile/src/theme/filefin_mark.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -294,5 +295,24 @@ void main() {
     await tester.tap(find.byTooltip('Search'));
     await tester.pumpAndSettle();
     expect(find.byType(SearchPage), findsOneWidget);
+  });
+
+  /// Home is the product's own mark rather than a house glyph, on the bar and
+  /// on the rail alike. A stock icon here is the regression this catches.
+  testWidgets('the Home tab is the application mark', (tester) async {
+    await show(tester);
+
+    expect(
+      find.descendant(
+        of: find.byType(ShellNavBar),
+        matching: find.byType(FileFinMark),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.home), findsNothing);
+    expect(find.byIcon(Icons.home_outlined), findsNothing);
+    // The size the bar draws every other glyph at, so the mark does not sit
+    // larger or smaller than the icons beside it.
+    expect(tester.getSize(find.byType(FileFinMark)), const Size(20, 20));
   });
 }

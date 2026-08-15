@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The tile the mark sits on, shared with the television rail. -->
+<resources>
+    <color name="ic_launcher_background">#12141F</color>
+</resources>

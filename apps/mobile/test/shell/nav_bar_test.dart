@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// The bar exists because Material's own indicator is the wrong shape in the
 /// wrong place, so the indicator is what this suite is mostly about.
 void main() {
-  const destinations = [
+  final destinations = [
     ShellDestination(
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,

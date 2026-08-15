@@ -206,3 +206,13 @@ fixtures-verify:
 # Regenerate the manifest after a real re-capture.
 fixtures-accept:
     @bash tool/check-fixtures.sh accept
+
+# === application mark ===
+# Rewrite every launcher icon from the same painter the navigation draws, so
+# the home-screen icon and the Home glyph cannot drift apart. Not in `check`:
+# it writes into the repository, and a gate that edits the tree it is measuring
+# is the hazard `mutants` already taught us. Run it after touching the mark and
+# commit whatever changes; `git diff --stat` is the proof it did something.
+# Regenerate the iOS and Android launcher icons from the mark.
+icons:
+    @cd apps/mobile && flutter test tool/generate_app_icons.dart

@@ -9,7 +9,7 @@ import '../support/dpad.dart';
 /// The rail, and the two things a remote user needs from it: the words, and a
 /// way in and out.
 void main() {
-  const destinations = [
+  final destinations = [
     TvDestination(
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,
@@ -131,6 +131,16 @@ void main() {
     expect(rules, hasLength(1));
     expect(find.byIcon(Icons.folder_copy), findsOneWidget);
     expect(find.byIcon(Icons.folder_copy_outlined), findsNothing);
+    // Inset from both ends of the 56-point row, so it reads as a mark against
+    // that row rather than a border between two of them.
+    expect(
+      tester.getSize(
+        find.byWidgetPredicate(
+          (w) => w is Container && w.color == FileFinPalette.dark.accent,
+        ),
+      ),
+      const Size(3, 28),
+    );
   });
 
   testWidgets('the server row at the foot opens the picker', (tester) async {

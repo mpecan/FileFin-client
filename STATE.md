@@ -5315,6 +5315,34 @@ at M1.2 as well.
 
 ---
 
+## The application mark, and what `just icons` does not guarantee
+
+The redesign's 4a mark — a film folder with a sprocket row along its front
+panel and a fin rising from behind the tab — is now the launcher icon on both
+platforms and the Home glyph on both shells. `D25` records why it is drawn from
+one painter rather than shipped as artwork.
+
+**The one gap, said plainly: `just icons` is not a gate.** It rewrites the
+launcher PNGs from `FileFinMarkPainter` and its output is committed, but
+nothing in `just check` re-renders and diffs them. Edit the mark, forget the
+recipe, and the home-screen icon ships stale while every test stays green — the
+widget suites only prove the in-app glyph. A `codegen-check`-shaped gate would
+close it and was not built, because it would have to rasterise fifteen iOS
+tiles and ten Android ones on every run, and because a gate that rewrites the
+tree it is measuring is the hazard `mutants` already taught us. Reconsider if
+the mark ever changes twice.
+
+Two smaller notes:
+
+- **`ShellDestination` and `TvDestination` lost their `const` constructors.**
+  They now build a closure per destination, so the destination lists in both
+  shells and in two test files dropped `const`. The `.mark` constructors are
+  still `const`, being a tear-off rather than a closure.
+- **Android gained an adaptive icon** (`mipmap-anydpi-v26/ic_launcher.xml` and
+  a background colour resource) it did not have before. Without it Android 8
+  and up shrinks the legacy mipmap onto a white plate, which puts a pale ring
+  around a nearly-black tile.
+
 ## Deviations from the plan, and why
 
 - **`fixtures-verify` and `dupes` were added to `just check`.** The plan's

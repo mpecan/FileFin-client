@@ -1,7 +1,9 @@
 import 'package:filefin_core/filefin_core.dart';
 import 'package:filefin_mobile/src/browse/media_detail_page.dart';
+import 'package:filefin_mobile/src/theme/filefin_mark.dart';
 import 'package:filefin_mobile/src/tv/tv_home_page.dart';
 import 'package:filefin_mobile/src/tv/tv_library_page.dart';
+import 'package:filefin_mobile/src/tv/tv_rail.dart';
 import 'package:filefin_mobile/src/tv/tv_search_page.dart';
 import 'package:filefin_mobile/src/tv/tv_shell.dart';
 import 'package:flutter/material.dart';
@@ -199,5 +201,23 @@ void main() {
 
     expect(tickingIn(TvTab.library), isTrue);
     expect(tickingIn(TvTab.home), isFalse);
+  });
+
+  /// The rail's Home row carries the application mark, which is what the
+  /// design puts there in place of a house glyph.
+  testWidgets('the rail Home row is the application mark', (tester) async {
+    await show(tester);
+
+    expect(
+      find.descendant(
+        of: find.byType(TvRail),
+        matching: find.byType(FileFinMark),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.home), findsNothing);
+    expect(find.byIcon(Icons.home_outlined), findsNothing);
+    // The rail's own glyph size, matching the rows below it.
+    expect(tester.getSize(find.byType(FileFinMark)), const Size(24, 24));
   });
 }

@@ -200,12 +200,8 @@ class _LibraryShellState extends State<LibraryShell> {
     bottomNavigationBar: ShellNavBar(
       selected: _tab.index,
       onSelect: (index) => _select(LibraryTab.values[index]),
-      destinations: const [
-        ShellDestination(
-          icon: Icons.home_outlined,
-          selectedIcon: Icons.home,
-          label: 'Home',
-        ),
+      destinations: [
+        const ShellDestination.mark(label: 'Home'),
         ShellDestination(
           icon: Icons.folder_copy_outlined,
           selectedIcon: Icons.folder_copy,

@@ -1,4 +1,5 @@
 import 'package:dpad/dpad.dart';
+import 'package:filefin_mobile/src/shell/nav_glyph.dart';
 import 'package:filefin_mobile/src/theme/palette.dart';
 import 'package:flutter/material.dart';
 
@@ -6,17 +7,23 @@ import 'package:flutter/material.dart';
 @immutable
 class TvDestination {
   /// A destination drawn as [icon] at rest, [selectedIcon] when showing.
-  const TvDestination({
-    required this.icon,
-    required this.selectedIcon,
+  TvDestination({
+    required IconData icon,
+    required IconData selectedIcon,
     required this.label,
-  });
+  }) : glyph = iconGlyph(icon),
+       selectedGlyph = iconGlyph(selectedIcon);
+
+  /// A destination drawn as the application mark, beside [label].
+  const TvDestination.mark({required this.label})
+    : glyph = markGlyph,
+      selectedGlyph = markGlyph;
 
   /// The resting glyph.
-  final IconData icon;
+  final NavGlyph glyph;
 
   /// The glyph while this destination is showing.
-  final IconData selectedIcon;
+  final NavGlyph selectedGlyph;
 
   /// The word beside it, visible only while the rail is expanded.
   final String label;
@@ -115,7 +122,7 @@ class _TvRailState extends State<TvRail> {
               child: InkWell(
                 onTap: widget.onServers,
                 child: _RailRow(
-                  icon: Icons.dns_outlined,
+                  glyph: iconGlyph(Icons.dns_outlined),
                   label: widget.serverName,
                   colour: palette.textFaint,
                   expanded: _expanded,
@@ -162,7 +169,7 @@ class _RailItem extends StatelessWidget {
                 child: Container(width: 3, color: palette.accent),
               ),
             _RailRow(
-              icon: selected ? destination.selectedIcon : destination.icon,
+              glyph: selected ? destination.selectedGlyph : destination.glyph,
               label: destination.label,
               colour: selected ? const Color(0xFFF5F4FF) : palette.textDim,
               expanded: expanded,
@@ -176,13 +183,13 @@ class _RailItem extends StatelessWidget {
 
 class _RailRow extends StatelessWidget {
   const _RailRow({
-    required this.icon,
+    required this.glyph,
     required this.label,
     required this.colour,
     required this.expanded,
   });
 
-  final IconData icon;
+  final NavGlyph glyph;
   final String label;
   final Color colour;
   final bool expanded;
@@ -193,7 +200,7 @@ class _RailRow extends StatelessWidget {
     child: Row(
       children: [
         const SizedBox(width: 20),
-        Icon(icon, size: 24, color: colour),
+        glyph(size: 24, colour: colour),
         // `Flexible` around the label rather than an `if (expanded)`: the rail
         // animates its width, and a label that appeared only at the end would
         // overflow every frame of the animation before it did.

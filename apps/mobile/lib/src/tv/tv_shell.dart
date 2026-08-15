@@ -152,12 +152,8 @@ class _TvShellState extends State<TvShell> {
           serverName: widget.title,
           onServers: () => widget.onServers?.call(),
           onSelect: (index) => _select(TvTab.values[index]),
-          destinations: const [
-            TvDestination(
-              icon: Icons.home_outlined,
-              selectedIcon: Icons.home,
-              label: 'Home',
-            ),
+          destinations: [
+            const TvDestination.mark(label: 'Home'),
             TvDestination(
               icon: Icons.folder_copy_outlined,
               selectedIcon: Icons.folder_copy,
