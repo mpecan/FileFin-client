@@ -13,6 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'support/libmpv.dart';
+
 /// Covering `main()`'s single plugin call, through the plugin's own seam.
 ///
 /// `PathProviderPlatform.instance` is how `path_provider` is meant to be
@@ -31,6 +33,11 @@ class _FakePathProvider extends PathProviderPlatform
 }
 
 void main() {
+  setUpAll(() {
+    ensureLibmpv();
+    useHeadlessPlayer();
+  });
+
   late Directory dir;
 
   setUp(() {
@@ -127,18 +134,20 @@ void main() {
         entrypoint.buildApp(dir, formFactor: FormFactor.phone) as FileFinScope;
 
     expect(app.dependencies.network, isA<ConnectivityNetworkStatus>());
-    // The factory is INVOKED, not merely inspected: what is being pinned is
-    // that it builds a real `MediaKitPlaybackHost` over a real `RealMpvPlayer`.
-    // On a machine where libmpv resolves through media_kit's platform default
-    // names that returns a host; on macOS the default list is
-    // `Mpv.framework/Mpv` and nothing else (measured, M4.0/E2b), so it throws
-    // instead — and the throw names the framework, which is the same evidence.
-    try {
+    // The factory is INVOKED, not merely inspected: what is pinned is that it
+    // builds a real `MediaKitPlaybackHost` over a real `RealMpvPlayer`.
+    //
+    // **Inside `runAsync`, and headless, and BOTH are load-bearing.** A real
+    // `Player` built under a widget test's fake clock parks work on timers
+    // that fake time never advances, and one built without `vo=null`/`ao=null`
+    // opens output devices; `dispose()` then waits for either and never
+    // returns. Not a failure — a ten-minute timeout that reports as a hung
+    // suite, which is the shape CLAUDE.md warns a gate must never take.
+    // Each condition alone still hangs; the pair was measured together.
+    await tester.runAsync(() async {
       final host = app.dependencies.playbackHostFactory();
       expect(host, isA<MediaKitPlaybackHost>());
       await host.dispose();
-    } on Object catch (e) {
-      expect('$e', contains('Mpv'));
-    }
+    });
   });
 }
