@@ -1,2 +1,5 @@
+// Optional, untracked, and per-developer: DEVELOPMENT_TEAM lives here so a
+// personal Apple team id is not committed. See ios/Flutter/Local.xcconfig.example.
+#include? "Local.xcconfig"
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"

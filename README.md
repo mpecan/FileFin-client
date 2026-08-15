@@ -125,6 +125,20 @@ boundary — observed, documented and versioned, never assumed — which is why
 `docs/server-api.md` cites upstream line numbers and every model round-trips a
 captured payload.
 
+## Building for an iOS device
+
+Signing needs an Apple team id, which is personal and therefore not committed.
+Copy the example and put your own in it:
+
+```sh
+cp apps/mobile/ios/Flutter/Local.xcconfig.example \
+   apps/mobile/ios/Flutter/Local.xcconfig
+```
+
+Without that file the project still builds — unsigned, which is what CI and
+`flutter build ios --no-codesign` want. Both directions are exercised; a
+missing file is not an error.
+
 ## Licence
 
 [EUPL-1.2](LICENSE), the same licence as the FileFin server.

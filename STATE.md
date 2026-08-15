@@ -5343,6 +5343,31 @@ Two smaller notes:
   and up shrinks the legacy mipmap onto a white plate, which puts a pale ring
   around a nearly-black tile.
 
+## Made fit to publish
+
+An audit before going public found two things and no blockers. No secrets in
+the tree or in 173 commits of history, no real hostnames or addresses, the
+captured fixtures are a seeded `testuser` on `127.0.0.1:8099` rather than
+anyone's library, and the only committed private keys are self-signed
+`filefin-test-*` fixtures.
+
+- **The shipped CA bundle carried no licence notice.** `cacert.pem` had curl's
+  provenance header and nothing about MPL-2.0, whose §3.1 requires telling
+  recipients the licence and where to get a copy — the claim lived only in a
+  `pubspec.yaml` comment. The full licence now ships beside it as
+  `assets/ca/MPL-2.0.txt`, with a README, which is the arrangement `OFL.txt`
+  already had beside the font.
+- **The Apple team id was committed** three times in `project.pbxproj`. Not a
+  credential, but it ties the repository to one personal developer account and
+  every contributor's iOS build would try to sign with it. It now comes from
+  `ios/Flutter/Local.xcconfig`, which is untracked and optional; both
+  directions were built and checked — with the file the build signs as before,
+  without it the build succeeds unsigned.
+
+`STATE.md` itself was a deliberate keep rather than an oversight: it is a long
+record of what went wrong, and that is most of what makes the constitution
+credible rather than decorative.
+
 ## Deviations from the plan, and why
 
 - **`fixtures-verify` and `dupes` were added to `just check`.** The plan's

@@ -1,0 +1,7 @@
+// Copy to Local.xcconfig (untracked) and set your own Apple team id.
+//
+// Signing an iOS build for a real device needs a team, and a team id is
+// personal to whoever owns the developer account — so it is not committed.
+// Without this file the project builds unsigned, which is what CI wants and
+// what `flutter build ios --no-codesign` does.
+FILEFIN_TEAM_ID = YOUR_TEAM_ID

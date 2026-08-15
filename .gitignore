@@ -66,3 +66,8 @@ mutation-test-report/
 # Local server fixtures / scratch (captured payloads live in test/fixtures/)
 /scratch/
 .mutation-survivors/
+
+# A personal Apple team id is not committed: ios/Flutter/Local.xcconfig carries
+# it, and Local.xcconfig.example says what to put there. Without the file the
+# project builds unsigned, which is what CI wants.
+**/ios/Flutter/Local.xcconfig

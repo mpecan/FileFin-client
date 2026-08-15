@@ -181,3 +181,7 @@ flutter:
     # Refresh with `curl -O https://curl.se/ca/cacert.pem` and check the digest
     # against https://curl.se/ca/cacert.pem.sha256 before committing.
     - assets/ca/cacert.pem
+    # MPL-2.0 requires that whoever receives the bundle is told its licence and
+    # where to get a copy, so the licence ships with it — the same arrangement
+    # as OFL.txt beside the font above.
+    - assets/ca/MPL-2.0.txt
