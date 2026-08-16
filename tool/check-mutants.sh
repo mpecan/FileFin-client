@@ -27,6 +27,11 @@ cd "$ROOT"
 #   255  the threshold was missed — at least one mutant survived
 
 RULES="$ROOT/mutation_rules.xml"
+
+# The longest a single package's mutation run may take before the gate stops
+# waiting and fails. See the derivation below for why an absolute number is
+# needed on top of it.
+MUTANTS_RUN_CEILING=3600
 BASE="${FILEFIN_MUTANTS_BASE:-HEAD}"
 
 command -v dart >/dev/null 2>&1 || fail "dart not on PATH"
@@ -346,7 +351,16 @@ for pkg in $packages; do
     # and a whole-run cap measured in days, because a gate that takes a day to
     # report is a gate nobody runs.
     [ "$baseline_secs" -lt 5 ] && baseline_secs=5
-    [ "$baseline_secs" -gt 120 ] && baseline_secs=120
+    # The clamp firing is worth SAYING, not just doing. A suite that normally
+    # runs in ~20 s taking over two minutes means the machine is loaded, every
+    # number derived below is measured through that load, and the run is about
+    # to take far longer than the diff justifies. Printing the load average
+    # beside it turns "the gate hung" into "the box was at 259".
+    if [ "$baseline_secs" -gt 120 ]; then
+        echo "mutants: $pkg — suite baseline ${baseline_secs}s hit the 120s" \
+             "clamp; this machine is loaded ($(uptime | sed 's/.*load averages*://'))"
+        baseline_secs=120
+    fi
 
     # THE MULTIPLIER IS SIZED FOR A FAILING RUN, NOT A PASSING ONE, and that
     # distinction cost a false failure at M6.5. It was 6, and the assumption
@@ -452,6 +466,28 @@ for pkg in $packages; do
     # lost (CLAUDE.md's ratchet section), and raising it is an edit here that a
     # reviewer sees in the diff.
     [ "$run_cap" -lt 600 ] && run_cap=600
+    # AN ABSOLUTE CEILING, because the derivation above has no upper bound and
+    # the comment four screens up already claimed it did. `run_cap` is
+    # `n * 40 * baseline * 2`: BOTH factors grow, so a six-file diff measured
+    # at the 120 s baseline clamp derives a 16-hour cap, and the same diff on a
+    # loaded machine derived 8.7 hours in practice — measured, not imagined, on
+    # a box at load average 259. The gate then sat there. A cap that scales
+    # with how badly the machine is performing is backwards: the slower the
+    # measurement, the *more* patient the gate becomes, which is precisely
+    # when it should give up and say so.
+    #
+    # One hour per package. A package whose mutation run legitimately needs
+    # longer than that should be sharded with `just mutants-parallel`, which
+    # exists for exactly this, rather than run serially inside `just check`.
+    #
+    # NO ENVIRONMENT OVERRIDE, deliberately. `FILEFIN_MUTANTS_TIMEOUT` was
+    # removed at M6.R for this reason and CLAUDE.md records the three levers as
+    # a complete list; raising this is an edit here that a reviewer sees.
+    if [ "$run_cap" -gt "$MUTANTS_RUN_CEILING" ]; then
+        echo "mutants: $pkg — whole-run cap ${run_cap}s exceeds the" \
+             "${MUTANTS_RUN_CEILING}s ceiling; using the ceiling"
+        run_cap="$MUTANTS_RUN_CEILING"
+    fi
     (cd "$WT/$pkg" && timeout --kill-after=30s "${run_cap}s" \
         dart run mutation_test --rules "$RULES" -f none -o "$ROOT/.mutation-output" "$targets") \
         > "$log" 2>&1
