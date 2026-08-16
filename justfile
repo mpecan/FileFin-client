@@ -11,12 +11,33 @@ default:
 # `mutants` is last on purpose: mutation_test rewrites sources in place while
 # it runs, so it must never overlap another gate reading the same files. just
 # runs dependencies sequentially, which is what keeps that true.
-# Every quality gate, in the order a failure is cheapest to understand.
-check: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments doc-links constitution dupes deps fixtures-verify test coverage-check mutants
+# Every quality gate except mutation, in the order a failure is cheapest to
+# understand. THIS IS WHAT CI RUNS.
+#
+# Mutation is deliberately not here. It runs the whole suite once per mutant,
+# so its cost is the suite times the size of the diff — minutes for a one-file
+# change and over an hour for a large branch, against gates that all report in
+# seconds. Paying that on every push buys nothing CI can act on that a local
+# run has not already established, and a gate people wait an hour for is a gate
+# people learn to ignore.
+#
+# The list lives here and `check` adds to it, rather than both naming the same
+# fourteen gates: two copies drift, and the copy that silently loses a gate is
+# the one nobody notices.
+# Every gate except mutation. This is what CI runs.
+check-ci: toolchain-check hooks-status fmt-check analyze codegen-check file-size comments doc-links constitution dupes deps fixtures-verify test coverage-check
+
+# Every quality gate, mutation included. Run this before committing (§12).
+#
+# `mutants` is last on purpose and `just` runs dependencies sequentially:
+# mutation_test rewrites sources while it runs, so it must never overlap
+# another gate reading the same files.
+# Every quality gate, mutation included. Run before committing.
+check: check-ci mutants
 
 # `check` plus the integration suite. LOCAL ONLY, and deliberately so: `it`
 # needs a real `filefin` binary and CI has none, so putting it in `check` would
-# make CI permanently red. CI keeps running `just check`; M2's definition of
+# make CI permanently red. CI runs `just check-ci`; M2's definition of
 # done is "`just check` exits 0 AND `just it` exits 0 on a machine with the
 # binary". STATE.md records the split.
 # `check` plus the integration suite. Local only: CI has no filefin binary.

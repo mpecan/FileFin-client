@@ -87,28 +87,24 @@ jobs:
         # `flutter pub get`.
         run: flutter pub get
 
-      - name: just check
-        # FILEFIN_MUTANTS_BASE is load-bearing, not decoration. CI checks out a
-        # commit, so the working tree IS HEAD; with the default base of HEAD the
-        # mutation gate diffed a commit against itself, found no changed Dart,
-        # printed "nothing to mutate" and exited 0 — on every PR and every push,
-        # for the one gate §3 leans on hardest. tool/check-mutants.sh now REFUSES
-        # that combination when $CI is set, so this step fails loudly if the
-        # variable is ever dropped again rather than going quietly green.
+      - name: just check-ci
+        # `check-ci`, NOT `check`: mutation is deliberately not run here.
         #
-        # On a PR the base is the merge target, so the whole branch is mutated.
-        # On a push it is HEAD^ — the one commit that just landed. The empty-tree
-        # object is the fallback for a root commit, where everything is new.
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ -n "$PR_BASE_SHA" ]; then
-            base="$PR_BASE_SHA"
-          else
-            base="$(git rev-parse --verify --quiet HEAD^ || git hash-object -t tree /dev/null)"
-          fi
-          echo "mutation base: $base"
-          FILEFIN_MUTANTS_BASE="$base" just check
+        # It runs the whole suite once per mutant, so a large branch costs over
+        # an hour against gates that otherwise report in minutes — and CI can
+        # act on none of it that a local `just check` has not already
+        # established. §12 still requires a green `just check`, mutation
+        # included, before a commit is made.
+        #
+        # THE COST IS REAL AND IS STATED RATHER THAN HIDDEN: nothing automatic
+        # enforces mutation any more. It is a local discipline now, and a
+        # branch pushed without one will go green here regardless.
+        #
+        # FILEFIN_MUTANTS_BASE and its PR-base plumbing left with the gate.
+        # tool/check-mutants.sh keeps its own refusal for the case where $CI is
+        # set and the base is HEAD, so restoring mutation here without a real
+        # base still fails loudly rather than passing over nothing.
+        run: just check-ci
 
 # There is deliberately no fixture-capture job.
 #

@@ -104,6 +104,12 @@ Two properties that are easy to get wrong:
 - **It skips files whose diff is comments only**, because `mutation_test` never
   touches a comment, so those mutants would be the base's own.
 
+**CI does not run mutation.** It runs `just check-ci`, which is every gate
+except `mutants`, because a large branch costs over an hour there and buys
+nothing a local run has not already settled. So a green CI badge does not mean
+your diff survived mutation — `just check` on your own machine is the only
+thing that establishes that, and §12 asks for it before every commit.
+
 For a large diff use `just mutants-parallel`. It shards across packages and
 worktrees, needs a clean tree, and is safe to interrupt. It is **not** the
 authority — `just mutants`, inside `just check`, is.

@@ -273,6 +273,12 @@ does not exist.
 | Fixtures | `just fixtures-verify` | SHA-256 manifest + captured-key ratchet + structural assertions (§8) |
 
 - `just check` — everything above. **Run this before claiming work is done.**
+- `just check-ci` — everything above **except `mutants`**, and what CI runs.
+  Mutation costs the whole suite once per mutant, which is minutes for one file
+  and over an hour for a large branch; CI can act on none of it that a local
+  run has not already established. The cost is that **nothing automatic
+  enforces mutation any more** — it is a local discipline, and a branch pushed
+  without a green `just check` goes green in CI regardless.
 - `just it` — integration tests against a real server (below). Arrived at M2.
   It is in **`check-all`, and `check-all` is local-only**: CI has no `filefin`
   binary, so putting `it` in `check` would make CI permanently red. From M2 on,
