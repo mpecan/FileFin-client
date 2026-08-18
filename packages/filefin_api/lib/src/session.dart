@@ -1,5 +1,6 @@
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:filefin_api/src/auth_session.dart';
 import 'package:filefin_api/src/credentials.dart';
 import 'package:filefin_api/src/error_mapper.dart';
 import 'package:filefin_api/src/errors.dart';
@@ -20,7 +21,7 @@ const sessionCookieName = 'filefin_session';
 ///
 /// `now` is injected so the rate-limit block is testable without sleeping — the
 /// alternative is a test that waits fifteen minutes or one that proves nothing.
-class SessionManager {
+base class SessionManager extends AuthSession {
   /// Builds a manager for one server.
   ///
   /// [username] is the account name a cold start already knows, from
@@ -104,7 +105,7 @@ class SessionManager {
     } on DioException catch (e) {
       throw _loginFailure(e, url);
     }
-    final session = await sessionCookie();
+    final session = await _sessionCookie();
     if (session == null) {
       // Storing the password against a session that does not exist would make
       // every later call 401 into a re-auth that logs in and stores nothing
@@ -171,6 +172,22 @@ class SessionManager {
   Future<void> reauthenticate({required int seenGeneration}) {
     if (_generation != seenGeneration) return Future<void>.value();
     return _inFlight ??= _renew().whenComplete(() => _inFlight = null);
+  }
+
+  /// Restores a stored session on a cold start, silently renewing with the
+  /// stored password when the session itself is what died.
+  ///
+  /// A mechanical lift of what every caller of [restore] already did by hand:
+  /// [AuthSession] needs one "restore, recovering however this credential
+  /// kind can" verb so callers stop reaching past it into
+  /// password-specific members.
+  @override
+  Future<void> resume() async {
+    try {
+      await restore();
+    } on SessionExpired {
+      await reauthenticate(seenGeneration: generation);
+    }
   }
 
   /// Ends the session server-side and forgets this account's secrets.
@@ -261,19 +278,30 @@ class SessionManager {
 
   /// The live session cookie's value, or null when the jar holds none.
   ///
-  /// **Public because playback needs the value itself, not just its effect.**
   /// Everything else in this package sends the cookie by having dio's
-  /// `CookieManager` attach it; libmpv opens its own socket from native code
-  /// and has to be handed the header, so this is the one place the value
-  /// leaves the jar. It is read out immediately before an open and never
-  /// stored anywhere by the caller — `PlaybackSessionHeaders` is what carries
-  /// it from here, and it redacts.
-  Future<String?> sessionCookie() async {
+  /// `CookieManager` attach it. [headers] is the one place the value leaves
+  /// the jar, for libmpv's native socket — [_sessionCookie] only reads it
+  /// out for that, and does not itself get to leave this file.
+  Future<String?> _sessionCookie() async {
     final cookies = await jar.loadForRequest(urls.base);
     for (final cookie in cookies) {
       if (cookie.name == sessionCookieName) return cookie.value;
     }
     return null;
+  }
+
+  /// [AuthSession.forget]: [logout] already is exactly that.
+  @override
+  Future<void> forget() => logout();
+
+  /// [AuthSession.headers]: the `Cookie` header built from the jar's session
+  /// value, in the shape `playbackHeaders` has always sent. Read out
+  /// immediately before an open and never stored anywhere by the caller —
+  /// `PlaybackSessionHeaders` is what carries it from here, and it redacts.
+  @override
+  Future<Map<String, String>?> headers() async {
+    final cookie = await _sessionCookie();
+    return cookie == null ? null : {'Cookie': '$sessionCookieName=$cookie'};
   }
 
   /// Prints no password, no session value and no username.

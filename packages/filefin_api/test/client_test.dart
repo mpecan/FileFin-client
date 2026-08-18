@@ -1,3 +1,5 @@
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio/dio.dart';
 import 'package:filefin_api/filefin_api.dart';
 import 'package:filefin_core/filefin_core.dart';
 import 'package:test/test.dart';
@@ -316,4 +318,51 @@ void main() {
   test('a client prints which server it is, and no secret', () {
     expect(client.toString(), 'FileFinClient(home, ${stub.baseUrl})');
   });
+
+  test(
+    'a third AuthSession implementation fails the constructor loudly',
+    () {
+      // SessionManager and TokenAuthSession are the only two today, so this
+      // branch is unreachable in the shipped tree — but `AuthSession` is a
+      // port implemented across files (D26), not a sealed hierarchy the
+      // compiler can check, and this proves the constructor's fallback
+      // really does fail loudly rather than silently wiring no auth onto a
+      // future third implementation.
+      expect(
+        () => FileFinClient(
+          server: serverId,
+          dio: Dio(
+            fileFinBaseOptions(
+              baseUrl: stub.baseUrl,
+              timeout: const Duration(seconds: 5),
+            ),
+          ),
+          authDio: Dio(
+            fileFinBaseOptions(
+              baseUrl: stub.baseUrl,
+              timeout: const Duration(seconds: 5),
+            ),
+          ),
+          jar: DefaultCookieJar(),
+          urls: urls,
+          sessions: _NeitherAuthSession(),
+        ),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
+}
+
+/// Neither `SessionManager` nor `TokenAuthSession` — exists only to prove
+/// `FileFinClient`'s constructor refuses a third `AuthSession` rather than
+/// silently wiring no auth onto it.
+final class _NeitherAuthSession extends AuthSession {
+  @override
+  Future<void> forget() async {}
+
+  @override
+  Future<Map<String, String>?> headers() async => null;
+
+  @override
+  Future<void> resume() async {}
 }

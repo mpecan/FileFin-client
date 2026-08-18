@@ -13,6 +13,14 @@ enum SecretKind {
   /// every time the server restarts is not something a person will tolerate.
   password('password'),
 
+  /// A personal access token, for a server signed into by token rather than
+  /// password.
+  ///
+  /// A peer of [password] rather than of [session]: it is long-lived and
+  /// user-supplied, not minted per login, and there is nothing to renew it
+  /// with — a server that rejects it needs a new one pasted in.
+  token('token'),
+
   /// The SHA-256 certificate fingerprint the user accepted.
   ///
   /// **It is integrity data, not a secret**, and it is here for the same

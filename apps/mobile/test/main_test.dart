@@ -82,8 +82,8 @@ void main() {
     // proves nothing about the wiring.
     File('${dir.path}/settings.json').writeAsStringSync(
       '{"servers":[{"id":"a","name":"Attic NAS", '
-      '"baseUrl":"http://nas.local","lastUser":"sam","wifiOnly":false,'
-      '"allowUnverifiedPlayback":false}],'
+      '"baseUrl":"http://nas.local","lastUser":"sam","authMode":"password",'
+      '"wifiOnly":false,"allowUnverifiedPlayback":false}],'
       '"playback":{"progressIntervalSecs":30,"meteredWarnBytes":500000000},'
       // M7.3's key. Without it the strict decoder discards the whole file
       // (§13) and this test would assert "No server yet" while believing it

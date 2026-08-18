@@ -379,6 +379,24 @@ trap: focus entered the navigation and `right` never left it again. Nothing in
 can only ask whether a widget exists. `test/support/dpad.dart` is the answer;
 CLAUDE.md records why its shape is load-bearing.
 
+### A `TextField`'s own `Focus` sits inside its `InputDecorator`, not the reverse
+
+So a `Tooltip` wrapping a `TextField` — the fix that names a `Slider` or an
+icon button for `dpadReachable` — cannot name a `TextField` the same way: the
+`Tooltip` becomes an ANCESTOR of the focused element, and the walk only ever
+searches descendants of it.
+
+Measured by focusing a `TextField` under `flutter_test` and walking
+`primaryFocus!.context!.visitAncestorElements`: the context is a `Focus`
+fourteen widgets below `InputDecorator`, with `EditableText` in between. A
+label attached anywhere at or above `InputDecorator` — `labelText`,
+`prefixIcon`, an outer `Tooltip` — is unreachable from that context by
+construction. Two adjacent `TextField`s with no other name both report `?`,
+and `dpadReachable`'s label-keyed `seen` map treats the second as already
+visited, so a control beyond it can go undiscovered by the walk without
+being unreachable by an actual remote — `sign_in_page.dart`'s Username and
+Password fields are exactly this case.
+
 ### `flutter_test`'s binding installs an `HttpOverrides` that answers 400 for everything
 
 Measured at M3.0. A suite that wants a real socket must set

@@ -19,6 +19,14 @@ void main() {
       secretKeyFor(server, SecretKind.certificatePin),
       'filefin/home/certpin',
     );
+    expect(secretKeyFor(server, SecretKind.token), 'filefin/home/token');
+  });
+
+  test('a token round-trips like a password', () async {
+    await secrets.write(server, SecretKind.token, 'ffpat_abc');
+    expect(await secrets.read(server, SecretKind.token), 'ffpat_abc');
+    await secrets.delete(server, SecretKind.token);
+    expect(await secrets.read(server, SecretKind.token), isNull);
   });
 
   test('namespaces by server, so two servers never share a secret', () async {

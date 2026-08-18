@@ -226,6 +226,127 @@ void main() {
     expect(api.closed, isTrue);
   });
 
+  group('token mode', () {
+    Future<void> switchToToken(WidgetTester tester) async {
+      await tester.tap(find.text('Access token'));
+      await tester.pump();
+    }
+
+    Future<void> submitToken(WidgetTester tester, String token) async {
+      await tester.enterText(find.byType(TextField).last, token);
+      await tester.tap(find.text('Sign in'));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('the keyboard Done key submits the token, like the button', (
+      tester,
+    ) async {
+      api.tokenSignInResult = const AuthResult(user: 'sam');
+      await pump(tester);
+      await switchToToken(tester);
+      await tester.enterText(find.byType(TextField).last, 'ffpat_good');
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      await tester.pump();
+
+      expect(identical(handedOn, api), isTrue);
+    });
+
+    testWidgets('switching mode swaps the fields, not just relabels them', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      await switchToToken(tester);
+
+      expect(find.widgetWithText(TextField, 'Username'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Password'), findsNothing);
+      expect(
+        find.widgetWithText(TextField, 'Personal access token'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a server last signed in by token opens on that segment', (
+      tester,
+    ) async {
+      final tokenServer = server.withTokenAuth();
+      settings.write(AppSettings.empty.upsert(tokenServer));
+      await tester.pumpWidget(
+        FileFinScope(
+          dependencies: AppDependencies(
+            secrets: InMemorySecretStore(),
+            network: FakeNetworkStatus(),
+            playbackHostFactory: fakeHostFactory(),
+            nowPlayingFactory: fakeNowPlayingFactory(),
+            settings: settings,
+            apiFactory: (_, {pin}) => api,
+          ),
+          child: MaterialApp(
+            home: SignInPage(
+              server: tokenServer,
+              onSignedIn: (_, signedIn) => handedOn = signedIn,
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.widgetWithText(TextField, 'Personal access token'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a successful token sign-in hands the API on and records the mode',
+      (tester) async {
+        api.tokenSignInResult = const AuthResult(user: 'sam');
+        await pump(tester);
+
+        await switchToToken(tester);
+        await submitToken(tester, 'ffpat_good');
+
+        expect(identical(handedOn, api), isTrue);
+        final saved = settings.read().servers.single;
+        expect(saved.authMode, AuthMode.token);
+        // A token has no separate account name this client asks for, and a
+        // stale one from an earlier password sign-in would be misleading.
+        expect(saved.lastUser, isEmpty);
+      },
+    );
+
+    testWidgets('the token never reaches settings.json (§9, NF4)', (
+      tester,
+    ) async {
+      api.tokenSignInResult = const AuthResult(user: 'sam');
+      await pump(tester);
+
+      await switchToToken(tester);
+      await submitToken(tester, 'ffpat_good');
+
+      expect(settings.file.readAsStringSync(), isNot(contains('ffpat_good')));
+    });
+
+    testWidgets('a rejected token names revocation, and offers no retry loop', (
+      tester,
+    ) async {
+      api.tokenSignInResult = InvalidToken(server.baseUrl);
+      await pump(tester);
+
+      await switchToToken(tester);
+      await submitToken(tester, 'ffpat_bad');
+
+      final text = tester
+          .widget<Text>(find.byKey(const Key('sign-in-problem')))
+          .data!
+          .toLowerCase();
+      expect(text, contains('revoked'));
+      expect(handedOn, isNull);
+    });
+  });
+
   group('the 401 discipline — a 401 is not a sign-in prompt', () {
     // THE RULE, named so the tempting bug is named too. A 401 on any call is
     // routine (SPEC.md L1): server sessions live in memory and die with the

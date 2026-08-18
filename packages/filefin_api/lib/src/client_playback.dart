@@ -114,27 +114,24 @@ extension FileFinClientPlayback on FileFinClient {
   Uri subtitleUrl(MediaId id, FileIndex file, SubtitleIndex subtitle) =>
       _uri(() => urls.subtitle(id, file, subtitle), 'media id');
 
-  /// The headers libmpv must carry, after proving the session is alive.
+  /// The headers libmpv must carry, after proving the credential is alive.
   ///
   /// **The `me()` first is the whole point, not a formality.** libmpv cannot
   /// see a status code: a 401 arrives as "failed to open" and nothing else, so
-  /// a dead session would look exactly like a missing file. Making one
-  /// authenticated call through this package immediately before the open means
-  /// the session has already been renewed and the cookie handed over is the
-  /// renewed one.
+  /// a dead credential would look exactly like a missing file. It proves a
+  /// renewed session's cookie is the one handed over, or — token mode has
+  /// nothing to renew — that the token was not revoked since sign-in.
   ///
-  /// A `200` with no cookie in the jar is [SessionExpired] rather than an empty
-  /// header: handing libmpv `Cookie: filefin_session=` produces a 401 inside
-  /// mpv, which surfaces as the same unexplained failure.
+  /// A `200` with nothing to send is [SessionExpired] rather than an empty
+  /// header: an empty `Cookie` or no `Authorization` produces a 401 inside
+  /// mpv, the same unexplained failure.
   Future<PlaybackSessionHeaders> playbackHeaders({
     CancelToken? cancelToken,
   }) async {
     await me(cancelToken: cancelToken);
-    final cookie = await sessions.sessionCookie();
-    if (cookie == null) throw SessionExpired(urls.me);
-    return PlaybackSessionHeaders({
-      'Cookie': '$sessionCookieName=$cookie',
-    });
+    final headers = await sessions.headers();
+    if (headers == null) throw SessionExpired(urls.me);
+    return PlaybackSessionHeaders(headers);
   }
 
   /// What libmpv's own connection to this server would be able to verify.

@@ -3,7 +3,9 @@ import 'dart:typed_data';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:filefin_api/src/api_token.dart';
 import 'package:filefin_api/src/auth_interceptor.dart';
+import 'package:filefin_api/src/auth_session.dart';
 import 'package:filefin_api/src/credentials.dart';
 import 'package:filefin_api/src/error_mapper.dart';
 import 'package:filefin_api/src/errors.dart';
@@ -16,6 +18,8 @@ import 'package:filefin_api/src/session.dart';
 import 'package:filefin_api/src/tls/certificate_pinner.dart';
 import 'package:filefin_api/src/tls/fingerprint.dart';
 import 'package:filefin_api/src/tls/pinned_adapter.dart';
+import 'package:filefin_api/src/token_auth_interceptor.dart';
+import 'package:filefin_api/src/token_auth_session.dart';
 import 'package:filefin_api/src/transport.dart';
 import 'package:filefin_core/filefin_core.dart';
 
@@ -36,13 +40,15 @@ part 'client_watch_state.dart';
 /// Every endpoint takes a `CancelToken` and every failure arrives as a
 /// `FileFinApiException`; nothing here lets a `DioException` escape.
 class FileFinClient {
-  /// Wires [dio] with the cookie jar and the 401 retry, in that order.
+  /// Wires [dio] with whichever interceptors [sessions]'s auth mode needs.
   ///
   /// **Interceptor order is owned here rather than by the caller**, because it
-  /// is load-bearing: `CookieManager` must sit in front of `AuthInterceptor`
-  /// so the replayed request picks up the `Set-Cookie` the renewal just
-  /// stored. They are inserted at positions 0 and 1, so anything the caller
-  /// already added runs after them.
+  /// is load-bearing for the password path: `CookieManager` must sit in
+  /// front of `AuthInterceptor` so the replayed request picks up the
+  /// `Set-Cookie` the renewal just stored. Both are inserted at positions 0
+  /// and 1, so anything the caller already added runs after them. The token
+  /// path needs no `CookieManager` — the server sets no cookie for a
+  /// bearer-authenticated request — so only `TokenAuthInterceptor` goes on.
   ///
   /// **`LogInterceptor` is never added, here or anywhere.** dio's own prints
   /// `RequestOptions.data`, which on `/api/login` is the password.
@@ -55,9 +61,23 @@ class FileFinClient {
     required this.urls,
     this.pinner,
   }) : _dio = dio {
-    _dio.interceptors
-      ..insert(0, CookieManager(jar))
-      ..insert(1, AuthInterceptor(sessions: sessions, dio: _dio));
+    final sessions = this.sessions;
+    switch (sessions) {
+      case SessionManager():
+        _dio.interceptors
+          ..insert(0, CookieManager(jar))
+          ..insert(1, AuthInterceptor(sessions: sessions, dio: _dio));
+      case TokenAuthSession():
+        _dio.interceptors.insert(0, TokenAuthInterceptor(session: sessions));
+      default:
+        // AuthSession is a port implemented across files rather than a
+        // sealed hierarchy (`SecretStore`'s reasoning applies here too), so
+        // this cannot be exhaustive at compile time. Failing loudly on a
+        // third implementation beats silently wiring no auth at all onto it.
+        throw StateError(
+          'no interceptor wiring for ${sessions.runtimeType}',
+        );
+    }
   }
 
   /// Builds a client for one saved server, with everything wired.
@@ -109,17 +129,59 @@ class FileFinClient {
     );
   }
 
+  /// Builds a client for one saved server that signs in with a personal
+  /// access token rather than a password.
+  ///
+  /// No `username` parameter: a token authenticates as whichever account
+  /// minted it, and there is nothing to silently renew it with, so there is
+  /// no cold-start value this factory needs ahead of a call proving the
+  /// token still works.
+  factory FileFinClient.forTokenServer({
+    required ServerId server,
+    required Uri baseUrl,
+    required SecretStore secrets,
+    CertificateFingerprint? pin,
+    Duration timeout = const Duration(seconds: 15),
+  }) {
+    final urls = FileFinUrls(baseUrl);
+    final jar = DefaultCookieJar();
+    final pinner = CertificatePinner(pin: pin);
+    final authDio = Dio(
+      fileFinBaseOptions(baseUrl: baseUrl, timeout: timeout),
+    )..httpClientAdapter = pinnedAdapter(pinner);
+    final dio = Dio(fileFinBaseOptions(baseUrl: baseUrl, timeout: timeout))
+      ..httpClientAdapter = pinnedAdapter(pinner);
+    return FileFinClient(
+      server: server,
+      dio: dio,
+      authDio: authDio,
+      jar: jar,
+      urls: urls,
+      pinner: pinner,
+      sessions: TokenAuthSession(
+        authDio: authDio,
+        urls: urls,
+        secrets: secrets,
+        server: server,
+        pinner: pinner,
+      ),
+    );
+  }
+
   /// Which saved server this client talks to.
   final ServerId server;
 
   /// The client `/api/login`, `/api/logout` and the probe use — no retry on it.
   final Dio authDio;
 
-  /// The cookie jar both clients share, in memory only.
+  /// The cookie jar both clients share, in memory only. Unused in token
+  /// mode — the server sets no cookie for a bearer-authenticated request —
+  /// and kept anyway so one constructor serves both modes.
   final CookieJar jar;
 
-  /// Session state and renewal.
-  final SessionManager sessions;
+  /// Credential state: a password session or a token, depending on how this
+  /// client was built.
+  final AuthSession sessions;
 
   /// This server's URLs.
   final FileFinUrls urls;
@@ -137,11 +199,38 @@ class FileFinClient {
       probe(dio: authDio, urls: urls, pinner: pinner, cancelToken: cancelToken);
 
   /// `POST /api/login` — stores the session and the password.
-  Future<AuthResult> login(Credentials credentials) =>
-      sessions.login(credentials);
+  ///
+  /// Only meaningful on a client built by [FileFinClient.forServer]; calling
+  /// it on a token-mode client is a wiring bug this names rather than
+  /// silently mishandles.
+  Future<AuthResult> login(Credentials credentials) {
+    final sessions = this.sessions;
+    if (sessions is! SessionManager) {
+      throw StateError(
+        'login() needs a password-mode client; this one authenticates by '
+        'token',
+      );
+    }
+    return sessions.login(credentials);
+  }
 
-  /// `POST /api/logout` — ends the session and forgets this account.
-  Future<void> logout() => sessions.logout();
+  /// Verifies [token] against `GET /api/me` and stores it once proven.
+  ///
+  /// Only meaningful on a client built by [FileFinClient.forTokenServer];
+  /// the [login] doc comment explains the symmetric guard.
+  Future<AuthResult> signInWithToken(ApiToken token) {
+    final sessions = this.sessions;
+    if (sessions is! TokenAuthSession) {
+      throw StateError(
+        'signInWithToken() needs a token-mode client; this one '
+        'authenticates by password',
+      );
+    }
+    return sessions.verify(token);
+  }
+
+  /// Ends the session (password mode) or forgets the token (token mode).
+  Future<void> logout() => sessions.forget();
 
   /// `GET /api/me` — the current user.
   Future<AuthResult> me({CancelToken? cancelToken}) => _send(

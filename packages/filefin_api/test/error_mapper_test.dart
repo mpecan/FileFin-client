@@ -317,6 +317,10 @@ void main() {
         'InvalidCredentials: $url rejected that username and password',
       );
       expect(
+        InvalidToken(requested).toString(),
+        'InvalidToken: $url rejected that access token',
+      );
+      expect(
         MalformedResponse(requested, 'files[0] is null').toString(),
         'MalformedResponse: $url sent JSON we could not read: '
         'files[0] is null',
@@ -366,6 +370,7 @@ void main() {
         CertificateNotTrusted() => 'unknown certificate',
         CertificatePinMismatch() => 'certificate changed',
         InvalidCredentials() => 'wrong password',
+        InvalidToken() => 'wrong token',
         MalformedIdentifier() => 'bad id from the server',
         BadRequest() => 'the request was wrong',
         TranscodingDisabled() => 'transcoding is off',

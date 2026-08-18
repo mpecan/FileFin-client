@@ -134,6 +134,17 @@ ErrorMessage describeApiError(FileFinApiException error) => switch (error) {
         'of the two was wrong, or whether the account is locked.',
   ),
 
+  // Reachable from a fresh sign-in attempt AND from an ordinary request made
+  // after the token was revoked — there is no way to tell those apart from
+  // here, so `needsSignIn` is always true rather than only sometimes right.
+  InvalidToken() => const ErrorMessage(
+    title: 'That access token did not work',
+    detail:
+        'The server rejected it. It may be mistyped, or it may have been '
+        'revoked from Settings on the server.',
+    needsSignIn: true,
+  ),
+
   NotAFileFinServerResponse(:final requested, :final contentType) =>
     ErrorMessage(
       title: 'That address is not a FileFin server',

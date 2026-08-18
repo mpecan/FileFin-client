@@ -61,6 +61,13 @@ class PlaybackOutcome {
     'Your session ended. Sign in again to keep playing.',
     true,
   ),
+  // A token has nothing to silently renew mid-playback with, so this is
+  // the token-mode equivalent of SessionExpired above, not a generic
+  // failure — it needs the same sign-in-again next step.
+  InvalidToken() => (
+    'Your access token no longer works. Sign in again to keep playing.',
+    true,
+  ),
   TranscodingDisabled() => (
     'This file needs transcoding and the server has it turned off.',
     false,

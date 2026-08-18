@@ -266,6 +266,26 @@ final class InvalidCredentials extends FileFinApiException {
       'and password';
 }
 
+/// A bearer token was rejected: wrong, mistyped, or revoked from Settings.
+///
+/// **A token has nothing to silently renew with**, unlike a password session,
+/// so this is the only 401 outcome a token-mode client ever produces — there
+/// is no separate ephemeral session to lose independently of the credential
+/// itself, and no [SessionExpired] path for one. It can arrive either from a
+/// sign-in attempt or from an ordinary request made after the token was
+/// revoked server-side; both need the same next step, typing in a new one.
+final class InvalidToken extends FileFinApiException {
+  /// [requested] rejected the bearer token it was given.
+  const InvalidToken(this.requested);
+
+  /// The URL that refused it.
+  final Uri requested;
+
+  @override
+  String toString() =>
+      'InvalidToken: ${redactUserInfo(requested)} rejected that access token';
+}
+
 /// A 2xx whose `Content-Type` is not `application/json`.
 ///
 /// An unmatched `/api/*` path — a typo, a trailing slash, a method mismatch,

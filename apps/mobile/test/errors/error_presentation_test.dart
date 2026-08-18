@@ -139,6 +139,20 @@ void main() {
     expect(message.retryable, isFalse);
   });
 
+  test(
+    'InvalidToken sends the user back to sign in, unlike InvalidCredentials',
+    () {
+      // A token has nothing to silently renew with, so — unlike a password
+      // session's InvalidCredentials, which only ever fires while already on
+      // the sign-in screen — this can arrive mid-session too, and the UI needs
+      // to know to route there.
+      final message = describe(InvalidToken(url));
+
+      expect(message.needsSignIn, isTrue);
+      expect(message.detail.toLowerCase(), contains('revoked'));
+    },
+  );
+
   test('NotAFileFinServerResponse says it answered but is not FileFin', () {
     final message = describe(
       NotAFileFinServerResponse(url, 'text/html; charset=utf-8'),
@@ -226,6 +240,7 @@ void main() {
       RateLimited(const Duration(seconds: 1), secret),
       const MalformedIdentifier('', 'media id'),
       InvalidCredentials(secret),
+      InvalidToken(secret),
       NotAFileFinServerResponse(secret, 'text/html'),
       MalformedResponse(secret, 'expected an object'),
       ServerFailure(500, 'internal error', secret),
@@ -247,8 +262,8 @@ void main() {
       // same alarm `describeApiError` itself carries. This length check is the
       // other half: it catches a variant added to the switch and forgotten
       // here.
-      expect(all, hasLength(15));
-      expect(all.map((e) => e.runtimeType).toSet(), hasLength(14));
+      expect(all, hasLength(16));
+      expect(all.map((e) => e.runtimeType).toSet(), hasLength(15));
     });
 
     test('only SessionExpired asks for a password — a 401 never does', () {
@@ -381,7 +396,7 @@ void main() {
 /// instead of `e is SessionExpired` so that adding, say, a future
 /// `PasswordChanged` forces an answer rather than getting `false` for free.
 bool expectedNeedsSignIn(FileFinApiException error) => switch (error) {
-  SessionExpired() => true,
+  SessionExpired() || InvalidToken() => true,
   RequestTimedOut() ||
   RequestCancelled() ||
   ConnectionFailed() ||

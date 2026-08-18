@@ -31,6 +31,9 @@ abstract base class LibraryApi {
   /// `POST /api/login` — signs in and stores the session and password.
   Future<AuthResult> login(Credentials credentials);
 
+  /// `GET /api/me` with a bearer header — proves [token] works and stores it.
+  Future<AuthResult> signInWithToken(ApiToken token);
+
   /// `POST /api/logout` — ends the session and forgets this account.
   ///
   /// **Not the same thing as dropping this object**, and the difference is
@@ -45,18 +48,16 @@ abstract base class LibraryApi {
   /// in".
   Future<void> logout();
 
-  /// Signs in again with no password typed, on a cold start.
+  /// Signs in again with no credential typed, on a cold start.
   ///
-  /// Two steps, and the second is what makes the silent-renewal promise true
-  /// rather than merely stored. The saved session cookie is seeded into the jar
-  /// and proved with `GET /api/me`; if the server has forgotten it — a lost
-  /// session, which is routine rather than exceptional — the renewal signs in
-  /// again from the stored password. Only when there is no password either does
-  /// this throw `SessionExpired`, and only then does a user see a sign-in
-  /// screen.
-  ///
-  /// The renewal lives here because the app has no password to renew with and
-  /// must never acquire one.
+  /// For a password server this is two steps, and the second is what makes
+  /// the silent-renewal promise true rather than merely stored: the saved
+  /// session cookie is seeded into the jar and proved with `GET /api/me`,
+  /// and a server that has forgotten it — routine, not exceptional — is
+  /// silently renewed from the stored password. For a token server there is
+  /// only the proof; a token has nothing to renew with. Only when neither
+  /// recovery is possible does this throw, and only then does a user see a
+  /// sign-in screen.
   Future<void> restore();
 
   /// `GET /api/categories` — the flat list, for `buildCategoryTree`.
@@ -202,24 +203,14 @@ final class FileFinLibraryApi extends LibraryApi {
       _client.login(credentials);
 
   @override
+  Future<AuthResult> signInWithToken(ApiToken token) =>
+      _client.signInWithToken(token);
+
+  @override
   Future<void> logout() => _client.logout();
 
   @override
-  Future<void> restore() async {
-    try {
-      await _client.sessions.restore();
-    } on SessionExpired {
-      // `restore()` has already deleted the dead cookie and KEPT the password
-      //, so this is the retry doing exactly what it does for a
-      // 401 mid-browse. The generation is read rather than assumed: passing a
-      // stale one makes `reauthenticate` return without doing anything, which
-      // would look like a successful restore and land the user on an empty
-      // library.
-      await _client.sessions.reauthenticate(
-        seenGeneration: _client.sessions.generation,
-      );
-    }
-  }
+  Future<void> restore() => _client.sessions.resume();
 
   @override
   Future<List<Category>> categories({CancelToken? cancelToken}) =>

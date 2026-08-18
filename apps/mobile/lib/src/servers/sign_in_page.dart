@@ -40,6 +40,8 @@ class _SignInPageState extends State<SignInPage> {
     text: widget.server.lastUser,
   );
   final _password = TextEditingController();
+  final _token = TextEditingController();
+  late AuthMode _mode = widget.server.authMode;
   bool _busy = false;
   String? _problem;
 
@@ -47,6 +49,7 @@ class _SignInPageState extends State<SignInPage> {
   void dispose() {
     _user.dispose();
     _password.dispose();
+    _token.dispose();
     super.dispose();
   }
 
@@ -91,34 +94,28 @@ class _SignInPageState extends State<SignInPage> {
   /// it, and null for every other outcome — success included.
   Future<CertificateNotTrusted?> _attempt() async {
     final deps = FileFinScope.of(context);
-    final api = await apiForServer(deps, widget.server);
+    // `withTokenAuth`/`withLastUser` both record `authMode`, so the client
+    // `apiForServer` builds below already matches whichever mode is
+    // currently selected — the toggle and the saved record can never drift.
+    final target = widget.server.copyWith(authMode: _mode);
+    final api = await apiForServer(deps, target);
     setState(() {
       _busy = true;
       _problem = null;
     });
     try {
-      await api.login(
-        Credentials(username: _user.text.trim(), password: _password.text),
-      );
-      // The username is not a secret and a cold start needs it to renew a
-      // session silently. The password never comes near this file's
-      // storage — `filefin_api` puts it in the SecretStore.
-      //
-      // The SELECTION is written here too, and this is the only place that
-      // writes it once's picker: signing in is what makes a server the
-      // one a launch should open, and a saved server nobody ever signed in to
-      // is not it.
+      final saved = switch (_mode) {
+        AuthMode.password => await _signInWithPassword(api, target),
+        AuthMode.token => await _signInWithToken(api, target),
+      };
       deps.settings.write(
-        deps.settings
-            .read()
-            .upsert(widget.server.withLastUser(_user.text.trim()))
-            .withSelected(widget.server.id),
+        deps.settings.read().upsert(saved).withSelected(widget.server.id),
       );
       if (!mounted) {
         api.close();
         return null;
       }
-      widget.onSignedIn(widget.server, api);
+      widget.onSignedIn(saved, api);
       return null;
       // the trust prompt, and the ONLY exception this screen hands back rather
       // than renders: it is a question for the user, not a failure to report.
@@ -140,31 +137,54 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
+  /// The username is not a secret and a cold start needs it to renew a
+  /// session silently. The password never comes near this file's storage —
+  /// `filefin_api` puts it in the SecretStore.
+  Future<SavedServer> _signInWithPassword(
+    LibraryApi api,
+    SavedServer target,
+  ) async {
+    await api.login(
+      Credentials(username: _user.text.trim(), password: _password.text),
+    );
+    return target.withLastUser(_user.text.trim());
+  }
+
+  /// The token never comes near this file's storage either — `filefin_api`
+  /// proves it against `GET /api/me` and puts it in the SecretStore only
+  /// once proven.
+  Future<SavedServer> _signInWithToken(
+    LibraryApi api,
+    SavedServer target,
+  ) async {
+    await api.signInWithToken(ApiToken(_token.text.trim()));
+    return target.withTokenAuth();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text('Sign in to ${widget.server.name}')),
     body: ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        TextField(
-          controller: _user,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Username',
-            border: OutlineInputBorder(),
-          ),
+        SegmentedButton<AuthMode>(
+          segments: const [
+            ButtonSegment(
+              value: AuthMode.password,
+              label: Text('Password'),
+            ),
+            ButtonSegment(
+              value: AuthMode.token,
+              label: Text('Access token'),
+            ),
+          ],
+          selected: {_mode},
+          onSelectionChanged: _busy
+              ? null
+              : (selection) => setState(() => _mode = selection.single),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _password,
-          obscureText: true,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Password',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (_) => _busy ? null : _signIn(),
-        ),
+        const SizedBox(height: 16),
+        ..._mode == AuthMode.password ? _passwordFields() : _tokenFields(),
         const SizedBox(height: 16),
         FilledButton(
           onPressed: _busy ? null : _signIn,
@@ -181,4 +201,44 @@ class _SignInPageState extends State<SignInPage> {
       ],
     ),
   );
+
+  // `docs/field-notes.md` records why these are not wrapped in a `Tooltip`
+  // the way a `Slider` or an icon button would be: a `TextField`'s own
+  // `Focus` sits inside its `InputDecorator`, not the other way round, so a
+  // `Tooltip` placed outside it is an ancestor the reachability walk never
+  // sees as a descendant. It is not fixable at this call site.
+  List<Widget> _passwordFields() => [
+    TextField(
+      controller: _user,
+      autocorrect: false,
+      decoration: const InputDecoration(
+        labelText: 'Username',
+        border: OutlineInputBorder(),
+      ),
+    ),
+    const SizedBox(height: 12),
+    TextField(
+      controller: _password,
+      obscureText: true,
+      autocorrect: false,
+      decoration: const InputDecoration(
+        labelText: 'Password',
+        border: OutlineInputBorder(),
+      ),
+      onSubmitted: (_) => _busy ? null : _signIn(),
+    ),
+  ];
+
+  List<Widget> _tokenFields() => [
+    TextField(
+      controller: _token,
+      autocorrect: false,
+      decoration: const InputDecoration(
+        labelText: 'Personal access token',
+        helperText: 'Minted from Settings on the server, starts with ffpat_',
+        border: OutlineInputBorder(),
+      ),
+      onSubmitted: (_) => _busy ? null : _signIn(),
+    ),
+  ];
 }

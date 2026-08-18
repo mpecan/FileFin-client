@@ -298,6 +298,56 @@ void main() {
     });
   });
 
+  group('resume — restore, recovering with the stored password if needed', () {
+    test(
+      'a session that is still alive needs no reauthenticate at all',
+      () async {
+        await secrets.write(server, SecretKind.session, 'stored-session');
+        stub.on(
+          'GET',
+          urls.me.path,
+          (_) => StubResponse(
+            status: 200,
+            body: fixtureText('me.json'),
+            contentType: 'application/json',
+          ),
+        );
+
+        await sessions.resume();
+
+        expect(stub.requests, hasLength(1), reason: 'only the /api/me probe');
+      },
+    );
+
+    test(
+      'a dead session falls back to a fresh login, the F2 promise',
+      () async {
+        // A cold start needs the username to renew silently — the doc on
+        // `SessionManager`'s constructor is explicit that one built without it
+        // can restore but never renew, so this test builds its own with one,
+        // the way `library_api.dart` does from `SavedServer.lastUser`.
+        final withUsername = SessionManager(
+          authDio: authDio,
+          urls: urls,
+          jar: jar,
+          secrets: secrets,
+          server: server,
+          username: creds.username,
+          now: () => clock,
+        );
+        await secrets.write(server, SecretKind.session, 'expired');
+        await secrets.write(server, SecretKind.password, creds.password);
+        stub
+          ..on('GET', urls.me.path, (_) => const StubResponse.unauthorized())
+          ..on('POST', urls.login.path, (_) => goodLogin());
+
+        await withUsername.resume();
+
+        expect(withUsername.generation, 1);
+      },
+    );
+  });
+
   group('nothing prints a secret (§9, NF4)', () {
     test('Credentials redacts its password', () {
       expect(creds.toString(), 'Credentials(testuser, <redacted>)');
